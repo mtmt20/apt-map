@@ -71,6 +71,11 @@ def main():
         shutil.copytree(os.path.join(ROOT, "app"), os.path.join(tmp, "site"))
         site = os.path.join(tmp, "site")
         open(os.path.join(site, ".nojekyll"), "w").close()
+        swp = os.path.join(site, "sw.js")
+        if os.path.exists(swp):
+            import time as _t
+            src_sw = open(swp, encoding="utf-8").read().replace("__BUILD__", _t.strftime("%Y%m%d%H%M"))
+            open(swp, "w", encoding="utf-8").write(src_sw)
         run(["git", "init", "-q"], cwd=site)
         run(["git", "-c", "user.name=deploy", "-c", "user.email=deploy@local", "add", "-A"], cwd=site)
         run(["git", "-c", "user.name=deploy", "-c", "user.email=deploy@local", "commit", "-qm", "deploy"], cwd=site)

@@ -21,12 +21,17 @@ import sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 import demo_data  # noqa: E402
+try:
+    from terrain import Terrain  # noqa: E402
+except Exception:  # PIL 없으면 지형 생략
+    Terrain = None
 
 ROOT = os.path.join(HERE, "..")
 RAW = os.path.join(ROOT, "data", "raw")
 OUT = os.path.join(ROOT, "app", "data")
 PY = 3.3058
 SCHOOL_STATS = {}
+TERRAIN = None
 MIDDLE_ZONES_OFFICIAL = []
 
 
@@ -511,6 +516,17 @@ def enrich(c, roads, today, stations, schools, zones, middle=None, academies=Non
     else:
         c["road"] = {"major_dist": None, "major_name": "", "roadside": False}
 
+    # 지형: 해발고도, 반경 100m 경사, 역/초등과의 고도차
+    c["terrain"] = None
+    if TERRAIN:
+        e0 = TERRAIN.elev(c["lat"], c["lng"])
+        if e0 is not None:
+            st_e = TERRAIN.elev(s0["lat"], s0["lng"])
+            el_e = TERRAIN.elev(elem["lat"], elem["lng"])
+            c["terrain"] = {"elev": e0, "slope_pct": TERRAIN.slope_pct(c["lat"], c["lng"]),
+                            "station_dh": round(e0 - st_e) if st_e is not None else None,
+                            "elem_dh": round(e0 - el_e) if el_e is not None else None}
+
     # 장단점
     age = today.year - c["built"]
     pros, cons = [], []
@@ -553,6 +569,13 @@ def enrich(c, roads, today, stations, schools, zones, middle=None, academies=Non
         cons.append("어린이집·유치원 700m 내 {}곳 (적음)".format(life["daycare"]))
     if life.get("pediatric") is not None and life["pediatric"] == 0:
         cons.append("1km 내 소아과 없음")
+    tr_ = c.get("terrain") or {}
+    if tr_.get("station_dh") is not None and tr_["station_dh"] >= 30:
+        cons.append("언덕 위 단지 (역보다 {}m 높음)".format(tr_["station_dh"]))
+    elif tr_.get("slope_pct") is not None and tr_["slope_pct"] >= 8:
+        cons.append("주변 경사 가파름 ({}%)".format(tr_["slope_pct"]))
+    elif tr_.get("slope_pct") is not None and tr_["slope_pct"] <= 2 and tr_.get("station_dh") is not None and abs(tr_["station_dh"]) < 10:
+        pros.append("평지 (역과 고도차 {}m)".format(abs(tr_["station_dh"])))
     if c.get("parking") and c.get("households"):
         c["parking_per_hh"] = round(c["parking"] / c["households"], 2)
         if c["parking_per_hh"] >= 1.3:
@@ -608,8 +631,10 @@ def main():
     middle, academies = (poi or {}).get("middle") or [], (poi or {}).get("academies") or []
     global MIDDLE_ZONES_OFFICIAL
     MIDDLE_ZONES_OFFICIAL = [(z, ring) for z in ((poi or {}).get("official") or {}).get("middle", []) for ring in z["rings"]]
-    global SCHOOL_STATS
+    global SCHOOL_STATS, TERRAIN
     SCHOOL_STATS = load_schoolinfo() if real else {}
+    if Terrain and os.path.isdir(os.path.join(RAW, "terrain")):
+        TERRAIN = Terrain()
     # 초등 순전입/학생증가 구내 순위 -> 장단점
     elem_rank = {}
     if SCHOOL_STATS:
@@ -715,6 +740,8 @@ def main():
         ba = sorted(c["by_area"], key=lambda a: -a["count"])[:3]
         sm["by_area"] = [{k: a.get(k) for k in ("area", "latest", "latest_date", "count", "jeonse_ratio")} for a in sorted(ba, key=lambda a: a["area"])]
         sm["station"] = {k: c["station"][k] for k in ("name", "walk_min", "dist")}
+        if c.get("terrain"):
+            sm["terrain"] = {k: c["terrain"].get(k) for k in ("elev", "station_dh", "slope_pct")}
         sm["school"] = {k: c["school"][k] for k in ("elem", "elem_walk_min", "chopuma")}
         summary.append(sm)
         json.dump(c, open(os.path.join(cdir, c["id"] + ".json"), "w", encoding="utf-8"), ensure_ascii=False, separators=(",", ":"))

@@ -10,7 +10,7 @@
     complexes: [], auctions: [], schools: null, meta: null,
     area: "all", sort: null, q: "",
     selected: null, markers: {}, aucMarkers: [], schoolMarkers: [],
-    layers: { school: true, road: false, auction: false },
+    layers: { school: true, road: false, auction: false, terrain: false },
   };
 
   // ---------- API / 찜 ----------
@@ -100,6 +100,11 @@
       layout: { "line-cap": "round", "line-join": "round", visibility: "none" },
       paint: { "line-color": "#f97316", "line-width": z(3, 10), "line-opacity": 0.95 } });
     map.on("moveend", loadRoadTiles);
+
+    // 지형 음영 (AWS Terrarium DEM, 키 불필요)
+    map.addSource("dem", { type: "raster-dem", tiles: ["https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png"], encoding: "terrarium", tileSize: 256, maxzoom: 15, attribution: "Terrain: Mapzen/AWS" });
+    map.addLayer({ id: "hillshade", type: "hillshade", source: "dem", layout: { visibility: "none" },
+      paint: { "hillshade-exaggeration": 0.6, "hillshade-shadow-color": dark ? "#000" : "#4b3d2a", "hillshade-highlight-color": dark ? "#334155" : "#ffffff", "hillshade-accent-color": "#7c5a3a" } }, "school-fill");
     map.on("click", "road-major", (e) => { const p = e.features[0].properties; toast(`${p.name || "이름 없는 큰길"} · ${p.lanes ? p.lanes + "차로 · " : ""}인도 ${p.sidewalk === "yes" ? "있음" : "추정"}`); });
     map.on("click", "school-fill", (e) => { if (!e.originalEvent._mk) toast(`${e.features[0].properties.name} 통학구역 · ${e.features[0].properties.note || ""}`); });
     ["road-major", "school-fill"].forEach((id) => { map.on("mouseenter", id, () => map.getCanvas().style.cursor = "pointer"); map.on("mouseleave", id, () => map.getCanvas().style.cursor = ""); });
@@ -139,6 +144,9 @@
     v(["school-fill", "school-line"], state.layers.school);
     state.schoolMarkers.forEach((m) => m.getElement().style.display = state.layers.school && map.getZoom() >= 14.3 ? "" : "none");
     v(["road-walk", "road-alley", "road-minor", "road-major", "road-major-far"], state.layers.road);
+    v(["hillshade"], state.layers.terrain);
+    if (map.getSource("dem")) { map.setTerrain(state.layers.terrain ? { source: "dem", exaggeration: 1.3 } : null); if (!state.layers.terrain && map.getPitch()) map.easeTo({ pitch: 0 }); }
+    $("#terrainLegend").hidden = !state.layers.terrain;
     if (state.layers.road) loadRoadTiles();
     $("#legend").hidden = !state.layers.road;
     state.aucMarkers.forEach((m) => state.layers.auction ? m.addTo(map) : m.remove());
@@ -155,7 +163,7 @@
     const bb = map.getBounds(), pad = 0.15 * (bb.getNorth() - bb.getSouth());
     const inView = (c) => c.lat > bb.getSouth() - pad && c.lat < bb.getNorth() + pad && c.lng > bb.getWest() - pad && c.lng < bb.getEast() + pad;
     // 우선순위: 선택된 단지 > 검색/필터 일치 > 거래 많은 순. 화면 안에서 서로 겹치면 뒤 순위를 숨김
-    const order = state.complexes.slice().sort((a, b) =>
+    const order = state.complexes.filter((c) => inView(c) || c.id === state.selected).sort((a, b) =>
       ((b.id === state.selected) - (a.id === state.selected)) ||
       ((areaMatch(b) && matchQ(b)) - (areaMatch(a) && matchQ(a))) ||
       (b.trade_count_1y - a.trade_count_1y));
@@ -221,6 +229,7 @@
         ...(c.jeonse_ratio ? [`<span class="tag ${c.jeonse_ratio >= 90 ? "bad" : ""}">전세가율 ${c.jeonse_ratio}%</span>`] : []),
         ...(c.sale_type === "혼합" ? [`<span class="tag">분양·임대 혼합</span>`] : []),
         ...(c.edu_score != null && c.edu_top_pct <= 30 ? [`<span class="tag school">학군 ${c.edu_score}점 · 상위 ${c.edu_top_pct}%</span>`] : []),
+        ...(c.terrain && c.terrain.station_dh != null && c.terrain.station_dh >= 30 ? [`<span class="tag bad">언덕 +${c.terrain.station_dh}m</span>`] : []),
       ].join("");
       return `<div class="card ${state.selected === c.id ? "sel" : ""}" data-id="${c.id}">
         <div><h3>${esc(c.name)}</h3><div class="sub">${esc(c.umd)} · ${c.households ? c.households.toLocaleString() + "세대 · " : ""}${c.built}년 · ${esc(c.station.name)} ${c.station.walk_min}분</div></div>
@@ -315,6 +324,7 @@
           <div class="note">${esc(c.school.middle_note)}${c.school.elem_stats ? " · 학생 수·전출입은 학교알리미 " + c.school.elem_stats.year + "년 공시" : ""}</div></div>
 
         <div class="section"><h4>교통 · 도로 환경</h4><div class="kv">
+          ${c.terrain ? `<div><div class="k">지형</div><div class="v">해발 ${c.terrain.elev}m<small>${c.terrain.station_dh != null ? (c.terrain.station_dh >= 0 ? "역보다 +" : "역보다 ") + c.terrain.station_dh + "m" : ""}${c.terrain.slope_pct != null ? " · 경사 " + c.terrain.slope_pct + "%" : ""}</small></div></div>` : ""}
           ${c.parking ? `<div><div class="k">주차</div><div class="v">${c.parking.toLocaleString()}대<small>세대당 ${c.parking_per_hh || "-"}</small></div></div>` : ""}
           <div><div class="k">가까운 역</div><div class="v">${esc(c.station.name)}<small>${esc(c.station.line)} · ${c.station.walk_min}분</small></div></div>
           <div><div class="k">큰길과 거리</div><div class="v">${c.road.major_dist == null ? "-" : c.road.major_dist + "m"}<small>${c.road.roadside ? "대로변" : c.road.major_dist > 150 ? "이면 · 조용" : "인접"}</small></div></div>
@@ -452,9 +462,11 @@
   map.on("moveend", () => { clearTimeout(zt); zt = setTimeout(() => { renderMarkers(); if (!state.selected) renderList(); }, 60); });
 
   // ---------- boot ----------
-  Promise.all(["complexes", "auctions", "meta"].map((n) => fetch(`data/${n}.json`).then((r) => r.json())).concat(fetch("data/schools.geojson").then((r) => r.json())))
-    .then(([complexes, auctions, meta, schools]) => {
-      Object.assign(state, { complexes, auctions, meta, schools });
+  Promise.all(["complexes", "auctions", "meta"].map((n) => fetch(`data/${n}.json`).then((r) => r.json())))
+    .then(([complexes, auctions, meta]) => {
+      Object.assign(state, { complexes, auctions, meta });
+      // 학군 폴리곤(180KB)은 첫 화면이 뜬 뒤에 받는다
+      fetch("data/schools.geojson").then((r) => r.json()).then((schools) => { state.schools = schools; tryAdd(); }).catch(() => {});
       if (meta.mode === "demo") { $("#modeBadge").hidden = false; $("#modeBadge").textContent = "데모 데이터"; }
       $("#areaLabel").textContent = meta.area;
       $("#gapChip").hidden = !complexes.some((c) => c.jeonse_ratio);
@@ -463,8 +475,7 @@
       if (deep && complexes.some((c) => c.id === deep)) setTimeout(() => openDetail(deep, "half"), 400);
       // 리스트/마커는 지도 로드와 무관하게 바로, 레이어는 스타일 준비 후
       renderMarkers(); renderList(); setSheet(innerWidth < 900 ? "half" : "full");
-      const tryAdd = () => { if (map.getSource("schools")) return; if (map.isStyleLoaded()) addLayers(); else setTimeout(tryAdd, 300); };
-      tryAdd();
+      var tryAdd = () => { if (!state.schools || map.getSource("schools")) return; if (map.isStyleLoaded()) addLayers(); else setTimeout(tryAdd, 300); };
     })
     .catch((e) => { console.error(e); toast("데이터를 불러오지 못했어요. pipeline/build.py 를 먼저 실행하세요."); });
 })();

@@ -6,6 +6,10 @@
 <title>집콕맵 · 실거래·학군·도로 한눈에</title>
 <meta name="description" content="아파트 실거래가와 호가, 배정 초등학교, 큰길·골목·인도, 경매 물건을 지도 한 장에서 확인하세요.">
 <meta name="theme-color" content="#0f172a">
+<link rel="preconnect" href="https://tiles.openfreemap.org" crossorigin>
+<link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+<link rel="preconnect" href="https://s3.amazonaws.com" crossorigin>
+<link rel="dns-prefetch" href="https://aptmap-api.jipkokmap.workers.dev">
 <link rel="icon" type="image/svg+xml" href="icon.svg">
 <link rel="apple-touch-icon" href="icon.svg">
 <link rel="manifest" href="manifest.json">
@@ -46,12 +50,16 @@
   <button class="lyr" data-layer="road" title="큰길/골목/인도">
     <span class="ico">🛣️</span><span>도로</span>
   </button>
+  <button class="lyr" data-layer="terrain" title="지형 음영 (언덕·산)">
+    <span class="ico">⛰️</span><span>지형</span>
+  </button>
   <button class="lyr" data-layer="auction" title="경매 물건">
     <span class="ico">⚖️</span><span>경매</span>
   </button>
   <button class="lyr" id="locateBtn" title="내 위치"><span class="ico">📍</span><span>내위치</span></button>
 </nav>
 
+<div class="legend" id="terrainLegend" hidden style="top:auto;bottom:calc(var(--sheet-peek) + 12px)"><div>⛰️ 음영이 진할수록 경사·언덕. 두 손가락으로 기울이면 3D</div></div>
 <div class="legend" id="legend" hidden>
   <div><i class="l major"></i>큰길 (차 많음)</div>
   <div><i class="l minor"></i>동네길</div>
@@ -92,6 +100,7 @@
   </div>
 </div>
 <script src="config.js"></script>
-<script src="app.js?v=35"></script>
+<script src="app.js?v=37"></script>
+<script>if ("serviceWorker" in navigator && location.protocol === "https:") navigator.serviceWorker.register("sw.js").catch(() => {});</script>
 </body>
 </html>

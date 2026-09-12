@@ -139,6 +139,9 @@ def page_html(c, base, all_by_umd):
     parts.append('<h2>교통 · 도로 · 생활 편의</h2><div class="card"><div class="kv">')
     parts.append('<div><div class="k">가까운 역</div><div class="v">{}<small>도보 {}분</small></div></div>'.format(esc(c["station"]["name"]), c["station"]["walk_min"]))
     parts.append('<div><div class="k">큰길과 거리</div><div class="v">{}<small>{}</small></div></div>'.format("{}m".format(c["road"]["major_dist"]) if c["road"]["major_dist"] is not None else "-", "대로변" if c["road"]["roadside"] else "이면"))
+    if c.get("terrain"):
+        tr_ = c["terrain"]
+        parts.append('<div><div class="k">지형</div><div class="v">해발 {}m<small>{}{}</small></div></div>'.format(tr_["elev"], ("역보다 {:+d}m".format(tr_["station_dh"]) if tr_.get("station_dh") is not None else ""), (" · 경사 {}%".format(tr_["slope_pct"]) if tr_.get("slope_pct") is not None else "")))
     if c.get("parking"):
         parts.append('<div><div class="k">주차</div><div class="v">{:,}대<small>세대당 {}</small></div></div>'.format(c["parking"], c.get("parking_per_hh", "-")))
     if life:
