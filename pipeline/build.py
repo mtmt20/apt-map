@@ -931,6 +931,36 @@ def main():
         for l in d["lines"]:
             nfeats.append({"type": "Feature", "properties": {"kind": kind, "label": label, "name": l.get("name", "")}, "geometry": {"type": "LineString", "coordinates": l["coords"]}})
     dump("nuisance.geojson", {"type": "FeatureCollection", "features": nfeats})
+
+    # 구 경계 + 구별 통계 + 대장 아파트 (줌 아웃 뷰)
+    try:
+        from build_schoolzones import simplify as _simp
+    except Exception:
+        _simp = lambda pts, tol: pts
+    dfeats = []
+    by_gu = {}
+    for c in cs:
+        by_gu.setdefault(c["sgg"], []).append(c)
+    for bp in sorted(glob.glob(os.path.join(RAW, "boundary_*.geojson"))):
+        gu = os.path.basename(bp)[len("boundary_"):-len(".geojson")]
+        ring = json.load(open(bp, encoding="utf-8"))["geometry"]["coordinates"][0]
+        ring = [[round(x, 5), round(y, 5)] for x, y in _simp([tuple(p) for p in ring], 0.0004)]
+        if ring[0] != ring[-1]:
+            ring.append(ring[0])
+        members = by_gu.get(gu, [])
+        ppys = sorted(c["ppy"] for c in members if c.get("ppy"))
+        med = ppys[len(ppys) // 2] if ppys else None
+        # 대장: 세대수 300+(또는 미상) 이고 1년 거래 5건+ 인 단지 중 평당가 최고 3개
+        pool = [c for c in members if c.get("ppy") and c["trade_count_1y"] >= 5 and (not c.get("households") or c["households"] >= 300)]
+        pool.sort(key=lambda c: -c["ppy"])
+        top = [{"id": c["id"], "name": c["name"], "ppy": c["ppy"], "lat": c["lat"], "lng": c["lng"],
+                "latest": (sorted(c["by_area"], key=lambda b: -b["count"])[0]["latest"] if c["by_area"] else None),
+                "area": (sorted(c["by_area"], key=lambda b: -b["count"])[0]["area"] if c["by_area"] else None)} for c in pool[:3]]
+        lngs, lats = [p[0] for p in ring], [p[1] for p in ring]
+        dfeats.append({"type": "Feature", "properties": {"name": gu, "n": len(members), "ppy_med": med, "top": top,
+                                                          "center": [round(sum(lngs) / len(lngs), 5), round(sum(lats) / len(lats), 5)]},
+                       "geometry": {"type": "Polygon", "coordinates": [ring]}})
+    dump("districts.geojson", {"type": "FeatureCollection", "features": dfeats})
     dump("auctions.json", [a for a in aucs if "lat" in a])
     dump("meta.json", {
         "mode": mode, "built_at": dt.datetime.now().strftime("%Y-%m-%d %H:%M"),

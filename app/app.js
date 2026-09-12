@@ -9,7 +9,7 @@
   const state = {
     complexes: [], auctions: [], schools: null, meta: null,
     area: "all", sort: null, q: "",
-    selected: null, markers: {}, aucMarkers: [], schoolMarkers: [],
+    selected: null, markers: {}, aucMarkers: [], schoolMarkers: [], crownMarkers: [],
     layers: { school: true, road: false, auction: false, terrain: false, nuisance: false },
   };
 
@@ -101,6 +101,28 @@
       paint: { "line-color": "#f97316", "line-width": z(3, 10), "line-opacity": 0.95 } });
     map.on("moveend", loadRoadTiles);
 
+    // 구 경계 / 구 이름 / 대장 아파트 (줌 아웃)
+    map.addSource("districts", { type: "geojson", data: "data/districts.geojson" });
+    map.addLayer({ id: "gu-fill", type: "fill", source: "districts", maxzoom: 14, paint: { "fill-color": "#2563eb", "fill-opacity": ["interpolate", ["linear"], ["zoom"], 10, 0.06, 13, 0.02] } });
+    map.addLayer({ id: "gu-line", type: "line", source: "districts", maxzoom: 15, paint: { "line-color": dark ? "#93c5fd" : "#1d4ed8", "line-width": ["interpolate", ["linear"], ["zoom"], 10, 1.2, 14, 2.2], "line-opacity": 0.7 } });
+    if (map.getStyle().glyphs) {
+      map.addLayer({ id: "gu-label", type: "symbol", source: "districts", maxzoom: 13.5,
+        layout: { "text-field": ["format", ["get", "name"], { "font-scale": 1.15 }, "\n", {}, ["case", ["has", "ppy_med"], ["concat", "평당 ", ["to-string", ["round", ["/", ["get", "ppy_med"], 100]]], "백만"], ""], { "font-scale": 0.8 }],
+          "text-font": ["Noto Sans Bold"], "text-size": 13, "text-anchor": "center", "text-allow-overlap": false },
+        paint: { "text-color": dark ? "#e2e8f0" : "#1e3a8a", "text-halo-color": dark ? "#0f172a" : "#ffffff", "text-halo-width": 1.6 } });
+    }
+    fetch("data/districts.geojson").then((r) => r.json()).then((gj) => {
+      gj.features.forEach((f) => {
+        const t = (f.properties.top || [])[0]; if (!t) return;
+        const el = document.createElement("div"); el.className = "mk crown";
+        el.innerHTML = `<small>${esc(f.properties.name)} 대장</small><b>👑 ${esc(t.name.length > 10 ? t.name.slice(0, 10) + "…" : t.name)}</b><small>${t.latest ? fmtPrice(t.latest) + " · " + t.area + "㎡" : "평당 " + t.ppy.toLocaleString() + "만"}</small>`;
+        el.addEventListener("click", (ev) => { ev.stopPropagation(); openDetail(t.id, "half"); });
+        const m = new maplibregl.Marker({ element: el, anchor: "bottom", offset: [0, -4] }).setLngLat([t.lng, t.lat]).addTo(map);
+        state.crownMarkers.push(m);
+      });
+      applyCrowns();
+    }).catch(() => {});
+
     // 기피시설 (OSM + 인허가)
     map.addSource("nuisance", { type: "geojson", data: "data/nuisance.geojson" });
     map.addLayer({ id: "nz-line", type: "line", source: "nuisance", filter: ["==", ["geometry-type"], "LineString"], layout: { visibility: "none" },
@@ -148,6 +170,7 @@
       }))).then(() => map.getSource("roads").setData({ type: "FeatureCollection", features: roadTiles.feats }));
     });
   }
+  function applyCrowns() { const show = map.getZoom() < 13.3; state.crownMarkers.forEach((m) => m.getElement().style.display = show ? "" : "none"); }
   function applyLayers() {
     const v = (ids, on) => ids.forEach((id) => map.getLayer(id) && map.setLayoutProperty(id, "visibility", on ? "visible" : "none"));
     v(["school-fill", "school-line"], state.layers.school);
@@ -155,7 +178,7 @@
     v(["road-walk", "road-alley", "road-minor", "road-major", "road-major-far"], state.layers.road);
     v(["hillshade"], state.layers.terrain);
     v(["nz-line", "nz-point"], state.layers.nuisance);
-    if (map.getSource("dem")) { map.setTerrain(state.layers.terrain ? { source: "dem", exaggeration: 1.3 } : null); if (!state.layers.terrain && map.getPitch()) map.easeTo({ pitch: 0 }); }
+    if (map.getSource("dem")) { map.setTerrain(state.layers.terrain ? { source: "dem", exaggeration: 1.5 } : null); if (!state.layers.terrain && map.getPitch()) map.easeTo({ pitch: 0, bearing: 0 }); }
     $("#terrainLegend").hidden = !state.layers.terrain;
     if (state.layers.road) loadRoadTiles();
     $("#legend").hidden = !state.layers.road;
@@ -416,6 +439,13 @@
       .catch(() => toast("알림 등록에 실패했어요."));
   });
 
+  // ---------- 3D 기울이기 ----------
+  $("#tiltBtn").addEventListener("click", () => {
+    const on = map.getPitch() < 20;
+    map.easeTo({ pitch: on ? 58 : 0, bearing: on ? -15 : 0, duration: 800 });
+    $("#tiltBtn").textContent = on ? "↩ 평면으로" : "↗ 3D 기울이기";
+  });
+
   // ---------- 제보 모달 ----------
   function openReportModal(c, rep, done) {
     const m = $("#reportModal"), f = $("#reportForm");
@@ -485,7 +515,7 @@
   });
   map.on("click", () => { if (state.selected && innerWidth < 900) setSheet("peek"); });
   let zt = null;
-  map.on("zoomend", () => { clearTimeout(zt); zt = setTimeout(() => { renderMarkers(); applyLayers(); }, 60); });
+  map.on("zoomend", () => { clearTimeout(zt); zt = setTimeout(() => { renderMarkers(); applyLayers(); applyCrowns(); }, 60); });
   map.on("moveend", () => { clearTimeout(zt); zt = setTimeout(() => { renderMarkers(); if (!state.selected) renderList(); }, 60); });
 
   // ---------- boot ----------

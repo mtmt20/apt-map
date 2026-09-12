@@ -17,7 +17,7 @@
 <link rel="manifest" href="manifest.json">
 <link rel="stylesheet" href="vendor/maplibre-gl.css">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
-<link rel="stylesheet" href="style.css?v=36">
+<link rel="stylesheet" href="style.css?v=42">
 </head>
 <body>
 <div id="map"></div>
@@ -65,7 +65,7 @@
   <button class="lyr" id="locateBtn" title="내 위치"><span class="ico">📍</span><span>내위치</span></button>
 </nav>
 
-<div class="legend" id="terrainLegend" hidden style="top:auto;bottom:calc(var(--sheet-peek) + 12px)"><div>⛰️ 음영이 진할수록 경사·언덕. 두 손가락으로 기울이면 3D</div></div>
+<div class="legend" id="terrainLegend" hidden style="top:auto;bottom:calc(var(--sheet-peek) + 12px)"><div>⛰️ 음영이 진할수록 경사·언덕</div><button class="btn" id="tiltBtn" style="margin-top:6px;padding:7px 10px;font-size:12px;width:100%">↗ 3D 기울이기</button></div>
 <div class="legend" id="legend" hidden>
   <div><i class="l major"></i>큰길 (차 많음)</div>
   <div><i class="l minor"></i>동네길</div>
@@ -106,7 +106,7 @@
   </div>
 </div>
 <script src="config.js"></script>
-<script src="app.js?v=41"></script>
+<script src="app.js?v=42"></script>
 <script>if ("serviceWorker" in navigator && location.protocol === "https:") navigator.serviceWorker.register("sw.js").catch(() => {});</script>
 </body>
 </html>

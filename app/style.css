@@ -236,3 +236,8 @@ button { font: inherit; color: inherit; cursor: pointer; border: 0; background: 
 
 .alert-bar { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 12px; border-radius: 14px; background: rgba(37, 99, 235, .08); font-size: 13px; margin-bottom: 10px; }
 .flagBtn { font: inherit; font-size: 11px; color: var(--muted); background: none; border: 1px solid var(--line); border-radius: 6px; padding: 1px 6px; cursor: pointer; margin-left: 4px; }
+
+.mk.crown { background: #fff7ed; border-color: #f59e0b; }
+.mk.crown b { color: #b45309; }
+.mk.crown::after { background: #fff7ed; }
+@media (prefers-color-scheme: dark) { .mk.crown { background: #3b2f1a; } .mk.crown::after { background: #3b2f1a; } .mk.crown b { color: #fbbf24; } }
