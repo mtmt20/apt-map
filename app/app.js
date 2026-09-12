@@ -13,6 +13,17 @@
     layers: { school: true, road: false, auction: false },
   };
 
+  // ---------- API / 찜 ----------
+  const API = (window.APT_CONFIG && window.APT_CONFIG.API_BASE) || "";
+  const api = (path, opt) => API ? fetch(API + path, opt).then((r) => r.json()) : Promise.reject(new Error("no api"));
+  const favs = { ids: new Set(JSON.parse(localStorage.getItem("favs") || "[]")), code: localStorage.getItem("favCode") || "" };
+  function saveFavs() {
+    localStorage.setItem("favs", JSON.stringify([...favs.ids]));
+    if (favs.code) api("/favs", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ code: favs.code, ids: [...favs.ids] }) }).catch(() => {});
+  }
+  function toggleFav(id) { if (favs.ids.has(id)) favs.ids.delete(id); else favs.ids.add(id); saveFavs(); renderList(); $$(".fav").forEach((b) => { if (b.dataset.id === id) b.classList.toggle("on", favs.ids.has(id)); }); }
+  const favBtn = (id) => `<button class="fav ${favs.ids.has(id) ? "on" : ""}" data-id="${esc(id)}" title="찜" aria-label="찜">♥</button>`;
+
   // ---------- utils ----------
   const fmtPrice = (v) => v == null ? "-" : v >= 10000 ? (v / 10000).toFixed(v >= 100000 ? 0 : 1).replace(/\.0$/, "") + "억" : v.toLocaleString() + "만";
   const fmtChg = (v) => v == null ? "" : `<span class="chg ${v >= 0 ? "up" : "down"}">${v >= 0 ? "+" : ""}${v}%</span>`;
@@ -184,7 +195,7 @@
   // ---------- list ----------
   function visibleComplexes() {
     let list = state.complexes.filter((c) => areaMatch(c) && matchQ(c));
-    if (!state.q && map.getZoom() >= 12) {            // 검색어 없으면 지도 화면 안 단지만
+    if (!state.q && map.getZoom() >= 12 && state.sort !== "fav") {   // 검색어 없으면 지도 화면 안 단지만
       const bb = map.getBounds();
       list = list.filter((c) => c.lat > bb.getSouth() && c.lat < bb.getNorth() && c.lng > bb.getWest() && c.lng < bb.getEast());
     }
@@ -193,6 +204,7 @@
     else if (state.sort === "school") list = list.filter((c) => c.school.chopuma).sort((a, b) => a.school.elem_dist - b.school.elem_dist);
     else if (state.sort === "gap") list = list.filter((c) => c.jeonse_ratio).sort((a, b) => b.jeonse_ratio - a.jeonse_ratio);
     else if (state.sort === "edu") list = list.filter((c) => c.edu_score != null).sort((a, b) => b.edu_score - a.edu_score);
+    else if (state.sort === "fav") { list = state.complexes.filter((c) => favs.ids.has(c.id) && areaMatch(c)); }
     else list.sort((a, b) => b.trade_count_1y - a.trade_count_1y);
     return list.slice(0, 150);
   }
@@ -212,9 +224,9 @@
       return `<div class="card ${state.selected === c.id ? "sel" : ""}" data-id="${c.id}">
         <div><h3>${esc(c.name)}</h3><div class="sub">${esc(c.umd)} · ${c.households ? c.households.toLocaleString() + "세대 · " : ""}${c.built}년 · ${esc(c.station.name)} ${c.station.walk_min}분</div></div>
         <div class="price">${rep ? fmtPrice(rep.latest) : "-"}<small>${rep ? "전용 " + rep.area + "㎡ 실거래" : ""} ${fmtChg(c.chg_1y)}</small></div>
-        <div class="tags">${tags}</div></div>`;
-    }).join("") || `<div class="muted" style="padding:20px 4px">조건에 맞는 단지가 없어요.</div>`;
-    $$(".card", $("#list")).forEach((el) => el.addEventListener("click", () => openDetail(el.dataset.id, "full")));
+        <div class="tags">${tags}</div>${favBtn(c.id)}</div>`;
+    }).join("") || `<div class="muted" style="padding:20px 4px">${state.sort === "fav" ? "찜한 단지가 없어요. 카드의 ♥ 를 눌러보세요." : "조건에 맞는 단지가 없어요."}</div>`;
+    $$(".card", $("#list")).forEach((el) => el.addEventListener("click", (e) => { if (e.target.closest(".fav")) { e.stopPropagation(); toggleFav(el.dataset.id); return; } openDetail(el.dataset.id, "full"); }));
   }
 
   // ---------- detail ----------
@@ -269,7 +281,7 @@
       const age = new Date().getFullYear() - c.built;
       $("#detailView").innerHTML = `
         <div class="d-head"><button class="back" id="backBtn">‹</button>
-          <div><h2>${esc(c.name)}</h2><div class="sub">${esc(c.addr)}${c.households ? ` · <b>${c.households.toLocaleString()}세대</b>` : ""} · ${c.built}년 (${age}년차)${c.max_floor ? ` · 최고 ${c.max_floor}층` : ""}${c.dongs ? ` · ${c.dongs}개동` : ""}${c.far ? ` · 용적률 ${c.far}%` : ""}</div></div></div>
+          <div style="flex:1"><h2>${esc(c.name)} ${favBtn(c.id)}</h2><div class="sub">${esc(c.addr)}${c.households ? ` · <b>${c.households.toLocaleString()}세대</b>` : ""} · ${c.built}년 (${age}년차)${c.max_floor ? ` · 최고 ${c.max_floor}층` : ""}${c.dongs ? ` · ${c.dongs}개동` : ""}${c.far ? ` · 용적률 ${c.far}%` : ""}</div></div></div>
 
         <div class="section">
           <div class="atabs">${areas.map((a) => `<button class="atab ${bucket(a.area) === areaSel ? "on" : ""}" data-a="${bucket(a.area)}">${a.area}㎡ <span class="muted">${a.pyeong}평형</span></button>`).join("")}</div>
@@ -279,7 +291,7 @@
           ${ask ? `<div class="gapbar"><div class="lbl"><span>실거래 <b>${fmtPrice(rep.latest)}</b></span><span>호가 <b>${fmtPrice(Math.round(askLow))} ~ ${fmtPrice(Math.round(askHigh))}</b></span></div>
             <div class="bar"><span class="pin t" style="left:${pos(rep.latest)}"></span><span class="pin a" style="left:${pos(askLow)}"></span><span class="pin a" style="left:${pos(askHigh)}"></span></div>
             <div class="lbl"><span>호가가 실거래보다 <b class="${ask.gap_pct >= 0 ? "up" : "down"}">${ask.gap_pct >= 0 ? "+" : ""}${ask.gap_pct}%</b> 높음</span><span class="muted">${esc(ask.source)}</span></div></div>` : ""}
-          ${reports.length ? `<div class="note">내 제보 호가: ${reports.map((r) => fmtPrice(r.price) + " (" + r.date + ")").join(", ")}</div>` : ""}
+          <div id="communityReports"><div class="note">${API ? "제보 불러오는 중…" : "제보 서버 연결 전 (내 기기 저장)"}${reports.length ? " · 내 제보: " + reports.map((r) => fmtPrice(r.price) + " (" + r.date + ")").join(", ") : ""}</div></div>
           <div style="margin-top:12px">${chartSVG(c.trades, areaSel)}</div>
         </div>
 
@@ -332,14 +344,14 @@
       $("#backBtn").onclick = closeDetail;
       $$(".atab").forEach((b) => b.onclick = () => { areaSel = b.dataset.a; render(); });
       $("#roadBtn").onclick = () => { state.layers.road = true; applyLayers(); setSheet("peek"); map.flyTo({ center: [c.lng, c.lat], zoom: 16.5 }); };
-      $("#reportBtn").onclick = () => {
-        const v = prompt(`${c.name} ${rep.area}㎡ 호가를 억 단위로 입력 (예: 16.5)`);
-        const n = parseFloat(v); if (!n) return;
-        const all = JSON.parse(localStorage.getItem("askReports") || "{}");
-        (all[id] = all[id] || []).push({ price: Math.round(n * 10000), area: rep.area, date: new Date().toISOString().slice(0, 10) });
-        localStorage.setItem("askReports", JSON.stringify(all)); reports.push(all[id][all[id].length - 1]);
-        toast("제보 감사합니다. 검수 후 반영돼요."); render();
-      };
+      $$(".d-head .fav").forEach((b) => b.onclick = (e) => { e.stopPropagation(); toggleFav(id); });
+      $("#reportBtn").onclick = () => openReportModal(c, rep, () => render());
+      if (API) api(`/reports?id=${encodeURIComponent(id)}`).then((j) => {
+        const box = $("#communityReports"); if (!box) return;
+        const rs = j.reports || [];
+        box.innerHTML = rs.length ? `<div class="note" style="margin-top:10px">커뮤니티 제보 ${rs.length}건</div>` + rs.slice(0, 6).map((r) => `<div class="rep"><span><span class="k ${r.kind}">${r.kind === "deal" ? "실거래" : "호가"}</span>${r.area}㎡ <b>${fmtPrice(r.price)}</b>${r.note ? ` <span class="muted">· ${esc(r.note)}</span>` : ""}</span><span class="muted">${r.date}</span></div>`).join("")
+          : `<div class="note">아직 제보가 없어요. 첫 제보를 남겨주세요.</div>`;
+      }).catch(() => { const box = $("#communityReports"); if (box) box.innerHTML = `<div class="note">제보 서버에 연결하지 못했어요.</div>`; });
     }
     render();
     $("#listView").hidden = true; $("#detailView").hidden = false; $("#sheetBody").scrollTop = 0;
@@ -349,6 +361,40 @@
     state.selected = null; $("#detailView").hidden = true; $("#listView").hidden = false;
     renderMarkers(); renderList(); setSheet("half");
   }
+
+  // ---------- 제보 모달 ----------
+  function openReportModal(c, rep, done) {
+    const m = $("#reportModal"), f = $("#reportForm");
+    $("#reportTarget").textContent = `${c.name} · ${c.addr || c.umd}`;
+    $("#reportArea").innerHTML = (c.by_area || []).map((a) => `<option value="${a.area}" ${a.area === rep.area ? "selected" : ""}>${a.area}㎡</option>`).join("");
+    f.reset(); m.hidden = false; f.price.focus();
+    $("#reportCancel").onclick = () => { m.hidden = true; };
+    m.onclick = (e) => { if (e.target === m) m.hidden = true; };
+    f.onsubmit = (e) => {
+      e.preventDefault();
+      const price = Math.round(parseFloat(f.price.value) * 10000), area = parseFloat(f.area.value);
+      if (!price || price < 1000) return toast("가격을 억 단위로 입력해 주세요 (예: 16.5)");
+      const body = { id: c.id, name: c.name, area, price, kind: f.kind.value, note: f.note.value.trim(), hp: f.hp.value };
+      const local = () => { const all = JSON.parse(localStorage.getItem("askReports") || "{}"); (all[c.id] = all[c.id] || []).push({ price, area, date: new Date().toISOString().slice(0, 10) }); localStorage.setItem("askReports", JSON.stringify(all)); };
+      m.hidden = true;
+      if (!API) { local(); toast("제보를 이 기기에 저장했어요."); done(); return; }
+      api("/reports", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) })
+        .then((j) => { if (j.error) throw new Error(j.error); toast("제보 감사합니다! 바로 반영됐어요."); done(); })
+        .catch((err) => { local(); toast(String(err.message).includes("too many") ? "제보가 너무 많아요. 잠시 후 다시." : "서버 오류로 이 기기에만 저장했어요."); done(); });
+    };
+  }
+  // 찜 동기화 코드: ?fav=CODE 로 열면 그 코드의 찜을 불러오고 이후 자동 동기화. 칩을 더블클릭하면 공유 링크 생성
+  (function favSync() {
+    const q = new URLSearchParams(location.search).get("fav");
+    if (q) { favs.code = q.toUpperCase(); localStorage.setItem("favCode", favs.code); }
+    if (favs.code && API) api(`/favs?code=${favs.code}`).then((j) => { (j.ids || []).forEach((i) => favs.ids.add(i)); saveFavs(); renderList(); }).catch(() => {});
+  })();
+  $("#favChip").addEventListener("dblclick", () => {
+    if (!API) return toast("제보 서버 연결 후 사용할 수 있어요.");
+    if (!favs.code) { favs.code = Math.random().toString(36).slice(2, 8).toUpperCase(); localStorage.setItem("favCode", favs.code); saveFavs(); }
+    const link = `${location.origin}${location.pathname}?fav=${favs.code}`;
+    (navigator.clipboard ? navigator.clipboard.writeText(link) : Promise.reject()).then(() => toast("다른 기기용 링크를 복사했어요: " + favs.code)).catch(() => prompt("이 링크를 다른 기기에서 열면 찜이 동기화돼요", link));
+  });
 
   // ---------- sheet ----------
   const sheet = $("#sheet");

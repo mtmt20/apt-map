@@ -214,3 +214,22 @@ button { font: inherit; color: inherit; cursor: pointer; border: 0; background: 
   .legend { left: 446px; top: 20px; }
 }
 .maplibregl-ctrl-bottom-left, .maplibregl-ctrl-bottom-right { display: none; }
+
+/* ---------- 제보 모달 / 찜 ---------- */
+.modal { position: fixed; inset: 0; z-index: 50; background: rgba(15, 23, 42, .45); display: flex; align-items: flex-end; justify-content: center; }
+.modal-box { width: 100%; max-width: 480px; background: var(--bg); border-radius: 22px 22px 0 0; padding: 18px 18px calc(18px + env(safe-area-inset-bottom)); }
+@media (min-width: 900px) { .modal { align-items: center; } .modal-box { border-radius: 22px; } }
+.modal-box h3 { margin: 0 0 4px; font-size: 18px; }
+.modal-box form { display: grid; gap: 10px; margin-top: 12px; }
+.modal-box label { display: grid; gap: 4px; font-size: 12.5px; font-weight: 700; color: var(--muted); }
+.modal-box input, .modal-box select { font: inherit; font-size: 16px; padding: 10px 12px; border-radius: 12px; border: 1.5px solid var(--line); background: var(--bg2); color: var(--fg); }
+.modal-actions { display: flex; gap: 8px; margin-top: 4px; }
+.modal-actions .btn { flex: 1; }
+.fav { border: 0; background: none; font-size: 20px; line-height: 1; cursor: pointer; color: #cbd5e1; padding: 2px 4px; }
+.fav.on { color: #ef4444; }
+.card { position: relative; }
+.card .fav { position: absolute; right: 8px; bottom: 8px; }
+.rep { display: flex; justify-content: space-between; gap: 8px; padding: 7px 0; border-bottom: 1px solid var(--line); font-size: 13.5px; }
+.rep:last-child { border-bottom: 0; }
+.rep .k { font-size: 11px; font-weight: 800; padding: 2px 6px; border-radius: 6px; background: rgba(37, 99, 235, .12); color: var(--brand); margin-right: 6px; }
+.rep .k.deal { background: rgba(22, 163, 74, .12); color: var(--good); }
