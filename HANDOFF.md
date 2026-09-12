@@ -5,7 +5,7 @@
 ## 지금 작업 중 (끝나면 본인 줄 삭제)
 | 세션 | 시작 | 작업 | 만지는 파일 |
 |---|---|---|---|
-| 컴퓨터 | 2026-09-12 18:37 | 4단계 순차: 갱신 자동화 -> 공식 학구도 -> 제보 검수/피드 -> 가격변동 알림 | pipeline/refresh.py, worker/, app/ |
+| (비어 있음) | | | |
 
 
 ## 최근 업데이트
@@ -67,8 +67,17 @@
   앱: 제보 모달(호가/실거래·면적·가격·메모, 허니팟), 상세에 커뮤니티 제보 목록, ♥ 찜 + "내 찜" 칩, 칩 더블클릭 = 기기 간 동기화 링크(?fav=CODE).
   워커 재배포: `python pipeline/deploy_worker.py` (CLOUDFLARE_API_TOKEN). KV 에 테스트 제보 1건(id test-단지-1) 남아 있음 - 삭제 API 없음, 무해.
 
+- 2026-09-12 (컴퓨터 세션, 13차): 4단계 순차 진행 완료.
+  (1) **갱신 자동화**: `pipeline/refresh.py` (25개 구 실거래·전월세 이번달/지난달 재수집 -> 좌표 -> 편의시설 -> build -> pages -> 알림 -> deploy, `--full` 은 K-apt/NEIS/학교알리미까지).
+      Windows 작업 스케줄러 `JipkokMapRefresh` 매주 월 05:00 (로그인 상태에서만 실행, logs/scheduler.log). 드라이런 성공.
+  (2) **공식 학구도**: 학구도안내서비스 zip(초등 통학구역·중학교 학군·연계·학교위치, 2026-03-20) -> `build_schoolzones.py` (EPSG:5186 TM 역변환 직접 구현, DP 단순화) -> schoolzones_seoul.json.
+      서울 초등 학구 629(공동 67), 중학교 학군 46. 단지 6,808/6,809 이 공식 학구 안, 공동학구 162. 중학교는 소속 학군의 학교 목록(가까운 순)으로 표시.
+  (3) **제보 검수/피드**: 워커 /flag(신고 3회 자동 숨김), /admin/reports·/admin/delete (ADMIN_KEY 시크릿), app/feed.html(최근 제보), app/admin.html(관리자, noindex).
+  (4) **실거래 알림**: 워커 /alerts(이메일+찜 id), /alerts/unsub; `notify_alerts.py` 가 refresh 마다 새 거래 있으면 메일 (SMTP 설정은 위스키 .env 값 복사). 첫 실행은 기준일만 저장.
+  테스트 등록 test@example.com 1건 KV 에 남아 있음(발송 실패로 무해). KV 알림 삭제 API 없음.
+
 ## 진행 중 / 남은 작업
-0. 제보 검수/신고 기능, 제보 피드 페이지(/recent), 찜 단지 가격 변동 알림(이메일) 은 미구현
+0. 라이브 검증: 공식 학구/신고/알림 UI (배포 진행 중)
 0. 배포 자동화: 실거래 갱신(월 1회 이상) -> build -> pages -> deploy 를 한 스크립트로 (Windows 작업 스케줄러, 위스키 Airflow 와 무관)
 0-1. SEOUL_KEY 받으면 `python pipeline/fetch_seoul_apt.py` -> build (세대수 커버리지 178/519 -> 대부분 채워질 것, 주차대수)
 0-1. 다른 구 추가 절차: fetch_trades/fetch_rent --lawd, fetch_kapt --sgg, geocode.py, fetch_neis --gu, fetch_kakao_poi, (bbox 밖이면 fetch_roads/fetch_poi --bbox 확장), build

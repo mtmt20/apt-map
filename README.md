@@ -58,6 +58,13 @@ python pipeline/deploy_github_pages.py --owner <owner> --repo apt-map           
 ```
 단지 페이지는 `app/apt/<동>-<단지명>.html`, 앱 딥링크는 `index.html?id=<단지id>`.
 
+## 주기 갱신 (작업 스케줄러 JipkokMapRefresh, 매주 월 05:00)
+```bash
+python pipeline/refresh.py            # 주간: 실거래/전월세 갱신 -> 좌표 -> 편의시설 -> build -> pages -> 알림 -> deploy
+python pipeline/refresh.py --full     # 분기: K-apt, 학원(NEIS), 학교알리미까지
+python pipeline/build_schoolzones.py  # 학구도 zip 갱신 시 (data/raw/schoolzone/ 에 풀어둔 뒤)
+```
+
 ## 제보·찜 API (Cloudflare Worker)
 ```bash
 python pipeline/deploy_worker.py     # CLOUDFLARE_API_TOKEN 필요. worker/worker.js 업로드 + KV 바인딩 + app/config.js 갱신
