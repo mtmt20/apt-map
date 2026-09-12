@@ -140,6 +140,7 @@
     else if (state.sort === "chg") list.sort((a, b) => (b.chg_1y || 0) - (a.chg_1y || 0));
     else if (state.sort === "school") list = list.filter((c) => c.school.chopuma).sort((a, b) => a.school.elem_dist - b.school.elem_dist);
     else if (state.sort === "gap") list = list.filter((c) => c.jeonse_ratio).sort((a, b) => b.jeonse_ratio - a.jeonse_ratio);
+    else if (state.sort === "edu") list = list.filter((c) => c.edu_score != null).sort((a, b) => b.edu_score - a.edu_score);
     else list.sort((a, b) => b.trade_count_1y - a.trade_count_1y);
     return list;
   }
@@ -154,6 +155,7 @@
         ...c.cons.slice(0, 1).map((p) => `<span class="tag bad">${esc(p)}</span>`),
         ...(c.jeonse_ratio ? [`<span class="tag ${c.jeonse_ratio >= 90 ? "bad" : ""}">전세가율 ${c.jeonse_ratio}%</span>`] : []),
         ...(c.sale_type === "혼합" ? [`<span class="tag">분양·임대 혼합</span>`] : []),
+        ...(c.edu_score != null && c.edu_top_pct <= 30 ? [`<span class="tag school">학군 ${c.edu_score}점 · 상위 ${c.edu_top_pct}%</span>`] : []),
       ].join("");
       return `<div class="card ${state.selected === c.id ? "sel" : ""}" data-id="${c.id}">
         <div><h3>${esc(c.name)}</h3><div class="sub">${esc(c.umd)} · ${c.households ? c.households.toLocaleString() + "세대 · " : ""}${c.built}년 · ${esc(c.station.name)} ${c.station.walk_min}분</div></div>
@@ -229,6 +231,7 @@
           ${!c.pros.length && !c.cons.length ? `<div class="muted">특이사항 없음</div>` : ""}</div></div>
 
         <div class="section"><h4>배정 학군 <span class="r muted">${esc(state.meta.zone_note || "초등 통학구역 기준")}</span></h4>
+          ${c.edu_score != null ? `<div class="jrow" style="margin:0 0 12px"><span>학군 지수 <b>${c.edu_score}</b>/100</span><span>${esc(state.meta.area.split(" ").pop())} <b>${c.edu_rank}위</b> · 상위 ${c.edu_top_pct}%</span><span class="muted">학원 밀집 40 · 초등 전입 25 · 초등 증감 15 · 중학교 20</span></div>` : ""}
           <div class="school-hero"><div class="ic">🏫</div><div><b>${esc(c.school.elem)}</b><div class="n">도보 ${c.school.elem_walk_min}분 (${c.school.elem_dist}m) ${c.school.chopuma ? "· <b style='color:#7c3aed'>초품아</b>" : ""}</div>
             ${c.school.elem_stats ? `<div class="n">학생 ${c.school.elem_stats.students.toLocaleString()}명${c.school.elem_stats.chg_pct != null ? ` (전년 ${fmtChg(c.school.elem_stats.chg_pct)})` : ""} · 학급당 ${c.school.elem_stats.class_size}명${c.school.elem_stats.net_move != null ? ` · 순전입 <b class="${c.school.elem_stats.net_move > 0 ? "up" : c.school.elem_stats.net_move < 0 ? "down" : ""}">${c.school.elem_stats.net_move > 0 ? "+" : ""}${c.school.elem_stats.net_move}명</b>` : ""}${c.school.elem_rank ? ` · 전입 선호 ${c.school.elem_rank[0]}위/${c.school.elem_rank[1]}` : ""}</div>` : ""}</div></div>
           ${c.edu ? `<div class="kv" style="margin-top:12px">

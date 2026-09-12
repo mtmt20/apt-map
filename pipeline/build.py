@@ -485,6 +485,45 @@ def main():
             if rk and rk[0] <= max(3, rk[1] // 5):
                 c["pros"].append("배정 초등 전입 선호도 상위 (권역 {}위/{})".format(rk[0], rk[1]))
             c["pros"], c["cons"] = c["pros"][:5], c["cons"][:5]
+    # 학군 지수 (0~100): 교과학원 밀집 40 + 초등 전입 선호 25 + 초등 학생 증감 15 + 중학교 규모/과밀 20
+    def pct_rank(vals, v, higher_better=True):
+        if not vals or v is None:
+            return None
+        below = sum(1 for x in vals if (x < v if higher_better else x > v))
+        return below / max(1, len(vals) - 1) * 100
+    ex_vals = [c["edu"]["exam_1km"] for c in cs if c.get("edu")]
+    nm_vals = [c["school"]["elem_stats"]["net_move_pct"] for c in cs if c["school"].get("elem_stats") and c["school"]["elem_stats"].get("net_move_pct") is not None]
+    ch_vals = [c["school"]["elem_stats"]["chg_pct"] for c in cs if c["school"].get("elem_stats") and c["school"]["elem_stats"].get("chg_pct") is not None]
+    def mid_score(c):
+        ms = [m["stats"] for m in c["school"].get("middle_detail", []) if m.get("stats")]
+        if not ms:
+            return None
+        # 학생 수 많고(선호) 학급당 적정(<=27)인 학교가 많을수록 높게
+        return sum(min(1.0, m["students"] / 700.0) * (1.0 if (m.get("class_size") or 0) <= 27 else 0.7) for m in ms) / len(ms) * 100
+    md_vals = [v for v in (mid_score(c) for c in cs) if v is not None]
+    scored = []
+    for c in cs:
+        st = c["school"].get("elem_stats") or {}
+        parts = [
+            (pct_rank(ex_vals, c["edu"]["exam_1km"]) if c.get("edu") else None, 0.40),
+            (pct_rank(nm_vals, st.get("net_move_pct")), 0.25),
+            (pct_rank(ch_vals, st.get("chg_pct")), 0.15),
+            (pct_rank(md_vals, mid_score(c)), 0.20),
+        ]
+        avail = [(v, w) for v, w in parts if v is not None]
+        if not avail:
+            c["edu_score"] = None
+            continue
+        c["edu_score"] = round(sum(v * w for v, w in avail) / sum(w for _, w in avail))
+        scored.append(c["edu_score"])
+    scored.sort(reverse=True)
+    for c in cs:
+        if c.get("edu_score") is not None:
+            c["edu_rank"] = scored.index(c["edu_score"]) + 1
+            c["edu_top_pct"] = max(1, int(round(c["edu_rank"] / len(scored) * 100)))
+            if c["edu_top_pct"] <= 10:
+                c["pros"].insert(0, "학군 지수 {} (구 상위 {}%)".format(c["edu_score"], c["edu_top_pct"]))
+                c["pros"] = c["pros"][:5]
     # 학원 밀집도 구내 백분위 (교과학원 기준)
     vals = sorted(c["edu"]["exam_1km"] for c in cs if c.get("edu"))
     for c in cs:
