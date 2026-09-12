@@ -77,7 +77,7 @@
   테스트 등록 test@example.com 1건 KV 에 남아 있음(발송 실패로 무해). KV 알림 삭제 API 없음.
 
 ## 진행 중 / 남은 작업
-0. 라이브 검증: 공식 학구/신고/알림 UI (배포 진행 중)
+0. (완료) 라이브 검증: 공식 학구·학교군·피드 확인. 학군 레이어 match 중복 라벨 오류·jrow float 겹침 수정 후 재배포.
 0. 배포 자동화: 실거래 갱신(월 1회 이상) -> build -> pages -> deploy 를 한 스크립트로 (Windows 작업 스케줄러, 위스키 Airflow 와 무관)
 0-1. SEOUL_KEY 받으면 `python pipeline/fetch_seoul_apt.py` -> build (세대수 커버리지 178/519 -> 대부분 채워질 것, 주차대수)
 0-1. 다른 구 추가 절차: fetch_trades/fetch_rent --lawd, fetch_kapt --sgg, geocode.py, fetch_neis --gu, fetch_kakao_poi, (bbox 밖이면 fetch_roads/fetch_poi --bbox 확장), build

@@ -65,7 +65,7 @@
 
   function addLayers() {
     // 학군
-    const names = state.schools.features.filter((f) => f.properties.kind === "zone").map((f) => f.properties.name);
+    const names = [...new Set(state.schools.features.filter((f) => f.properties.kind === "zone").map((f) => f.properties.name))];
     const matchExpr = ["match", ["get", "name"]];
     names.forEach((n, i) => matchExpr.push(n, PALETTE[i % PALETTE.length]));
     matchExpr.push("#94a3b8");
