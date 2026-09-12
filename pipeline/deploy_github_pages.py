@@ -73,8 +73,7 @@ def main():
         open(os.path.join(site, ".nojekyll"), "w").close()
         dom = os.environ.get("SITE_DOMAIN", "")
         if dom:
-            open(os.path.join(site, "CNAME"), "w").write(dom + "
-")
+            open(os.path.join(site, "CNAME"), "w").write(dom + chr(10))
         swp = os.path.join(site, "sw.js")
         if os.path.exists(swp):
             import time as _t
