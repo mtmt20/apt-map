@@ -160,8 +160,9 @@ button { font: inherit; color: inherit; cursor: pointer; border: 0; background: 
 .hero .big small { font-size: 13px; font-weight: 600; color: var(--muted); margin-left: 4px; letter-spacing: 0; }
 .hero .meta { text-align: right; font-size: 12.5px; color: var(--muted); }
 .hero .meta b { display: block; font-size: 15px; }
-.atabs { display: flex; gap: 6px; margin-bottom: 12px; }
-.atab { padding: 6px 11px; border-radius: 999px; background: var(--bg); font-size: 13px; font-weight: 700; }
+.atabs { display: flex; gap: 6px; margin-bottom: 12px; overflow-x: auto; scrollbar-width: none; padding-bottom: 2px; }
+.atabs::-webkit-scrollbar { display: none; }
+.atab { flex: 0 0 auto; white-space: nowrap; padding: 6px 11px; border-radius: 999px; background: var(--bg); font-size: 13px; font-weight: 700; }
 .atab.on { background: var(--brand); color: #fff; }
 .gapbar { margin-top: 12px; }
 .gapbar .bar { position: relative; height: 10px; border-radius: 5px; background: linear-gradient(90deg, #dbeafe, #fee2e2); margin: 8px 0 4px; }
