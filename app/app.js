@@ -152,7 +152,8 @@
         ...(c.school.chopuma ? [`<span class="tag school">초품아 ${esc(c.school.elem.replace("등학교", ""))}</span>`] : [`<span class="tag">${esc(c.school.elem.replace("등학교", ""))} ${c.school.elem_walk_min}분</span>`]),
         ...c.pros.slice(0, 2).filter((p) => !p.startsWith("초품아")).map((p) => `<span class="tag good">${esc(p)}</span>`),
         ...c.cons.slice(0, 1).map((p) => `<span class="tag bad">${esc(p)}</span>`),
-        ...(c.jeonse_ratio ? [`<span class="tag">전세가율 ${c.jeonse_ratio}%</span>`] : []),
+        ...(c.jeonse_ratio ? [`<span class="tag ${c.jeonse_ratio >= 90 ? "bad" : ""}">전세가율 ${c.jeonse_ratio}%</span>`] : []),
+        ...(c.sale_type === "혼합" ? [`<span class="tag">분양·임대 혼합</span>`] : []),
       ].join("");
       return `<div class="card ${state.selected === c.id ? "sel" : ""}" data-id="${c.id}">
         <div><h3>${esc(c.name)}</h3><div class="sub">${esc(c.umd)} · ${c.households ? c.households.toLocaleString() + "세대 · " : ""}${c.built}년 · ${esc(c.station.name)} ${c.station.walk_min}분</div></div>
@@ -207,12 +208,13 @@
       const age = new Date().getFullYear() - c.built;
       $("#detailView").innerHTML = `
         <div class="d-head"><button class="back" id="backBtn">‹</button>
-          <div><h2>${esc(c.name)}</h2><div class="sub">${esc(c.addr)}${c.households ? ` · <b>${c.households.toLocaleString()}세대</b>` : ""} · ${c.built}년 (${age}년차)${c.max_floor ? ` · 최고 ${c.max_floor}층` : ""}${c.far ? ` · 용적률 ${c.far}%` : ""}</div></div></div>
+          <div><h2>${esc(c.name)}</h2><div class="sub">${esc(c.addr)}${c.households ? ` · <b>${c.households.toLocaleString()}세대</b>` : ""} · ${c.built}년 (${age}년차)${c.max_floor ? ` · 최고 ${c.max_floor}층` : ""}${c.dongs ? ` · ${c.dongs}개동` : ""}${c.far ? ` · 용적률 ${c.far}%` : ""}</div></div></div>
 
         <div class="section">
           <div class="atabs">${areas.map((a) => `<button class="atab ${bucket(a.area) === areaSel ? "on" : ""}" data-a="${bucket(a.area)}">${a.area}㎡ <span class="muted">${a.pyeong}평형</span></button>`).join("")}</div>
           <div class="hero"><div class="big">${fmtPrice(rep.latest)}<small>최근 실거래 · ${rep.latest_date.slice(2).replace(/-/g, ".")}</small></div>
-            <div class="meta">평당 <b>${Math.round(rep.latest / (rep.area / PY)).toLocaleString()}만</b>1년 ${fmtChg(c.chg_1y)} · 거래 ${rep.count}건${rep.jeonse ? `<br>전세 <b>${fmtPrice(rep.jeonse)}</b> 전세가율 ${rep.jeonse_ratio}% · 갭 ${fmtPrice(rep.latest - rep.jeonse)}` : ""}</div></div>
+            <div class="meta">평당 <b>${Math.round(rep.latest / (rep.area / PY)).toLocaleString()}만</b>1년 ${fmtChg(c.chg_1y)} · 거래 ${rep.count}건</div></div>
+          ${rep.jeonse ? `<div class="jrow"><span>전세 <b>${fmtPrice(rep.jeonse)}</b></span><span>전세가율 <b class="${rep.jeonse_ratio >= 90 ? "up" : ""}">${rep.jeonse_ratio == null ? "-" : rep.jeonse_ratio + "%"}</b></span><span>갭 <b>${fmtPrice(rep.latest - rep.jeonse)}</b></span><span class="muted">최근 6개월 전세 ${rep.jeonse_n}건</span></div>` : ""}
           ${ask ? `<div class="gapbar"><div class="lbl"><span>실거래 <b>${fmtPrice(rep.latest)}</b></span><span>호가 <b>${fmtPrice(Math.round(askLow))} ~ ${fmtPrice(Math.round(askHigh))}</b></span></div>
             <div class="bar"><span class="pin t" style="left:${pos(rep.latest)}"></span><span class="pin a" style="left:${pos(askLow)}"></span><span class="pin a" style="left:${pos(askHigh)}"></span></div>
             <div class="lbl"><span>호가가 실거래보다 <b class="${ask.gap_pct >= 0 ? "up" : "down"}">${ask.gap_pct >= 0 ? "+" : ""}${ask.gap_pct}%</b> 높음</span><span class="muted">${esc(ask.source)}</span></div></div>` : ""}
@@ -223,6 +225,7 @@
         <div class="section"><h4>장단점 요약</h4><div class="plist">
           ${c.pros.map((p) => `<div class="row good"><i>+</i><span>${esc(p)}</span></div>`).join("")}
           ${c.cons.map((p) => `<div class="row bad"><i>−</i><span>${esc(p)}</span></div>`).join("")}
+          ${(c.notes || []).map((p) => `<div class="row info"><i>i</i><span>${esc(p)}</span></div>`).join("")}
           ${!c.pros.length && !c.cons.length ? `<div class="muted">특이사항 없음</div>` : ""}</div></div>
 
         <div class="section"><h4>배정 학군 <span class="r muted">${esc(state.meta.zone_note || "초등 통학구역 기준")}</span></h4>

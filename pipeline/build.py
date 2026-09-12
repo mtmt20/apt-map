@@ -216,6 +216,7 @@ def load_real_complexes():
             "max_floor": (k or {}).get("top_floor") or loc.get("max_floor", 0), "dongs": (k or {}).get("dongs", 0),
             "far": loc.get("far", 0), "areas": areas, "trades": sorted(g["trades"], key=lambda t: t["date"]),
             "rents": sorted(rent.get(key, []), key=lambda r: r["date"]),
+            "sale_type": (k or {}).get("sale_type", ""), "hall": (k or {}).get("hall", ""), "heat": (k or {}).get("heat", ""),
             "ask": None,
         })
     return out
@@ -270,9 +271,12 @@ def enrich(c, roads, today, stations, schools, zones):
             "latest": last3[-1]["price"], "latest_date": last3[-1]["date"],
             "avg_recent": int(statistics.mean(t["price"] for t in last3)), "count": len(ts),
             "jeonse": jeonse, "jeonse_n": len(js),
-            "jeonse_ratio": round(jeonse / last3[-1]["price"] * 100) if jeonse else None,
+            "jeonse_ratio": round(jeonse / statistics.median(t["price"] for t in last3) * 100) if jeonse and len(ts) >= 2 else None,
         })
     c["jeonse_ratio"] = next((b["jeonse_ratio"] for b in sorted(c["by_area"], key=lambda b: -b["count"]) if b["jeonse_ratio"]), None)
+    rents = c.get("rents", [])
+    c["rent_count_12m"] = sum(1 for r in rents if dt.date.fromisoformat(r["date"]) >= months_ago(today, 12))
+    c["rent_turnover"] = round(c["rent_count_12m"] / c["households"] * 100) if c.get("households") else None
     c.pop("rents", None)
 
     # 역
@@ -341,7 +345,21 @@ def enrich(c, roads, today, stations, schools, zones):
         pros.append("1년 평당가 +{}%".format(c["chg_1y"]))
     if c["trade_count_1y"] <= 3:
         cons.append("최근 1년 거래 {}건 (가격 확인 어려움)".format(c["trade_count_1y"]))
-    c["pros"], c["cons"] = pros[:4], cons[:4]
+    if c["jeonse_ratio"] and c["jeonse_ratio"] >= 90:
+        cons.append("전세가율 {}% (깡통전세 주의)".format(c["jeonse_ratio"]))
+    # 중립 정보 (사람들이 잘 모르는 것)
+    notes = []
+    if c.get("sale_type") == "혼합":
+        notes.append("분양·임대 혼합단지 (소셜믹스)")
+    elif c.get("sale_type") == "임대":
+        notes.append("임대 단지")
+    if c["rent_turnover"] is not None and c["rent_turnover"] >= 20:
+        notes.append("세입자 비중 높은 편 (1년 전월세 거래 {}건 = 세대수의 {}%)".format(c["rent_count_12m"], c["rent_turnover"]))
+    if c.get("hall") and c["hall"] != "계단식":
+        notes.append("{} 구조".format(c["hall"]))
+    if age >= 30:
+        notes.append("준공 30년 경과 (재건축 연한 충족)")
+    c["pros"], c["cons"], c["notes"] = pros[:4], cons[:4], notes[:4]
 
     # 호가 갭
     if c.get("ask") and c["ppy"]:

@@ -131,6 +131,9 @@ def main():
             "households": int(float(g("kaptdaCnt", "kaptdacnt") or 0)), "dongs": int(float(g("kaptDongCnt", "kaptdongcnt") or 0)),
             "top_floor": int(str(g("kaptTopFloor", "kapttopfloor") or 0).split(".")[0] or 0),
             "usedate": g("kaptUsedate", "kaptusedate"),
+            "sale_type": g("codeSaleNm", "codesalenm"),      # 분양 / 임대 / 혼합
+            "heat": g("codeHeatNm", "codeheatnm"),
+            "hall": g("codeHallNm", "codehallnm"),          # 계단식 / 복도식 / 혼합식
         }
         if (i + 1) % 25 == 0:
             json.dump(cache, open(OUT, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
