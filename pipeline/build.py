@@ -327,12 +327,21 @@ def enrich(c, roads, today, stations, schools, zones, middle=None, academies=Non
     y_ago = [t for t in tr if months_ago(today, 14) <= dt.date.fromisoformat(t["date"]) < months_ago(today, 10)]
     if len(y_ago) < 2:
         y_ago = tr[:5]
-    now_ppy, old_ppy = median_ppy(recent), median_ppy(y_ago)
+    now_ppy = median_ppy(recent)
     c["ppy"] = int(now_ppy) if now_ppy else None
-    # 두 구간이 겹치거나 표본이 적으면 변동률을 내지 않는다 (0% 로 오해 방지)
-    overlap = set(map(id, recent)) & set(map(id, y_ago))
-    reliable = now_ppy and old_ppy and not overlap and len(tr) >= 6
-    c["chg_1y"] = round((now_ppy / old_ppy - 1) * 100, 1) if reliable else None
+    # 1년 변동률: 같은 전용면적(정수 ㎡) 안에서 최근 3~6개월 vs 10~14개월 전 평당가 중앙값. 표본 많은 면적 우선.
+    def area_chg():
+        best = None
+        for a in sorted({int(t["area"]) for t in tr}):
+            ts = [t for t in tr if int(t["area"]) == a]
+            rec = [t for t in ts if dt.date.fromisoformat(t["date"]) >= months_ago(today, 6)]
+            old = [t for t in ts if months_ago(today, 15) <= dt.date.fromisoformat(t["date"]) < months_ago(today, 9)]
+            if len(rec) >= 2 and len(old) >= 2:
+                v = round((median_ppy(rec) / median_ppy(old) - 1) * 100, 1)
+                if best is None or len(ts) > best[0]:
+                    best = (len(ts), v)
+        return best[1] if best else None
+    c["chg_1y"] = area_chg()
     c["trade_count_1y"] = sum(1 for t in tr if dt.date.fromisoformat(t["date"]) >= months_ago(today, 12))
 
     # 평형별 최근가
