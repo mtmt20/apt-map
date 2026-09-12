@@ -86,7 +86,7 @@ def page_html(c, base, all_by_umd):
 <title>{t}</title><meta name="description" content="{d}"><link rel="canonical" href="{base}/apt/{slug}.html">
 <meta property="og:title" content="{t}"><meta property="og:description" content="{d}"><meta property="og:type" content="article"><meta property="og:url" content="{base}/apt/{slug}.html">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
-<script type="application/ld+json">{ld}</script><style>{css}</style></head><body><div class="wrap">
+<script type="application/ld+json">{ld}</script><link rel="stylesheet" href="page.css"></head><body><div class="wrap">
 <header class="top"><a class="logo" href="../index.html">🏠 집콕맵</a><a class="btn" href="../index.html?id={id}">지도에서 보기</a></header>
 <h1>{name}</h1><div class="sub">{addr} · {hh}{built}년 준공 ({age}년차){fl}{dong}</div>""".format(
         t=esc(title), d=esc(desc), base=base, slug=slug, ld=json.dumps(ld, ensure_ascii=False), css=CSS, id=esc(c["id"]), name=esc(c["name"]), addr=esc(c["addr"]),
@@ -165,7 +165,7 @@ def index_html(cs, base):
         by_gu.setdefault(c["sgg"], {}).setdefault(c["umd"], []).append(c)
     parts = ["""<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>서울 아파트 단지별 실거래가·전세가율·학군 목록 | 집콕맵</title><meta name="description" content="서울 {n}개 아파트 단지의 최근 실거래가, 전세가율, 배정 초등학교, 학원 밀집도, 장단점 요약을 단지별 페이지로 정리했습니다.">
-<link rel="canonical" href="{base}/apt/index.html"><link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css"><style>{css}</style></head><body><div class="wrap">
+<link rel="canonical" href="{base}/apt/index.html"><link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css"><link rel="stylesheet" href="page.css"></head><body><div class="wrap">
 <header class="top"><a class="logo" href="../index.html">🏠 집콕맵</a><a class="btn" href="../index.html">지도로 보기</a></header>
 <h1>단지별 실거래가·전세가율·학군</h1><div class="sub">서울 {n}개 단지 · {gus}</div>""".format(n=len(cs), base=base, css=CSS, gus=" · ".join(sorted(by_gu)))]
     for gu in sorted(by_gu):
@@ -193,6 +193,7 @@ def main():
     for f in os.listdir(out):
         if f.endswith(".html"):
             os.remove(os.path.join(out, f))
+    open(os.path.join(out, "page.css"), "w", encoding="utf-8").write(CSS)
     by_umd = {}
     for c in cs:
         by_umd.setdefault(c["umd"], []).append(c)

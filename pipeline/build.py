@@ -65,15 +65,44 @@ def seg_dist_m(lat, lng, a, b):
     return math.hypot(px - (ax + t * dx), py - (ay + t * dy))
 
 
+GRID = 0.01   # 약 1.1km 격자
+
+
+def grid_index(items, coords_of):
+    """items -> {(gx,gy): [item]} ; coords_of(item) 는 [(lng,lat),...]"""
+    idx = {}
+    for it in items:
+        for lng, lat in coords_of(it):
+            idx.setdefault((int(lng / GRID), int(lat / GRID)), set()).add(id(it))
+    byid = {id(it): it for it in items}
+    return {k: [byid[i] for i in v] for k, v in idx.items()}
+
+
+def grid_near(idx, lng, lat, r=1):
+    gx, gy = int(lng / GRID), int(lat / GRID)
+    out, seen = [], set()
+    for dx in range(-r, r + 1):
+        for dy in range(-r, r + 1):
+            for it in idx.get((gx + dx, gy + dy), ()):
+                if id(it) not in seen:
+                    seen.add(id(it))
+                    out.append(it)
+    return out
+
+
+_ROAD_IDX = {}
+_ACA_IDX = {}
+_SEOUL_IDX = {}
+
+
 def nearest_major_road(lat, lng, roads):
+    if id(roads) not in _ROAD_IDX:
+        _ROAD_IDX.clear()
+        _ROAD_IDX[id(roads)] = grid_index([f for f in roads if f["properties"]["class"] == "major"],
+                                          lambda f: f["geometry"]["coordinates"][:: max(1, len(f["geometry"]["coordinates"]) // 8)] + [f["geometry"]["coordinates"][-1]])
     best, name = 1e9, ""
-    for f in roads:
-        if f["properties"]["class"] != "major":
-            continue
+    for f in grid_near(_ROAD_IDX[id(roads)], lng, lat):
         cs = f["geometry"]["coordinates"]
-        # 대략 필터: bbox 300m 밖이면 스킵
-        if all(abs(c[1] - lat) > 0.003 or abs(c[0] - lng) > 0.004 for c in cs):
-            continue
         for i in range(len(cs) - 1):
             d = seg_dist_m(lat, lng, cs[i], cs[i + 1])
             if d < best:
@@ -251,8 +280,11 @@ def seoul_lookup(seoul, name, umd, lat, lng):
     import difflib
     key = _norm(name)
     best, best_s = None, 0.0
-    for r in seoul:
-        if not r["lat"] or abs(r["lat"] - lat) > 0.0025 or abs(r["lng"] - lng) > 0.003:
+    if id(seoul) not in _SEOUL_IDX:
+        _SEOUL_IDX.clear()
+        _SEOUL_IDX[id(seoul)] = grid_index([r for r in seoul if r["lat"]], lambda r: [(r["lng"], r["lat"])])
+    for r in grid_near(_SEOUL_IDX[id(seoul)], lng, lat):
+        if abs(r["lat"] - lat) > 0.0025 or abs(r["lng"] - lng) > 0.003:
             continue
         if dist_m(lat, lng, r["lat"], r["lng"]) > 200:
             continue
@@ -420,10 +452,12 @@ def enrich(c, roads, today, stations, schools, zones, middle=None, academies=Non
     }
     # 학원 밀집도 (반경 1km): 전체 / 입시·보습 교과
     if academies:
-        near = [x for x in academies if abs(x["lat"] - c["lat"]) < 0.0095 and abs(x["lng"] - c["lng"]) < 0.0115
-                and dist_m(c["lat"], c["lng"], x["lat"], x["lng"]) <= 1000]
-        c["edu"] = {"aca_1km": len(near), "exam_1km": sum(1 for x in near if "입시" in x.get("realm", "")),
-                    "art_1km": sum(1 for x in near if "예능" in x.get("realm", ""))}
+        if id(academies) not in _ACA_IDX:
+            _ACA_IDX.clear()
+            _ACA_IDX[id(academies)] = grid_index(academies, lambda x: [(x["lng"], x["lat"])])
+        near = [x for x in grid_near(_ACA_IDX[id(academies)], c["lng"], c["lat"]) if dist_m(c["lat"], c["lng"], x["lat"], x["lng"]) <= 1000]
+        c["edu"] = {"aca_1km": len(near), "exam_1km": sum(1 for x in near if "입시" in (x.get("realm") or "")),
+                    "art_1km": sum(1 for x in near if "예능" in (x.get("realm") or ""))}
     else:
         c["edu"] = None
 
@@ -630,9 +664,11 @@ def main():
         os.remove(os.path.join(cdir, f))
     summary = []
     for c in cs:
-        sm = {k: c.get(k) for k in SUMMARY_KEYS}
-        sm["pros"], sm["cons"], sm["notes"] = c["pros"][:3], c["cons"][:2], (c.get("notes") or [])[:1]
-        sm["by_area"] = [{k: a.get(k) for k in ("area", "pyeong", "latest", "latest_date", "count", "jeonse", "jeonse_ratio")} for a in c["by_area"]]
+        sm = {k: c.get(k) for k in SUMMARY_KEYS if k not in ("addr", "notes", "edu_rank")}
+        sm["lat"], sm["lng"] = round(c["lat"], 5), round(c["lng"], 5)
+        sm["pros"], sm["cons"] = c["pros"][:2], c["cons"][:1]
+        ba = sorted(c["by_area"], key=lambda a: -a["count"])[:3]
+        sm["by_area"] = [{k: a.get(k) for k in ("area", "latest", "latest_date", "count", "jeonse_ratio")} for a in sorted(ba, key=lambda a: a["area"])]
         sm["station"] = {k: c["station"][k] for k in ("name", "walk_min", "dist")}
         sm["school"] = {k: c["school"][k] for k in ("elem", "elem_walk_min", "chopuma")}
         summary.append(sm)
@@ -649,7 +685,7 @@ def main():
     dump("auctions.json", [a for a in aucs if "lat" in a])
     dump("meta.json", {
         "mode": mode, "built_at": dt.datetime.now().strftime("%Y-%m-%d %H:%M"),
-        "area": ("서울 " + "·".join(sorted({c["sgg"] for c in cs if c.get("sgg")}))) if mode == "real" else "서울 마포구 (공덕·아현·염리 데모)",
+        "area": (("서울 전체 ({}개 구)".format(len({c["sgg"] for c in cs})) if len({c["sgg"] for c in cs}) > 3 else "서울 " + "·".join(sorted({c["sgg"] for c in cs if c.get("sgg")}))) if mode == "real" else "서울 마포구 (공덕·아현·염리 데모)"),
         "complexes": len(cs), "roads": len(roads),
         "center": [round(sum(c["lng"] for c in cs) / len(cs), 5), round(sum(c["lat"] for c in cs) / len(cs), 5)],
         "zone_note": zone_note, "stations": len(stations), "schools": len(schools), "academies": len(academies),

@@ -22,6 +22,7 @@
     const t = document.createElement("div"); t.className = "toast"; t.textContent = msg; document.body.appendChild(t);
     setTimeout(() => t.remove(), 2200);
   }
+  const areaShort = () => (state.meta && state.meta.area.startsWith("서울 전체") ? "서울" : (state.meta ? state.meta.area.split(" ").pop() : ""));
   function repArea(c, area) {
     const list = c.by_area || [];
     if (area !== "all") return list.find((a) => bucket(a.area) === area) || null;
@@ -138,8 +139,10 @@
     const z = map.getZoom();
     const compact = z < 14.8;
     const W = compact ? 76 : 122, H = compact ? 40 : 54;   // 핀 대략 크기(px), 겹침 판정용
-    const byZoom = (c) => !((z < 13.2 && c.trade_count_1y < 20) || (z < 14 && c.trade_count_1y < 10) || (z < 14.8 && c.trade_count_1y < 4));
+    const byZoom = (c) => !(z < 11.8 || (z < 12.6 && c.trade_count_1y < 40) || (z < 13.2 && c.trade_count_1y < 20) || (z < 14 && c.trade_count_1y < 10) || (z < 14.8 && c.trade_count_1y < 4));
     const vw = map.getContainer().clientWidth, vh = map.getContainer().clientHeight;
+    const bb = map.getBounds(), pad = 0.15 * (bb.getNorth() - bb.getSouth());
+    const inView = (c) => c.lat > bb.getSouth() - pad && c.lat < bb.getNorth() + pad && c.lng > bb.getWest() - pad && c.lng < bb.getEast() + pad;
     // 우선순위: 선택된 단지 > 검색/필터 일치 > 거래 많은 순. 화면 안에서 서로 겹치면 뒤 순위를 숨김
     const order = state.complexes.slice().sort((a, b) =>
       ((b.id === state.selected) - (a.id === state.selected)) ||
@@ -149,6 +152,8 @@
     order.forEach((c) => {
       const rep = repArea(c, state.area);
       let m = state.markers[c.id];
+      const wanted = (byZoom(c) && inView(c)) || c.id === state.selected;
+      if (!wanted) { if (m) { m.remove(); delete state.markers[c.id]; } return; }   // 서울 전체 6천 개 DOM 방지
       if (!m) {
         const el = document.createElement("div"); el.className = "mk";
         el.addEventListener("click", (ev) => { ev.stopPropagation(); openDetail(c.id, "half"); });
@@ -174,22 +179,26 @@
         : `<small>${esc(c.name.length > 9 ? c.name.slice(0, 9) + "…" : c.name)}</small><b>${fmtPrice(rep.latest)}</b><small>${rep.area}㎡ ${fmtChg(c.chg_1y)}</small>`;
     });
   }
-  const matchQ = (c) => !state.q || (c.name + c.umd + c.addr).toLowerCase().includes(state.q.toLowerCase());
+  const matchQ = (c) => !state.q || (c.name + c.umd + (c.addr || "") + (c.sgg || "")).toLowerCase().includes(state.q.toLowerCase());
 
   // ---------- list ----------
   function visibleComplexes() {
     let list = state.complexes.filter((c) => areaMatch(c) && matchQ(c));
+    if (!state.q && map.getZoom() >= 12) {            // 검색어 없으면 지도 화면 안 단지만
+      const bb = map.getBounds();
+      list = list.filter((c) => c.lat > bb.getSouth() && c.lat < bb.getNorth() && c.lng > bb.getWest() && c.lng < bb.getEast());
+    }
     if (state.sort === "ppy") list.sort((a, b) => (b.ppy || 0) - (a.ppy || 0));
     else if (state.sort === "chg") list.sort((a, b) => (b.chg_1y || 0) - (a.chg_1y || 0));
     else if (state.sort === "school") list = list.filter((c) => c.school.chopuma).sort((a, b) => a.school.elem_dist - b.school.elem_dist);
     else if (state.sort === "gap") list = list.filter((c) => c.jeonse_ratio).sort((a, b) => b.jeonse_ratio - a.jeonse_ratio);
     else if (state.sort === "edu") list = list.filter((c) => c.edu_score != null).sort((a, b) => b.edu_score - a.edu_score);
     else list.sort((a, b) => b.trade_count_1y - a.trade_count_1y);
-    return list;
+    return list.slice(0, 150);
   }
   function renderList() {
     const list = visibleComplexes();
-    $("#listCount").textContent = `단지 ${list.length}개`;
+    $("#listCount").textContent = map.getZoom() >= 12 && !state.q ? `화면 안 단지 ${list.length}개` : `단지 ${list.length}개`;
     $("#list").innerHTML = list.map((c) => {
       const rep = repArea(c, state.area);
       const tags = [
@@ -281,11 +290,11 @@
           ${!c.pros.length && !c.cons.length ? `<div class="muted">특이사항 없음</div>` : ""}</div></div>
 
         <div class="section"><h4>배정 학군 <span class="r muted">${esc(state.meta.zone_note || "초등 통학구역 기준")}</span></h4>
-          ${c.edu_score != null ? `<div class="jrow" style="margin:0 0 12px"><span>학군 지수 <b>${c.edu_score}</b>/100</span><span>${esc(state.meta.area.split(" ").pop())} <b>${c.edu_rank}위</b> · 상위 ${c.edu_top_pct}%</span><span class="muted">학원 밀집 40 · 초등 전입 25 · 초등 증감 15 · 중학교 20</span></div>` : ""}
+          ${c.edu_score != null ? `<div class="jrow" style="margin:0 0 12px"><span>학군 지수 <b>${c.edu_score}</b>/100</span><span>${esc(areaShort())} <b>${c.edu_rank}위</b> · 상위 ${c.edu_top_pct}%</span><span class="muted">학원 밀집 40 · 초등 전입 25 · 초등 증감 15 · 중학교 20</span></div>` : ""}
           <div class="school-hero"><div class="ic">🏫</div><div><b>${esc(c.school.elem)}</b><div class="n">도보 ${c.school.elem_walk_min}분 (${c.school.elem_dist}m) ${c.school.chopuma ? "· <b style='color:#7c3aed'>초품아</b>" : ""}</div>
             ${c.school.elem_stats ? `<div class="n">학생 ${c.school.elem_stats.students.toLocaleString()}명${c.school.elem_stats.chg_pct != null ? ` (전년 ${fmtChg(c.school.elem_stats.chg_pct)})` : ""} · 학급당 ${c.school.elem_stats.class_size}명${c.school.elem_stats.net_move != null ? ` · 순전입 <b class="${c.school.elem_stats.net_move > 0 ? "up" : c.school.elem_stats.net_move < 0 ? "down" : ""}">${c.school.elem_stats.net_move > 0 ? "+" : ""}${c.school.elem_stats.net_move}명</b>` : ""}${c.school.elem_rank ? ` · 전입 선호 ${c.school.elem_rank[0]}위/${c.school.elem_rank[1]}` : ""}</div>` : ""}</div></div>
           ${c.edu ? `<div class="kv" style="margin-top:12px">
-            <div><div class="k">1km 내 교과학원</div><div class="v">${c.edu.exam_1km}개<small>${state.meta.area.split(" ").pop()} 상위 ${c.edu.exam_top_pct}%</small></div></div>
+            <div><div class="k">1km 내 교과학원</div><div class="v">${c.edu.exam_1km}개<small>${areaShort()} 상위 ${c.edu.exam_top_pct}%</small></div></div>
             <div><div class="k">1km 내 학원 전체</div><div class="v">${c.edu.aca_1km}개<small>예체능 ${c.edu.art_1km}</small></div></div></div>` : ""}
           <div class="mids">${(c.school.middle_detail && c.school.middle_detail.length ? c.school.middle_detail.map((m) => `<span class="tag">${esc(m.name)} <span class="muted">${m.dist}m${m.public === "사립" ? " · 사립" : ""}${m.coedu && m.coedu !== "남여공학" ? " · " + esc(m.coedu) : ""}${m.stats ? ` · ${m.stats.students}명 · 학급당 ${m.stats.class_size}` : ""}</span></span>`) : c.school.middle.map((m) => `<span class="tag">${esc(m)}</span>`)).join("")}</div>
           <div class="note">${esc(c.school.middle_note)}${c.school.elem_stats ? " · 학생 수·전출입은 학교알리미 " + c.school.elem_stats.year + "년 공시" : ""}</div></div>
@@ -377,7 +386,7 @@
   map.on("click", () => { if (state.selected && innerWidth < 900) setSheet("peek"); });
   let zt = null;
   map.on("zoomend", () => { clearTimeout(zt); zt = setTimeout(() => { renderMarkers(); applyLayers(); }, 60); });
-  map.on("moveend", () => { clearTimeout(zt); zt = setTimeout(renderMarkers, 60); });
+  map.on("moveend", () => { clearTimeout(zt); zt = setTimeout(() => { renderMarkers(); if (!state.selected) renderList(); }, 60); });
 
   // ---------- boot ----------
   Promise.all(["complexes", "auctions", "meta"].map((n) => fetch(`data/${n}.json`).then((r) => r.json())).concat(fetch("data/schools.geojson").then((r) => r.json())))
