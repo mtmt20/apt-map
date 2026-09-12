@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>집콕맵 · 실거래·학군·도로 한눈에</title>
+<meta name="description" content="아파트 실거래가와 호가, 배정 초등학교, 큰길·골목·인도, 경매 물건을 지도 한 장에서 확인하세요.">
+<meta name="theme-color" content="#0f172a">
+<link rel="manifest" href="manifest.json">
+<link rel="stylesheet" href="vendor/maplibre-gl.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
+<link rel="stylesheet" href="style.css?v=11">
+</head>
+<body>
+<div id="map"></div>
+
+<!-- 상단: 검색 + 필터 -->
+<header class="top">
+  <div class="search">
+    <svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M15.5 14h-.8l-.3-.3a6.5 6.5 0 1 0-.7.7l.3.3v.8l5 5 1.5-1.5-5-5zm-6 0a4.5 4.5 0 1 1 0-9 4.5 4.5 0 0 1 0 9z"/></svg>
+    <input id="q" type="search" placeholder="단지명, 동 이름 검색" autocomplete="off">
+    <span id="modeBadge" class="badge" hidden>데모</span>
+  </div>
+  <div class="chips" id="areaChips">
+    <button class="chip on" data-area="all">전체 평형</button>
+    <button class="chip" data-area="59">59㎡ · 20평대</button>
+    <button class="chip" data-area="84">84㎡ · 30평대</button>
+    <button class="chip" data-area="114">100㎡+</button>
+    <span class="sep"></span>
+    <button class="chip" data-sort="ppy">평당가순</button>
+    <button class="chip" data-sort="chg">상승률순</button>
+    <button class="chip" data-sort="school">초품아</button>
+  </div>
+</header>
+
+<!-- 우측: 레이어 토글 -->
+<nav class="layers">
+  <button class="lyr on" data-layer="school" title="배정 초등학교 통학구역">
+    <span class="ico">🏫</span><span>학군</span>
+  </button>
+  <button class="lyr" data-layer="road" title="큰길/골목/인도">
+    <span class="ico">🛣️</span><span>도로</span>
+  </button>
+  <button class="lyr" data-layer="auction" title="경매 물건">
+    <span class="ico">⚖️</span><span>경매</span>
+  </button>
+  <button class="lyr" id="locateBtn" title="내 위치"><span class="ico">📍</span><span>내위치</span></button>
+</nav>
+
+<div class="legend" id="legend" hidden>
+  <div><i class="l major"></i>큰길 (차 많음)</div>
+  <div><i class="l minor"></i>동네길</div>
+  <div><i class="l alley"></i>골목</div>
+  <div><i class="l walk"></i>인도 있음/추정</div>
+</div>
+
+<!-- 하단 시트 -->
+<section class="sheet" id="sheet" data-state="peek">
+  <div class="grip" id="grip"><span></span></div>
+  <div class="sheet-body" id="sheetBody">
+    <div id="listView">
+      <div class="list-head">
+        <strong id="listCount">단지 0개</strong>
+        <span id="areaLabel" class="muted">서울 마포구</span>
+      </div>
+      <div id="list" class="cards"></div>
+    </div>
+    <div id="detailView" hidden></div>
+  </div>
+</section>
+
+<script src="vendor/maplibre-gl.js"></script>
+<script src="app.js?v=11"></script>
+</body>
+</html>
