@@ -49,6 +49,13 @@ python pipeline/build.py
 ```
 `data/raw/geocode.json` 에 좌표가 없는 단지는 앱에 안 나온다. 세대수/최고층/용적률은 K-apt 공동주택 API 연동 전까지 0 (화면에서 숨김).
 
+## 정적 페이지 + 배포
+```bash
+python pipeline/generate_pages.py --base https://<owner>.github.io/apt-map   # app/apt/*.html, sitemap.xml, robots.txt
+python pipeline/deploy_github_pages.py --owner <owner> --repo apt-map           # GITHUB_TOKEN 필요, gh-pages 브랜치로 app/ 푸시 + Pages ON
+```
+단지 페이지는 `app/apt/<동>-<단지명>.html`, 앱 딥링크는 `index.html?id=<단지id>`.
+
 ## 데이터 출처 / 한계
 | 기능 | 현재 | 실서비스 계획 |
 |---|---|---|

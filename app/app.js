@@ -284,7 +284,8 @@
           <table class="tbl"><tr><th>계약일</th><th>평형</th><th>층</th><th class="r">가격</th></tr>
           ${c.trades.slice().reverse().slice(0, 12).map((t) => `<tr><td>${t.date.slice(2).replace(/-/g, ".")}</td><td>${Math.floor(t.area)}㎡</td><td>${t.floor}층</td><td class="r"><b>${fmtPrice(t.price)}</b></td></tr>`).join("")}</table></div>
 
-        <div style="margin-top:14px"><button class="btn" id="reportBtn">이 단지 호가 제보하기</button></div>
+        <div style="margin-top:14px"><button class="btn" id="reportBtn">이 단지 호가 제보하기</button>
+          <a class="btn ghost" style="margin-top:8px" href="apt/${encodeURIComponent(c.umd + "-" + c.name.replace(/[^0-9a-zA-Z가-힣]+/g, "-").replace(/^-|-$/g, "").toLowerCase())}.html">📄 단지 상세 페이지 (공유용)</a></div>
         <div class="disclaim">${state.meta.mode === "demo" ? "⚠️ 지금은 데모 데이터입니다. 단지 위치·세대수는 대략값, 가격은 시세 흐름을 흉내낸 생성값이며 학군 경계도 예시입니다. 국토교통부 실거래가 API 키를 연결하면 실데이터로 바뀝니다." : "실거래가: 국토교통부 실거래가 공개시스템 (신고 지연 최대 30일). 학군: 학구도안내서비스 기준, 실제 배정은 교육청 공지를 확인하세요."}</div>`;
 
       $("#backBtn").onclick = closeDetail;
@@ -354,6 +355,8 @@
       $("#areaLabel").textContent = meta.area;
       $("#gapChip").hidden = !complexes.some((c) => c.jeonse_ratio);
       if (meta.center) map.jumpTo({ center: meta.center, zoom: meta.mode === "real" ? 13.6 : 14.6 });
+      const deep = new URLSearchParams(location.search).get("id");   // 정적 페이지 -> 앱 딥링크
+      if (deep && complexes.some((c) => c.id === deep)) setTimeout(() => openDetail(deep, "half"), 400);
       // 리스트/마커는 지도 로드와 무관하게 바로, 레이어는 스타일 준비 후
       renderMarkers(); renderList(); setSheet(innerWidth < 900 ? "half" : "full");
       const tryAdd = () => { if (map.getSource("schools")) return; if (map.isStyleLoaded()) addLayers(); else setTimeout(tryAdd, 300); };
