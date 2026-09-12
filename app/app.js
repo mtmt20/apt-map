@@ -110,7 +110,18 @@
 
   // ---------- markers ----------
   function renderMarkers() {
-    state.complexes.forEach((c) => {
+    const z = map.getZoom();
+    const compact = z < 14.8;
+    const W = compact ? 76 : 122, H = compact ? 40 : 54;   // 핀 대략 크기(px), 겹침 판정용
+    const byZoom = (c) => !((z < 13.2 && c.trade_count_1y < 20) || (z < 14 && c.trade_count_1y < 10) || (z < 14.8 && c.trade_count_1y < 4));
+    const vw = map.getContainer().clientWidth, vh = map.getContainer().clientHeight;
+    // 우선순위: 선택된 단지 > 검색/필터 일치 > 거래 많은 순. 화면 안에서 서로 겹치면 뒤 순위를 숨김
+    const order = state.complexes.slice().sort((a, b) =>
+      ((b.id === state.selected) - (a.id === state.selected)) ||
+      ((areaMatch(b) && matchQ(b)) - (areaMatch(a) && matchQ(a))) ||
+      (b.trade_count_1y - a.trade_count_1y));
+    const boxes = [];
+    order.forEach((c) => {
       const rep = repArea(c, state.area);
       let m = state.markers[c.id];
       if (!m) {
@@ -119,9 +130,16 @@
         m = state.markers[c.id] = new maplibregl.Marker({ element: el, anchor: "bottom", offset: [0, -4] }).setLngLat([c.lng, c.lat]).addTo(map);
       }
       const el = m.getElement();
-      const z = map.getZoom();
-      const compact = z < 14.8;
-      el.style.display = (z < 13.2 && c.trade_count_1y < 20) || (z < 14 && c.trade_count_1y < 10) || (z < 14.8 && c.trade_count_1y < 4) ? "none" : "";
+      let show = byZoom(c) || c.id === state.selected;
+      if (show) {
+        const p = map.project([c.lng, c.lat]);
+        if (p.x > -W && p.x < vw + W && p.y > -H && p.y < vh + H) {
+          const box = { x: p.x - W / 2, y: p.y - H, x2: p.x + W / 2, y2: p.y };
+          const hit = boxes.some((b) => !(box.x2 < b.x || box.x > b.x2 || box.y2 < b.y || box.y > b.y2));
+          if (hit && c.id !== state.selected) show = false; else boxes.push(box);
+        }
+      }
+      el.style.display = show ? "" : "none";
       el.classList.toggle("compact", compact);
       const dim = !areaMatch(c) || (state.q && !matchQ(c));
       el.classList.toggle("dim", dim);
@@ -325,6 +343,7 @@
   map.on("click", () => { if (state.selected && innerWidth < 900) setSheet("peek"); });
   let zt = null;
   map.on("zoomend", () => { clearTimeout(zt); zt = setTimeout(() => { renderMarkers(); applyLayers(); }, 60); });
+  map.on("moveend", () => { clearTimeout(zt); zt = setTimeout(renderMarkers, 60); });
 
   // ---------- boot ----------
   Promise.all(["complexes", "auctions", "meta"].map((n) => fetch(`data/${n}.json`).then((r) => r.json())).concat(fetch("data/schools.geojson").then((r) => r.json())))
