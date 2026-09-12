@@ -13,11 +13,17 @@
   - 마포구 경계(fetch_boundary.py)로 이웃 구 오매칭 37개 제거. 역 48개/초등학교 97개(OSM), 초등 통학구역은 보로노이 추정
   - 앱: 데모 배지 자동 해제, 줌 낮을 땐 거래 많은 단지만 + 압축 핀, 변동률은 표본 부족 시 숨김
 
+- 2026-09-12 (컴퓨터 세션, 3차): 카카오맵 활성화됨 -> 285개 단지 전부 카카오 주소검색 좌표로 교체(`geocode.py --redo-osm`), 구 밖 0개.
+  전월세(fetch_rent.py)·K-apt 세대수(fetch_kapt.py) 수집기와 build/app 연동(전세가율·갭·전세가율순 정렬)은 코드만 준비, **사용자 활용신청 대기**.
+
 ## 진행 중 / 남은 작업
-0. **카카오 개발자 콘솔에서 앱(WhiskyHot) > 카카오맵 활성화** (사용자만 가능) -> `python pipeline/geocode.py` 로 미매칭 101개 좌표 채우기
-1. 세대수/최고층/용적률: K-apt 공동주택 기본정보 API (data.go.kr 활용신청 추가 필요) 붙이기
-2. OSM 이름 매칭 오류 검수 (같은 이름 단지가 다른 동에 있을 때) - 카카오 활성화되면 카카오 결과로 덮어쓰기
-3. 학구도안내서비스 통학구역 폴리곤 실데이터 붙이기 (지금은 최근접 학교 보로노이 추정)
+0. **사용자가 data.go.kr 에서 활용신청 3건** (자동승인, 같은 키 사용):
+   - 아파트 전월세 실거래가 https://www.data.go.kr/data/15126474/openapi.do -> `python pipeline/fetch_rent.py`
+   - 공동주택 단지 목록 https://www.data.go.kr/data/15057332/openapi.do 와 기본정보 https://www.data.go.kr/data/15058453/openapi.do -> `python pipeline/fetch_kapt.py`
+   - 이후 `python pipeline/build.py`. fetch_kapt.py 의 서비스 경로 후보가 전부 실패하면 data.go.kr 명세에서 실제 경로 확인해 LIST_URLS/BASIS_URLS 수정
+1. 학구도안내서비스 통학구역 폴리곤 실데이터 붙이기 (지금은 최근접 학교 보로노이 추정)
+2. 지도 핀 겹침 완화 (밀집 지역에서 라벨 충돌) - 심볼 레이어 전환 검토
+3. 용적률은 K-apt 에 없음 -> 건축물대장 API 또는 생략
 4. 경매 수집기 (법원경매정보) - 크롤링 난이도 높음, 우선순위 낮음
 5. 호가: KB시세 상하한으로 대체 -> 지역 중개사 제휴
 6. 배포: 위스키 사이트처럼 정적 호스팅 (S3/Cloudflare Pages), PWA 아이콘 추가

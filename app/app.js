@@ -139,6 +139,7 @@
     if (state.sort === "ppy") list.sort((a, b) => (b.ppy || 0) - (a.ppy || 0));
     else if (state.sort === "chg") list.sort((a, b) => (b.chg_1y || 0) - (a.chg_1y || 0));
     else if (state.sort === "school") list = list.filter((c) => c.school.chopuma).sort((a, b) => a.school.elem_dist - b.school.elem_dist);
+    else if (state.sort === "gap") list = list.filter((c) => c.jeonse_ratio).sort((a, b) => b.jeonse_ratio - a.jeonse_ratio);
     else list.sort((a, b) => b.trade_count_1y - a.trade_count_1y);
     return list;
   }
@@ -151,6 +152,7 @@
         ...(c.school.chopuma ? [`<span class="tag school">초품아 ${esc(c.school.elem.replace("등학교", ""))}</span>`] : [`<span class="tag">${esc(c.school.elem.replace("등학교", ""))} ${c.school.elem_walk_min}분</span>`]),
         ...c.pros.slice(0, 2).filter((p) => !p.startsWith("초품아")).map((p) => `<span class="tag good">${esc(p)}</span>`),
         ...c.cons.slice(0, 1).map((p) => `<span class="tag bad">${esc(p)}</span>`),
+        ...(c.jeonse_ratio ? [`<span class="tag">전세가율 ${c.jeonse_ratio}%</span>`] : []),
       ].join("");
       return `<div class="card ${state.selected === c.id ? "sel" : ""}" data-id="${c.id}">
         <div><h3>${esc(c.name)}</h3><div class="sub">${esc(c.umd)} · ${c.households ? c.households.toLocaleString() + "세대 · " : ""}${c.built}년 · ${esc(c.station.name)} ${c.station.walk_min}분</div></div>
@@ -210,7 +212,7 @@
         <div class="section">
           <div class="atabs">${areas.map((a) => `<button class="atab ${bucket(a.area) === areaSel ? "on" : ""}" data-a="${bucket(a.area)}">${a.area}㎡ <span class="muted">${a.pyeong}평형</span></button>`).join("")}</div>
           <div class="hero"><div class="big">${fmtPrice(rep.latest)}<small>최근 실거래 · ${rep.latest_date.slice(2).replace(/-/g, ".")}</small></div>
-            <div class="meta">평당 <b>${Math.round(rep.latest / (rep.area / PY)).toLocaleString()}만</b>1년 ${fmtChg(c.chg_1y)} · 거래 ${rep.count}건</div></div>
+            <div class="meta">평당 <b>${Math.round(rep.latest / (rep.area / PY)).toLocaleString()}만</b>1년 ${fmtChg(c.chg_1y)} · 거래 ${rep.count}건${rep.jeonse ? `<br>전세 <b>${fmtPrice(rep.jeonse)}</b> 전세가율 ${rep.jeonse_ratio}% · 갭 ${fmtPrice(rep.latest - rep.jeonse)}` : ""}</div></div>
           ${ask ? `<div class="gapbar"><div class="lbl"><span>실거래 <b>${fmtPrice(rep.latest)}</b></span><span>호가 <b>${fmtPrice(Math.round(askLow))} ~ ${fmtPrice(Math.round(askHigh))}</b></span></div>
             <div class="bar"><span class="pin t" style="left:${pos(rep.latest)}"></span><span class="pin a" style="left:${pos(askLow)}"></span><span class="pin a" style="left:${pos(askHigh)}"></span></div>
             <div class="lbl"><span>호가가 실거래보다 <b class="${ask.gap_pct >= 0 ? "up" : "down"}">${ask.gap_pct >= 0 ? "+" : ""}${ask.gap_pct}%</b> 높음</span><span class="muted">${esc(ask.source)}</span></div></div>` : ""}
@@ -312,6 +314,7 @@
       Object.assign(state, { complexes, auctions, meta, schools });
       if (meta.mode === "demo") { $("#modeBadge").hidden = false; $("#modeBadge").textContent = "데모 데이터"; }
       $("#areaLabel").textContent = meta.area;
+      $("#gapChip").hidden = !complexes.some((c) => c.jeonse_ratio);
       if (meta.center) map.jumpTo({ center: meta.center, zoom: meta.mode === "real" ? 13.6 : 14.6 });
       // 리스트/마커는 지도 로드와 무관하게 바로, 레이어는 스타일 준비 후
       renderMarkers(); renderList(); setSheet(innerWidth < 900 ? "half" : "full");

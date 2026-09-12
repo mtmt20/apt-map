@@ -146,6 +146,47 @@ def load_poi():
     return d
 
 
+import re as _re
+_STRIP = _re.compile(r"(아파트|APT|apt|\(.*?\)|\s|·|-|_|,)")
+
+
+def _norm(n):
+    return _STRIP.sub("", n).lower()
+
+
+def load_kapt():
+    """K-apt 기본정보 (fetch_kapt.py). norm(name) -> [rec]"""
+    p = os.path.join(RAW, "kapt.json")
+    if not os.path.exists(p):
+        return {}
+    out = {}
+    for rec in json.load(open(p, encoding="utf-8")).values():
+        out.setdefault(rec["norm"], []).append(rec)
+    return out
+
+
+def kapt_lookup(kapt, apt, umd):
+    key = _norm(apt)
+    cands = kapt.get(key) or kapt.get(_norm(umd[:-1] + apt)) or []
+    if not cands:
+        for k, v in kapt.items():
+            if len(key) >= 4 and (key in k or k in key):
+                cands += v
+    for c in cands:
+        if umd and (umd in (c.get("addr") or "") or umd in (c.get("as3") or "")):
+            return c
+    return cands[0] if len(cands) == 1 else None
+
+
+def load_rent():
+    """전월세 raw (fetch_rent.py). key -> [rows]"""
+    out = {}
+    for fp in glob.glob(os.path.join(RAW, "rent_*.json")):
+        for r in json.load(open(fp, encoding="utf-8")):
+            out.setdefault("{}|{}|{}".format(r["umd"], r["apt"], r["jibun"]), []).append(r)
+    return out
+
+
 # ---------- 데이터 소스 ----------
 def load_real_complexes():
     files = sorted(glob.glob(os.path.join(RAW, "trades_*.json")))
@@ -159,6 +200,7 @@ def load_real_complexes():
             key = "{}|{}|{}".format(r["umd"], r["apt"], r["jibun"])
             g = groups.setdefault(key, {"apt": r["apt"], "umd": r["umd"], "jibun": r["jibun"], "built": r["built"], "trades": []})
             g["trades"].append({"date": r["date"], "area": r["area"], "floor": r["floor"], "price": r["price"], "kind": r["kind"]})
+    kapt, rent = load_kapt(), load_rent()
     out = []
     for key, g in groups.items():
         loc = geo.get(key)
@@ -166,11 +208,14 @@ def load_real_complexes():
             continue                      # geocode.py 로 좌표를 먼저 채워야 함
         cid = key.lower().replace("|", "-").replace(" ", "")
         areas = sorted({t["area"] for t in g["trades"]})
+        k = kapt_lookup(kapt, g["apt"], g["umd"]) if kapt else None
         out.append({
             "id": cid, "name": g["apt"], "sgg": loc.get("sgg", ""), "umd": g["umd"], "jibun": g["jibun"],
             "addr": loc.get("addr", ""), "lat": loc["lat"], "lng": loc["lng"],
-            "households": loc.get("households", 0), "built": g["built"], "max_floor": loc.get("max_floor", 0),
+            "households": (k or {}).get("households") or loc.get("households", 0), "built": g["built"],
+            "max_floor": (k or {}).get("top_floor") or loc.get("max_floor", 0), "dongs": (k or {}).get("dongs", 0),
             "far": loc.get("far", 0), "areas": areas, "trades": sorted(g["trades"], key=lambda t: t["date"]),
+            "rents": sorted(rent.get(key, []), key=lambda r: r["date"]),
             "ask": None,
         })
     return out
@@ -217,11 +262,18 @@ def enrich(c, roads, today, stations, schools, zones):
     for a, ts in sorted(by_area.items()):
         ts.sort(key=lambda t: t["date"])
         last3 = ts[-3:]
+        js = [r["deposit"] for r in c.get("rents", []) if int(r["area"]) == a and r["monthly"] == 0
+              and dt.date.fromisoformat(r["date"]) >= months_ago(today, 6)]
+        jeonse = int(statistics.median(js)) if len(js) >= 2 else None
         c["by_area"].append({
             "area": a, "pyeong": round(a * 1.32 / PY),   # 공급면적 기준 평형(관행), 전용 84 -> 34평형
             "latest": last3[-1]["price"], "latest_date": last3[-1]["date"],
             "avg_recent": int(statistics.mean(t["price"] for t in last3)), "count": len(ts),
+            "jeonse": jeonse, "jeonse_n": len(js),
+            "jeonse_ratio": round(jeonse / last3[-1]["price"] * 100) if jeonse else None,
         })
+    c["jeonse_ratio"] = next((b["jeonse_ratio"] for b in sorted(c["by_area"], key=lambda b: -b["count"]) if b["jeonse_ratio"]), None)
+    c.pop("rents", None)
 
     # 역
     st = sorted(((dist_m(c["lat"], c["lng"], s["lat"], s["lng"]), s) for s in stations), key=lambda x: x[0])
