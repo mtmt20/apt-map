@@ -54,6 +54,12 @@
   재배포는 `python pipeline/build.py && python pipeline/generate_pages.py && python pipeline/deploy_github_pages.py`. 1년 변동률 평형별 계산으로 수정 완료.
   도메인은 위스키(whiskyhot.com)에 붙이지 않기로 (주제 분리). 유입 생기면 집콕맵 전용 도메인 구매 후 Cloudflare 연결.
 
+- 2026-09-12 (컴퓨터 세션, 11차, 진행 중): **서울 25개 구 확장 작업**. 실거래 24개월 136,533건 / 6,809개 단지 / K-apt 3,402개 수집 완료.
+  앱 구조 변경: complexes.json 은 요약만, 상세는 app/data/c/<id>.json 온디맨드; 도로는 app/data/roads/<r>_<c>.geojson 0.02도 타일(화면 걸친 것만) + roads_major.geojson(줌<13.5).
+  학교 좌표는 학교알리미 apiType 0(LTTUD/LGTUD)로 서울 전체 보강. 경계 25개 구, 역 317/초등 842(OSM).
+  생성물(app/data, app/apt)은 소스 저장소에서 제외(.gitignore) - gh-pages 로만 배포. 재빌드 시 반드시 build -> generate_pages -> deploy 순서.
+  카카오 호출은 타임아웃 재시도 추가 (fetch_kakao_poi, fetch_neis). 미완: 좌표 2차·편의시설 2차·학원 23개 구 진행 중.
+
 ## 진행 중 / 남은 작업
 0. 배포 자동화: 실거래 갱신(월 1회 이상) -> build -> pages -> deploy 를 한 스크립트로 (Windows 작업 스케줄러, 위스키 Airflow 와 무관)
 0-1. SEOUL_KEY 받으면 `python pipeline/fetch_seoul_apt.py` -> build (세대수 커버리지 178/519 -> 대부분 채워질 것, 주차대수)
