@@ -210,7 +210,7 @@
   }
   function renderList() {
     const list = visibleComplexes();
-    $("#listCount").textContent = map.getZoom() >= 12 && !state.q ? `화면 안 단지 ${list.length}개` : `단지 ${list.length}개`;
+    $("#listCount").textContent = state.sort === "fav" ? `찜한 단지 ${list.length}개` : (map.getZoom() >= 12 && !state.q ? `화면 안 단지 ${list.length}개` : `단지 ${list.length}개`);
     $("#list").innerHTML = list.map((c) => {
       const rep = repArea(c, state.area);
       const tags = [
