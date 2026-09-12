@@ -183,7 +183,7 @@ def index_html(cs, base):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--base", default="https://mtmt88087044.github.io/apt-map")
+    ap.add_argument("--base", default="https://mtmt88087044-pixel.github.io/apt-map")
     a = ap.parse_args()
     base = a.base.rstrip("/")
     cs = json.load(open(os.path.join(APP, "data", "complexes.json"), encoding="utf-8"))

@@ -32,7 +32,7 @@ def run(cmd, cwd=ROOT, env=None, check=True):
 def main():
     load_env()
     ap = argparse.ArgumentParser()
-    ap.add_argument("--owner", default="mtmt88087044")
+    ap.add_argument("--owner", default="mtmt88087044-pixel")
     ap.add_argument("--repo", default="apt-map")
     ap.add_argument("--no-source", action="store_true", help="master 소스는 푸시하지 않음")
     a = ap.parse_args()
