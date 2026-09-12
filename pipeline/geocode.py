@@ -44,6 +44,7 @@ def main():
     load_env()
     ap = argparse.ArgumentParser()
     ap.add_argument("--sgg", default="서울 마포구")
+    ap.add_argument("--redo-osm", action="store_true", help="OSM 이름매칭 좌표를 카카오 주소검색 결과로 덮어쓰기")
     a = ap.parse_args()
     key = os.environ.get("KAKAO_REST_API_KEY", "")
     if not key:
@@ -53,7 +54,7 @@ def main():
     for fp in glob.glob(os.path.join(RAW, "trades_*.json")):
         for r in json.load(open(fp, encoding="utf-8")):
             keys["{}|{}|{}".format(r["umd"], r["apt"], r["jibun"])] = r
-    todo = [k for k in keys if k not in geo]
+    todo = [k for k in keys if k not in geo or (a.redo_osm and geo[k].get("src", "").startswith("osm"))]
     print("단지 {}개 중 좌표 필요 {}개".format(len(keys), len(todo)))
     ok = fail = 0
     for i, k in enumerate(todo):
