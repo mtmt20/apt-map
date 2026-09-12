@@ -39,6 +39,7 @@
     <button class="chip" data-sort="chg">상승률순</button>
     <button class="chip" data-sort="fav" id="favChip">♥ 내 찜</button>
     <button class="chip" data-sort="edu">학군순</button>
+    <button class="chip" data-sort="up">상승신호</button>
     <button class="chip" data-sort="school">초품아</button>
     <button class="chip" data-sort="gap" id="gapChip" hidden>전세가율순</button>
   </div>
@@ -51,6 +52,9 @@
   </button>
   <button class="lyr" data-layer="road" title="큰길/골목/인도">
     <span class="ico">🛣️</span><span>도로</span>
+  </button>
+  <button class="lyr" data-layer="nuisance" title="기피·주의 시설">
+    <span class="ico">🚧</span><span>기피</span>
   </button>
   <button class="lyr" data-layer="terrain" title="지형 음영 (언덕·산)">
     <span class="ico">⛰️</span><span>지형</span>
@@ -102,7 +106,7 @@
   </div>
 </div>
 <script src="config.js"></script>
-<script src="app.js?v=39"></script>
+<script src="app.js?v=41"></script>
 <script>if ("serviceWorker" in navigator && location.protocol === "https:") navigator.serviceWorker.register("sw.js").catch(() => {});</script>
 </body>
 </html>

@@ -10,7 +10,7 @@
     complexes: [], auctions: [], schools: null, meta: null,
     area: "all", sort: null, q: "",
     selected: null, markers: {}, aucMarkers: [], schoolMarkers: [],
-    layers: { school: true, road: false, auction: false, terrain: false },
+    layers: { school: true, road: false, auction: false, terrain: false, nuisance: false },
   };
 
   // ---------- API / 찜 ----------
@@ -101,6 +101,15 @@
       paint: { "line-color": "#f97316", "line-width": z(3, 10), "line-opacity": 0.95 } });
     map.on("moveend", loadRoadTiles);
 
+    // 기피시설 (OSM + 인허가)
+    map.addSource("nuisance", { type: "geojson", data: "data/nuisance.geojson" });
+    map.addLayer({ id: "nz-line", type: "line", source: "nuisance", filter: ["==", ["geometry-type"], "LineString"], layout: { visibility: "none" },
+      paint: { "line-color": ["match", ["get", "kind"], "powerline", "#dc2626", "rail", "#6b7280", "#b45309"], "line-width": 2.5, "line-dasharray": [2, 1.5], "line-opacity": 0.85 } });
+    map.addLayer({ id: "nz-point", type: "circle", source: "nuisance", filter: ["==", ["geometry-type"], "Point"], layout: { visibility: "none" }, minzoom: 12,
+      paint: { "circle-radius": ["interpolate", ["linear"], ["zoom"], 12, 3, 16, 7], "circle-color": ["match", ["get", "kind"], "nightlife", "#db2777", "adult_biz", "#db2777", "motel", "#c026d3", "lodging", "#c026d3", "fuel", "#f59e0b", "substation", "#dc2626", "#7c2d12"], "circle-stroke-color": "#fff", "circle-stroke-width": 1.2, "circle-opacity": 0.9 } });
+    map.on("click", "nz-point", (e) => { const p = e.features[0].properties; toast(`${p.label}${p.name ? " · " + p.name : ""}`); });
+    map.on("click", "nz-line", (e) => { const p = e.features[0].properties; toast(`${p.label}${p.name ? " · " + p.name : ""}`); });
+
     // 지형 음영 (AWS Terrarium DEM, 키 불필요)
     map.addSource("dem", { type: "raster-dem", tiles: ["https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png"], encoding: "terrarium", tileSize: 256, maxzoom: 15, attribution: "Terrain: Mapzen/AWS" });
     map.addLayer({ id: "hillshade", type: "hillshade", source: "dem", layout: { visibility: "none" },
@@ -145,6 +154,7 @@
     state.schoolMarkers.forEach((m) => m.getElement().style.display = state.layers.school && map.getZoom() >= 14.3 ? "" : "none");
     v(["road-walk", "road-alley", "road-minor", "road-major", "road-major-far"], state.layers.road);
     v(["hillshade"], state.layers.terrain);
+    v(["nz-line", "nz-point"], state.layers.nuisance);
     if (map.getSource("dem")) { map.setTerrain(state.layers.terrain ? { source: "dem", exaggeration: 1.3 } : null); if (!state.layers.terrain && map.getPitch()) map.easeTo({ pitch: 0 }); }
     $("#terrainLegend").hidden = !state.layers.terrain;
     if (state.layers.road) loadRoadTiles();
@@ -213,6 +223,7 @@
     else if (state.sort === "gap") list = list.filter((c) => c.jeonse_ratio).sort((a, b) => b.jeonse_ratio - a.jeonse_ratio);
     else if (state.sort === "edu") list = list.filter((c) => c.edu_score != null).sort((a, b) => b.edu_score - a.edu_score);
     else if (state.sort === "fav") { list = state.complexes.filter((c) => favs.ids.has(c.id) && areaMatch(c)); }
+    else if (state.sort === "up") list = list.filter((c) => c.up_n).sort((a, b) => (b.up_n - b.risk_n) - (a.up_n - a.risk_n) || b.trade_count_1y - a.trade_count_1y);
     else list.sort((a, b) => b.trade_count_1y - a.trade_count_1y);
     return list.slice(0, 150);
   }
@@ -230,6 +241,9 @@
         ...(c.sale_type === "혼합" ? [`<span class="tag">분양·임대 혼합</span>`] : []),
         ...(c.edu_score != null && c.edu_top_pct <= 30 ? [`<span class="tag school">학군 ${c.edu_score}점 · 상위 ${c.edu_top_pct}%</span>`] : []),
         ...(c.terrain && c.terrain.station_dh != null && c.terrain.station_dh >= 30 ? [`<span class="tag bad">언덕 +${c.terrain.station_dh}m</span>`] : []),
+        ...(c.nz ? [`<span class="tag bad">기피시설 ${c.nz}</span>`] : []),
+        ...(c.risk_n ? [`<span class="tag bad">위험 신호 ${c.risk_n}</span>`] : []),
+        ...(c.up_n ? [`<span class="tag good">상승 신호 ${c.up_n}</span>`] : []),
       ].join("");
       return `<div class="card ${state.selected === c.id ? "sel" : ""}" data-id="${c.id}">
         <div><h3>${esc(c.name)}</h3><div class="sub">${esc(c.umd)} · ${c.households ? c.households.toLocaleString() + "세대 · " : ""}${c.built}년 · ${esc(c.station.name)} ${c.station.walk_min}분</div></div>
@@ -305,6 +319,10 @@
           <div style="margin-top:12px">${chartSVG(c.trades, areaSel)}</div>
         </div>
 
+        ${c.signals && (c.signals.risk.length || c.signals.up.length) ? `<div class="section"><h4>위험 · 상승 신호 <span class="r muted">최근 24개월 실거래 기준</span></h4><div class="plist">
+          ${c.signals.up.map((p) => `<div class="row good"><i>↑</i><span>${esc(p)}</span></div>`).join("")}
+          ${c.signals.risk.map((p) => `<div class="row bad"><i>!</i><span>${esc(p)}</span></div>`).join("")}</div>
+          <div class="note">자동 계산 참고용이며 투자 판단의 근거가 아닙니다.</div></div>` : ""}
         <div class="section"><h4>장단점 요약</h4><div class="plist">
           ${c.pros.map((p) => `<div class="row good"><i>+</i><span>${esc(p)}</span></div>`).join("")}
           ${c.cons.map((p) => `<div class="row bad"><i>−</i><span>${esc(p)}</span></div>`).join("")}
@@ -336,6 +354,10 @@
           </div>
           <button class="btn ghost" style="margin-top:10px" id="roadBtn">🛣️ 지도에서 큰길·골목·인도 보기</button></div>
 
+        ${c.nuisance && Object.keys(c.nuisance).length ? `<div class="section"><h4>기피·주의 시설 <span class="r muted">가까운 순</span></h4>
+          ${Object.values(c.nuisance).sort((x, y) => x.dist - y.dist).slice(0, 8).map((v) => `<div class="rep"><span>${v.within ? "⚠️ " : ""}${esc(v.label)}${v.name ? ` <span class="muted">· ${esc(v.name)}</span>` : ""}</span><span class="${v.within ? "up" : "muted"}"><b>${v.dist >= 1000 ? (v.dist / 1000).toFixed(1) + "km" : v.dist + "m"}</b>${v.count > 1 ? ` · ${v.count}곳` : ""}</span></div>`).join("")}
+          <div class="note">⚠️ 는 종류별 기준 거리 안(변전소 300m, 유흥·모텔 200m, 송전선·철도 100m 등). 오픈스트리트맵·지방행정 인허가 자료 기준이라 누락이 있을 수 있어요.</div>
+          <button class="btn ghost" style="margin-top:10px" id="nzBtn">🚧 지도에서 기피시설 보기</button></div>` : ""}
         ${c.life ? `<div class="section"><h4>육아 · 생활 편의 <span class="r muted">단지 반경 기준</span></h4><div class="kv">
           <div><div class="k">어린이집·유치원 (700m)</div><div class="v">${c.life.daycare}곳</div></div>
           <div><div class="k">소아과 (1km)</div><div class="v">${c.life.pediatric}곳</div></div>
@@ -360,6 +382,7 @@
 
       $("#backBtn").onclick = closeDetail;
       $$(".atab").forEach((b) => b.onclick = () => { areaSel = b.dataset.a; render(); });
+      if ($("#nzBtn")) $("#nzBtn").onclick = () => { state.layers.nuisance = true; applyLayers(); setSheet("peek"); map.flyTo({ center: [c.lng, c.lat], zoom: 15.5 }); };
       $("#roadBtn").onclick = () => { state.layers.road = true; applyLayers(); setSheet("peek"); map.flyTo({ center: [c.lng, c.lat], zoom: 16.5 }); };
       $$(".d-head .fav").forEach((b) => b.onclick = (e) => { e.stopPropagation(); toggleFav(id); });
       $("#reportBtn").onclick = () => openReportModal(c, rep, () => render());

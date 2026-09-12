@@ -35,6 +35,7 @@ TERRAIN = None
 MIDDLE_ZONES_OFFICIAL = []
 HIGH_ZONES_OFFICIAL = []
 HIGH_SCHOOLS = {}
+NUISANCE = {}
 
 
 # ---------- geo utils ----------
@@ -239,6 +240,58 @@ def load_high_schools():
         if n in hs:
             hs[n]["adv"] = g
     return {n: h for n, h in hs.items() if h.get("lat")}
+
+
+NUISANCE_KINDS = {
+    "substation": ("변전소", 300), "powerline": ("고압 송전선", 100), "landfill": ("매립·소각·폐기물 시설", 1000),
+    "wastewater": ("하수·분뇨 처리장", 800), "crematorium": ("화장장·장례식장", 300), "prison": ("교도소·구치소", 500),
+    "military": ("군부대", 300), "fuel": ("주유소·충전소", 150), "nightlife": ("유흥·성인 업소", 200), "motel": ("모텔", 200),
+    "rail": ("지상 철도", 100), "motorway": ("고속도로·자동차전용도로", 150),
+    "adult_biz": ("유흥주점·단란주점", 200), "lodging": ("숙박업소", 200),
+}
+
+
+def load_nuisance():
+    """OSM + LOCALDATA 기피시설 -> {kind: {"points": [...], "lines": [...]}} + 격자 인덱스"""
+    out = {}
+    p = os.path.join(RAW, "nuisance_osm.json")
+    if os.path.exists(p):
+        for kind, items in json.load(open(p, encoding="utf-8")).items():
+            if items and "coords" in items[0]:
+                out[kind] = {"lines": items, "points": []}
+            else:
+                out[kind] = {"lines": [], "points": items}
+    p2 = os.path.join(RAW, "nuisance_localdata.json")
+    if os.path.exists(p2):
+        for kind, items in json.load(open(p2, encoding="utf-8")).items():
+            out[kind] = {"lines": [], "points": items}
+    for kind, d in out.items():
+        d["pidx"] = grid_index(d["points"], lambda x: [(x["lng"], x["lat"])])
+        d["lidx"] = grid_index(d["lines"], lambda l: l["coords"][:: max(1, len(l["coords"]) // 12)] + [l["coords"][-1]])
+    return out
+
+
+def nuisance_near(nz, lat, lng):
+    """단지 기준 종류별 최근접 거리(m)와 반경 내 개수"""
+    res = {}
+    for kind, d in nz.items():
+        label, radius = NUISANCE_KINDS.get(kind, (kind, 300))
+        best, cnt, name = None, 0, ""
+        for x in grid_near(d["pidx"], lng, lat):
+            dd = dist_m(lat, lng, x["lat"], x["lng"])
+            if dd <= radius:
+                cnt += 1
+            if best is None or dd < best:
+                best, name = dd, x.get("name", "")
+        for l in grid_near(d["lidx"], lng, lat):
+            cs = l["coords"]
+            for i in range(len(cs) - 1):
+                dd = seg_dist_m(lat, lng, cs[i], cs[i + 1])
+                if best is None or dd < best:
+                    best, name = dd, l.get("name", "")
+        if best is not None and best <= max(radius, 1000):
+            res[kind] = {"label": label, "dist": round(best), "count": cnt, "name": name, "radius": radius, "within": best <= radius}
+    return res
 
 
 def load_poi():
@@ -578,6 +631,57 @@ def enrich(c, roads, today, stations, schools, zones, middle=None, academies=Non
                             "station_dh": round(e0 - st_e) if st_e is not None else None,
                             "elem_dh": round(e0 - el_e) if el_e is not None else None}
 
+    # 기피시설
+    c["nuisance"] = nuisance_near(NUISANCE, c["lat"], c["lng"]) if NUISANCE else {}
+
+    # 위험·상승 신호 (자체 실거래/전월세 데이터)
+    age = today.year - c["built"]
+    sig = {"risk": [], "up": []}
+    by_a = {}
+    for t in tr:
+        by_a.setdefault(int(t["area"]), []).append(t)
+    main_area = max(by_a.items(), key=lambda kv: len(kv[1]))[0] if by_a else None
+    if main_area:
+        ts = sorted(by_a[main_area], key=lambda t: t["date"])
+        recent = [t for t in ts if dt.date.fromisoformat(t["date"]) >= months_ago(today, 6)]
+        peak = max(t["price"] for t in ts)
+        last = ts[-1]["price"]
+        # 신고가: 최근 6개월 거래가 이 평형 역대(24개월) 최고가
+        if recent and max(t["price"] for t in recent) >= peak and len(ts) >= 4:
+            sig["up"].append("최근 6개월 신고가 경신 ({}㎡ {:,}만)".format(main_area, peak))
+        # 하락: 최근가가 최고가 대비 -10% 이상
+        if len(ts) >= 4 and last <= peak * 0.9:
+            sig["risk"].append("{}㎡ 최근가가 최고가 대비 {:.0f}%".format(main_area, (last / peak - 1) * 100))
+    # 거래 절벽 / 거래 증가: 최근 6개월 vs 그 이전 12개월 월평균
+    r6 = sum(1 for t in tr if dt.date.fromisoformat(t["date"]) >= months_ago(today, 6))
+    p12 = sum(1 for t in tr if months_ago(today, 18) <= dt.date.fromisoformat(t["date"]) < months_ago(today, 6))
+    if p12 >= 6:
+        ratio = (r6 / 6.0) / (p12 / 12.0)
+        if ratio <= 0.4:
+            sig["risk"].append("거래 급감 (최근 6개월 월평균 {:.1f}건, 이전 {:.1f}건)".format(r6 / 6.0, p12 / 12.0))
+        elif ratio >= 1.8 and r6 >= 6:
+            sig["up"].append("거래 활발 (최근 6개월 월평균 {:.1f}건, 이전 {:.1f}건)".format(r6 / 6.0, p12 / 12.0))
+    # 환금성
+    if c.get("households") and c["households"] < 300 and c["trade_count_1y"] <= 3:
+        sig["risk"].append("환금성 낮음 (소규모 {}세대, 1년 거래 {}건)".format(c["households"], c["trade_count_1y"]))
+    # 노후 + 주차
+    if age >= 25 and c.get("parking_per_hh") and c["parking_per_hh"] < 0.7:
+        sig["risk"].append("노후 {}년차 + 세대당 주차 {}대".format(age, c["parking_per_hh"]))
+    # 깡통
+    if c["jeonse_ratio"] and c["jeonse_ratio"] >= 90:
+        sig["risk"].append("전세가율 {}% (깡통전세 위험)".format(c["jeonse_ratio"]))
+    # 갭 축소: 전세가율 70%↑ 이면서 최근 전세 상승
+    ba_main = next((b for b in c["by_area"] if b["area"] == main_area), None)
+    if ba_main and ba_main.get("jeonse_ratio") and 70 <= ba_main["jeonse_ratio"] < 90:
+        sig["up"].append("전세가율 {}% (갭 {})".format(ba_main["jeonse_ratio"], "{:.1f}억".format((ba_main["latest"] - ba_main["jeonse"]) / 10000)))
+    if c.get("school", {}).get("elem_stats", {}) and (c["school"]["elem_stats"].get("net_move_pct") or 0) >= 3:
+        sig["up"].append("배정 초등 순전입 +{}% (젊은 가족 유입)".format(c["school"]["elem_stats"]["net_move_pct"]))
+    if age >= 30 and (c.get("far") or 0) and c["far"] <= 200:
+        sig["up"].append("준공 30년↑ + 용적률 {}% (재건축 사업성 참고)".format(c["far"]))
+    elif age >= 30:
+        sig["up"].append("준공 30년↑ (재건축 연한 충족)")
+    c["signals"] = sig
+
     # 장단점
     age = today.year - c["built"]
     pros, cons = [], []
@@ -620,6 +724,14 @@ def enrich(c, roads, today, stations, schools, zones, middle=None, academies=Non
         cons.append("어린이집·유치원 700m 내 {}곳 (적음)".format(life["daycare"]))
     if life.get("pediatric") is not None and life["pediatric"] == 0:
         cons.append("1km 내 소아과 없음")
+    nz_hits = [v for v in c["nuisance"].values() if v["within"]]
+    nz_hits.sort(key=lambda v: v["dist"])
+    for v in nz_hits[:2]:
+        cons.append("{} {}m".format(v["label"], v["dist"]) + (" ({}곳)".format(v["count"]) if v["count"] > 1 else ""))
+    for x in c["signals"]["risk"][:1]:
+        cons.append(x)
+    for x in c["signals"]["up"][:1]:
+        pros.append(x)
     tr_ = c.get("terrain") or {}
     if tr_.get("station_dh") is not None and tr_["station_dh"] >= 30:
         cons.append("언덕 위 단지 (역보다 {}m 높음)".format(tr_["station_dh"]))
@@ -682,7 +794,8 @@ def main():
     middle, academies = (poi or {}).get("middle") or [], (poi or {}).get("academies") or []
     global MIDDLE_ZONES_OFFICIAL
     MIDDLE_ZONES_OFFICIAL = [(z, ring) for z in ((poi or {}).get("official") or {}).get("middle", []) for ring in z["rings"]]
-    global SCHOOL_STATS, TERRAIN, HIGH_ZONES_OFFICIAL, HIGH_SCHOOLS
+    global SCHOOL_STATS, TERRAIN, HIGH_ZONES_OFFICIAL, HIGH_SCHOOLS, NUISANCE
+    NUISANCE = load_nuisance() if real else {}
     HIGH_ZONES_OFFICIAL = [(z, ring) for z in ((poi or {}).get("official") or {}).get("high", []) for ring in z["rings"]]
     HIGH_SCHOOLS = load_high_schools() if real else {}
     SCHOOL_STATS = load_schoolinfo() if real else {}
@@ -795,6 +908,8 @@ def main():
         sm["station"] = {k: c["station"][k] for k in ("name", "walk_min", "dist")}
         if c.get("terrain"):
             sm["terrain"] = {k: c["terrain"].get(k) for k in ("elev", "station_dh", "slope_pct")}
+        sm["nz"] = sum(1 for v in c.get("nuisance", {}).values() if v["within"])
+        sm["risk_n"], sm["up_n"] = len(c["signals"]["risk"]), len(c["signals"]["up"])
         sm["school"] = {k: c["school"][k] for k in ("elem", "elem_walk_min", "chopuma")}
         summary.append(sm)
         json.dump(c, open(os.path.join(cdir, c["id"] + ".json"), "w", encoding="utf-8"), ensure_ascii=False, separators=(",", ":"))
@@ -807,6 +922,14 @@ def main():
         feats.append({"type": "Feature", "properties": {"name": sc["name"], "kind": "school"},
                       "geometry": {"type": "Point", "coordinates": [sc["lng"], sc["lat"]]}})
     dump("schools.geojson", {"type": "FeatureCollection", "features": feats})
+    nfeats = []
+    for kind, d in NUISANCE.items():
+        label = NUISANCE_KINDS.get(kind, (kind, 0))[0]
+        for x in d["points"]:
+            nfeats.append({"type": "Feature", "properties": {"kind": kind, "label": label, "name": x.get("name", "")}, "geometry": {"type": "Point", "coordinates": [x["lng"], x["lat"]]}})
+        for l in d["lines"]:
+            nfeats.append({"type": "Feature", "properties": {"kind": kind, "label": label, "name": l.get("name", "")}, "geometry": {"type": "LineString", "coordinates": l["coords"]}})
+    dump("nuisance.geojson", {"type": "FeatureCollection", "features": nfeats})
     dump("auctions.json", [a for a in aucs if "lat" in a])
     dump("meta.json", {
         "mode": mode, "built_at": dt.datetime.now().strftime("%Y-%m-%d %H:%M"),

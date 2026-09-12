@@ -154,6 +154,24 @@ def page_html(c, base, all_by_umd):
             parts.append('<div><div class="k">{}</div><div class="v">{}곳</div></div>'.format(lab, life.get(k, "-")))
     parts.append('</div></div>')
 
+    # 위험·상승 신호
+    sg = c.get("signals") or {}
+    if sg.get("risk") or sg.get("up"):
+        parts.append('<h2>위험 · 상승 신호</h2><div class="card"><ul class="plist">')
+        for x in sg.get("up", []):
+            parts.append('<li class="good"><i>↑</i><span>{}</span></li>'.format(esc(x)))
+        for x in sg.get("risk", []):
+            parts.append('<li class="bad"><i>!</i><span>{}</span></li>'.format(esc(x)))
+        parts.append('</ul><div class="note">최근 24개월 실거래·전월세로 자동 계산한 참고 지표입니다. 투자 판단의 근거가 아닙니다.</div></div>')
+
+    # 기피시설
+    nz = sorted((c.get("nuisance") or {}).values(), key=lambda v: v["dist"])
+    if nz:
+        parts.append('<h2>기피·주의 시설</h2><div class="card"><ul class="plist">')
+        for v in nz[:8]:
+            parts.append('<li class="{}"><i>{}</i><span>{}{} · {}{}</span></li>'.format("bad" if v["within"] else "info", "!" if v["within"] else "i", esc(v["label"]), (" (" + esc(v["name"]) + ")") if v.get("name") else "", "{:.1f}km".format(v["dist"] / 1000) if v["dist"] >= 1000 else "{}m".format(v["dist"]), " · {}곳".format(v["count"]) if v["count"] > 1 else ""))
+        parts.append('</ul><div class="note">오픈스트리트맵·지방행정 인허가 자료 기준. 누락·오류가 있을 수 있습니다.</div></div>')
+
     # 실거래 내역
     parts.append('<h2>최근 실거래 내역</h2><div class="card"><table><tr><th>계약일</th><th>전용</th><th>층</th><th class="r">가격</th></tr>')
     for t in trades:
