@@ -24,12 +24,14 @@ from fetch_trades import load_env, RAW  # noqa: E402
 
 OUT = os.path.join(RAW, "kapt.json")
 LIST_URLS = [
+    "https://apis.data.go.kr/1613000/AptListService4/getSigunguAptList4",
     "https://apis.data.go.kr/1613000/AptListService3/getSigunguAptList3",
     "https://apis.data.go.kr/1613000/AptListService3/getSigunguAptList",
     "https://apis.data.go.kr/1613000/AptListService2/getSigunguAptList",
     "http://apis.data.go.kr/1611000/AptListService/getSigunguAptList",
 ]
 BASIS_URLS = [
+    "https://apis.data.go.kr/1613000/AptBasisInfoServiceV5/getAphusBassInfoV5",
     "https://apis.data.go.kr/1613000/AptBasisInfoServiceV4/getAphusBassInfoV4",
     "https://apis.data.go.kr/1613000/AptBasisInfoServiceV3/getAphusBassInfoV3",
     "https://apis.data.go.kr/1613000/AptBasisInfoServiceV2/getAphusBassInfoV2",
@@ -47,13 +49,16 @@ def items(resp_text):
     t = resp_text.strip()
     if t.startswith("{"):
         j = json.loads(t)
+        hdr = j.get("OpenAPI_ServiceResponse", {}).get("cmmMsgHeader")
+        if hdr:
+            return [], 0, hdr.get("errMsg")
         body = (j.get("response") or {}).get("body") or {}
-        its = (body.get("items") or {})
-        if isinstance(its, dict):
-            its = its.get("item") or []
+        its = body.get("items") if body.get("items") is not None else body.get("item")
+        if isinstance(its, dict) and "item" in its:
+            its = its["item"]
         if isinstance(its, dict):
             its = [its]
-        return its, int(body.get("totalCount") or 0), None
+        return its or [], int(body.get("totalCount") or 0), None
     root = ET.fromstring(t)
     err = root.findtext(".//errMsg") or root.findtext(".//returnAuthMsg")
     if err:
@@ -68,10 +73,16 @@ def call(urls, key, params):
     last = None
     for url in urls:
         p = dict(params, serviceKey=key, _type="json")
-        try:
-            r = requests.get(url, params=p, timeout=30)
-        except Exception as e:  # noqa
-            last = "{} -> {}".format(url, e)
+        r = None
+        for attempt in range(3):
+            try:
+                r = requests.get(url, params=p, timeout=30)
+                if r.status_code < 500:
+                    break
+            except Exception as e:  # noqa
+                last = "{} -> {}".format(url, e)
+            time.sleep(1.5)
+        if r is None:
             continue
         if r.status_code == 200 and "NO_OPENAPI_SERVICE_ERROR" not in r.text and "SERVICE_KEY_IS_NOT_REGISTERED" not in r.text:
             its, total, err = items(r.text)
@@ -117,7 +128,7 @@ def main():
         cache[code] = {
             "name": name, "norm": norm(name), "bjd": it.get("bjdCode") or it.get("bjdcode") or "",
             "as3": it.get("as3") or "", "addr": g("kaptAddr", "kaptaddr"),
-            "households": int(g("kaptdaCnt", "kaptdacnt") or 0), "dongs": int(g("kaptDongCnt", "kaptdongcnt") or 0),
+            "households": int(float(g("kaptdaCnt", "kaptdacnt") or 0)), "dongs": int(float(g("kaptDongCnt", "kaptdongcnt") or 0)),
             "top_floor": int(str(g("kaptTopFloor", "kapttopfloor") or 0).split(".")[0] or 0),
             "usedate": g("kaptUsedate", "kaptusedate"),
         }

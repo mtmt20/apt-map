@@ -16,11 +16,11 @@
 - 2026-09-12 (컴퓨터 세션, 3차): 카카오맵 활성화됨 -> 285개 단지 전부 카카오 주소검색 좌표로 교체(`geocode.py --redo-osm`), 구 밖 0개.
   전월세(fetch_rent.py)·K-apt 세대수(fetch_kapt.py) 수집기와 build/app 연동(전세가율·갭·전세가율순 정렬)은 코드만 준비, **사용자 활용신청 대기**.
 
+- 2026-09-12 (컴퓨터 세션, 4차): 활용신청 3건 완료 -> 전월세 12개월 수집(전세가율 141개 단지), K-apt 142개 단지(세대수/동수/최고층) 수집.
+  K-apt 실제 경로는 `AptListService4/getSigunguAptList4`, `AptBasisInfoServiceV5/getAphusBassInfoV5` (data.go.kr 페이지에서 확인). 실거래 단지 285개 중 세대수 매칭 100개.
+
 ## 진행 중 / 남은 작업
-0. **사용자가 data.go.kr 에서 활용신청 3건** (자동승인, 같은 키 사용):
-   - 아파트 전월세 실거래가 https://www.data.go.kr/data/15126474/openapi.do -> `python pipeline/fetch_rent.py`
-   - 공동주택 단지 목록 https://www.data.go.kr/data/15057332/openapi.do 와 기본정보 https://www.data.go.kr/data/15058453/openapi.do -> `python pipeline/fetch_kapt.py`
-   - 이후 `python pipeline/build.py`. fetch_kapt.py 의 서비스 경로 후보가 전부 실패하면 data.go.kr 명세에서 실제 경로 확인해 LIST_URLS/BASIS_URLS 수정
+0. K-apt 이름 매칭 개선 (100/285): '래미안공덕5차' vs K-apt 표기 차이, 소규모 단지는 K-apt 자체에 없음(의무관리 대상만) -> 건축물대장 API 검토
 1. 학구도안내서비스 통학구역 폴리곤 실데이터 붙이기 (지금은 최근접 학교 보로노이 추정)
 2. 지도 핀 겹침 완화 (밀집 지역에서 라벨 충돌) - 심볼 레이어 전환 검토
 3. 용적률은 K-apt 에 없음 -> 건축물대장 API 또는 생략
