@@ -69,20 +69,25 @@
       state.schoolMarkers.push(new maplibregl.Marker({ element: el, anchor: "center" }).setLngLat(f.geometry.coordinates).addTo(map));
     });
 
-    // 도로
-    map.addSource("roads", { type: "geojson", data: "data/roads.geojson" });
+    // 도로: 큰길은 서울 전체 파일, 골목/동네길은 화면에 걸친 격자 타일만 로드
+    map.addSource("roads", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
+    map.addSource("roads-major", { type: "geojson", data: "data/roads_major.geojson" });
     const z = (a, b) => ["interpolate", ["linear"], ["zoom"], 13, a, 18, b];
     map.addLayer({ id: "road-walk", type: "line", source: "roads",
       filter: ["all", ["!=", ["get", "class"], "alley"], ["in", ["get", "sidewalk"], ["literal", ["yes", "likely"]]]],
       layout: { "line-cap": "round", "line-join": "round", visibility: "none" },
       paint: { "line-color": "#22c55e", "line-width": ["interpolate", ["linear"], ["zoom"], 13, ["case", ["==", ["get", "class"], "major"], 6, 4], 18, ["case", ["==", ["get", "class"], "major"], 15, 9]], "line-opacity": 0.85 } });
-    map.addLayer({ id: "road-alley", type: "line", source: "roads", filter: ["==", ["get", "class"], "alley"],
+    map.addLayer({ id: "road-alley", type: "line", source: "roads", filter: ["==", ["get", "class"], "alley"], minzoom: 14,
       layout: { visibility: "none" }, paint: { "line-color": dark ? "#475569" : "#cbd5e1", "line-width": z(1, 3), "line-dasharray": [2, 2] } });
-    map.addLayer({ id: "road-minor", type: "line", source: "roads", filter: ["==", ["get", "class"], "minor"],
+    map.addLayer({ id: "road-minor", type: "line", source: "roads", filter: ["==", ["get", "class"], "minor"], minzoom: 13.5,
       layout: { "line-cap": "round", visibility: "none" }, paint: { "line-color": "#94a3b8", "line-width": z(1.5, 5) } });
-    map.addLayer({ id: "road-major", type: "line", source: "roads", filter: ["==", ["get", "class"], "major"],
+    map.addLayer({ id: "road-major-far", type: "line", source: "roads-major", maxzoom: 13.5,
+      layout: { "line-cap": "round", "line-join": "round", visibility: "none" },
+      paint: { "line-color": "#f97316", "line-width": ["interpolate", ["linear"], ["zoom"], 10, 1, 13.5, 3], "line-opacity": 0.9 } });
+    map.addLayer({ id: "road-major", type: "line", source: "roads", filter: ["==", ["get", "class"], "major"], minzoom: 13.5,
       layout: { "line-cap": "round", "line-join": "round", visibility: "none" },
       paint: { "line-color": "#f97316", "line-width": z(3, 10), "line-opacity": 0.95 } });
+    map.on("moveend", loadRoadTiles);
     map.on("click", "road-major", (e) => { const p = e.features[0].properties; toast(`${p.name || "이름 없는 큰길"} · ${p.lanes ? p.lanes + "차로 · " : ""}인도 ${p.sidewalk === "yes" ? "있음" : "추정"}`); });
     map.on("click", "school-fill", (e) => { if (!e.originalEvent._mk) toast(`${e.features[0].properties.name} 통학구역 · ${e.features[0].properties.note || ""}`); });
     ["road-major", "school-fill"].forEach((id) => { map.on("mouseenter", id, () => map.getCanvas().style.cursor = "pointer"); map.on("mouseleave", id, () => map.getCanvas().style.cursor = ""); });
@@ -98,11 +103,31 @@
     applyLayers();
   }
 
+  const roadTiles = { loaded: new Set(), feats: [], seen: new Set(), index: null, T: 0.02 };
+  function loadRoadTiles() {
+    if (!state.layers.road || !map.getSource("roads") || map.getZoom() < 13.5) return;
+    const idx = roadTiles.index ? Promise.resolve(roadTiles.index) : fetch("data/roads/index.json").then((r) => r.json()).then((j) => { roadTiles.T = j.tile || 0.02; return (roadTiles.index = new Set(j.tiles)); }).catch(() => (roadTiles.index = new Set()));
+    idx.then((index) => {
+      const b = map.getBounds(), T = roadTiles.T, keys = [];
+      for (let r = Math.floor(b.getSouth() / T); r <= Math.floor(b.getNorth() / T); r++)
+        for (let c = Math.floor(b.getWest() / T); c <= Math.floor(b.getEast() / T); c++) keys.push(`${r}_${c}`);
+      const need = keys.filter((k) => !roadTiles.loaded.has(k) && index.has(k));
+      if (!need.length) return;
+      Promise.all(need.map((k) => fetch(`data/roads/${k}.geojson`).then((r) => (r.ok ? r.json() : null)).catch(() => null).then((gj) => {
+        roadTiles.loaded.add(k);
+        (gj ? gj.features : []).forEach((f) => {
+          const c = f.geometry.coordinates, id = `${c[0]}|${c[c.length - 1]}|${c.length}`;
+          if (!roadTiles.seen.has(id)) { roadTiles.seen.add(id); roadTiles.feats.push(f); }
+        });
+      }))).then(() => map.getSource("roads").setData({ type: "FeatureCollection", features: roadTiles.feats }));
+    });
+  }
   function applyLayers() {
     const v = (ids, on) => ids.forEach((id) => map.getLayer(id) && map.setLayoutProperty(id, "visibility", on ? "visible" : "none"));
     v(["school-fill", "school-line"], state.layers.school);
     state.schoolMarkers.forEach((m) => m.getElement().style.display = state.layers.school && map.getZoom() >= 14.3 ? "" : "none");
-    v(["road-walk", "road-alley", "road-minor", "road-major"], state.layers.road);
+    v(["road-walk", "road-alley", "road-minor", "road-major", "road-major-far"], state.layers.road);
+    if (state.layers.road) loadRoadTiles();
     $("#legend").hidden = !state.layers.road;
     state.aucMarkers.forEach((m) => state.layers.auction ? m.addTo(map) : m.remove());
     $$(".lyr[data-layer]").forEach((b) => b.classList.toggle("on", !!state.layers[b.dataset.layer]));
@@ -210,7 +235,14 @@
   }
 
   function openDetail(id, sheetState) {
-    const c = state.complexes.find((x) => x.id === id); if (!c) return;
+    const c0 = state.complexes.find((x) => x.id === id); if (!c0) return;
+    if (!c0.trades) {                       // 요약만 있으면 상세 파일을 받아 합친 뒤 렌더
+      state.selected = id; renderMarkers();
+      fetch(`data/c/${encodeURIComponent(id)}.json`).then((r) => r.json()).then((full) => { Object.assign(c0, full); openDetail(id, sheetState); })
+        .catch(() => toast("상세 정보를 불러오지 못했어요."));
+      return;
+    }
+    const c = c0;
     state.selected = id;
     renderMarkers();
     map.flyTo({ center: [c.lng, c.lat], zoom: Math.max(map.getZoom(), 15.2), offset: [0, innerWidth < 900 ? -innerHeight * 0.18 : 0], duration: 700 });

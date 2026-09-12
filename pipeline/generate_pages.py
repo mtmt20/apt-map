@@ -186,7 +186,8 @@ def main():
     ap.add_argument("--base", default="https://mtmt88087044-pixel.github.io/apt-map")
     a = ap.parse_args()
     base = a.base.rstrip("/")
-    cs = json.load(open(os.path.join(APP, "data", "complexes.json"), encoding="utf-8"))
+    cdir = os.path.join(APP, "data", "c")
+    cs = [json.load(open(os.path.join(cdir, f), encoding="utf-8")) for f in sorted(os.listdir(cdir)) if f.endswith(".json")]
     out = os.path.join(APP, "apt")
     os.makedirs(out, exist_ok=True)
     for f in os.listdir(out):

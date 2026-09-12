@@ -13,6 +13,7 @@ import datetime as dt
 import glob
 import json
 import math
+import re
 import os
 import statistics
 import sys
@@ -186,6 +187,22 @@ def load_poi():
         if ns.get("elem"):
             d["elem_schools"] = [{"name": x["name"], "lat": x["lat"], "lng": x["lng"], "public": x.get("public", "")} for x in ns["elem"]]
         d["middle"] = ns.get("middle", [])
+    # 학교알리미 학교기본정보(apiType 0)에 좌표가 있어 서울 전체 초·중학교를 여기서 보강 (없는 학교만 추가)
+    si = {}
+    for fp in glob.glob(os.path.join(RAW, "schools_neis_alimi.json")) + glob.glob(os.path.join(RAW, "schoolinfo", "0_0[23]_*_*.json")):
+        for r in json.load(open(fp, encoding="utf-8")):
+            try:
+                lat, lng = float(r.get("LTTUD") or 0), float(r.get("LGTUD") or 0)
+            except (TypeError, ValueError):
+                continue
+            if not lat or "분교" in r.get("SCHUL_NM", ""):
+                continue
+            si[(r["SCHUL_KND_SC_CODE"], r["SCHUL_NM"])] = {"name": r["SCHUL_NM"], "lat": lat, "lng": lng, "code": r.get("SCHUL_CODE", ""),
+                                                          "public": r.get("FOND_SC_CODE", ""), "coedu": {"남": "남", "여": "여"}.get(r.get("COEDU_SC_CODE", ""), "남여공학")}
+    have_e = {x["name"] for x in d["elem_schools"]}
+    have_m = {x["name"] for x in d["middle"]}
+    d["elem_schools"] += [v for (k, n), v in si.items() if k == "02" and n not in have_e]
+    d["middle"] += [v for (k, n), v in si.items() if k == "03" and n not in have_m]
     for ap_ in glob.glob(os.path.join(RAW, "academies*.json")):
         d["academies"] += json.load(open(ap_, encoding="utf-8"))
     d["zones"] = voronoi_zones(d["elem_schools"], d["bbox"])
@@ -278,7 +295,7 @@ def load_real_complexes():
         loc = geo.get(key)
         if not loc:
             continue                      # geocode.py 로 좌표를 먼저 채워야 함
-        cid = key.lower().replace("|", "-").replace(" ", "")
+        cid = re.sub(r'[\/:*?"<>|#%&\s]+', "-", key.lower()).strip("-")
         areas = sorted({t["area"] for t in g["trades"]})
         k = kapt_lookup(kapt, g["apt"], g["umd"]) if kapt else None
         sa = seoul_lookup(seoul, g["apt"], g["umd"], loc["lat"], loc["lng"]) if seoul else None
@@ -490,8 +507,14 @@ def enrich(c, roads, today, stations, schools, zones, middle=None, academies=Non
 
 def main():
     today = dt.date.today()
-    roads_path = os.path.join(OUT, "roads.geojson")
-    roads = json.load(open(roads_path, encoding="utf-8"))["features"] if os.path.exists(roads_path) else []
+    raw_roads = sorted(glob.glob(os.path.join(RAW, "roads_*.json")))
+    roads = []
+    if raw_roads:
+        for rp in raw_roads:
+            roads += [f for f in json.load(open(rp, encoding="utf-8"))["features"] if f["properties"]["class"] == "major"]
+    else:
+        roads_path = os.path.join(OUT, "roads.geojson")
+        roads = json.load(open(roads_path, encoding="utf-8"))["features"] if os.path.exists(roads_path) else []
 
     real = load_real_complexes()
     poi = load_poi() if real else None
@@ -598,7 +621,23 @@ def main():
 
     os.makedirs(OUT, exist_ok=True)
     dump = lambda name, obj: json.dump(obj, open(os.path.join(OUT, name), "w", encoding="utf-8"), ensure_ascii=False, separators=(",", ":"))
-    dump("complexes.json", cs)
+    # 요약(목록/핀용)은 complexes.json, 전체(거래내역 등)는 c/<id>.json 으로 분리 -> 서울 전체에서도 첫 로딩 가볍게
+    SUMMARY_KEYS = ("id", "name", "sgg", "umd", "addr", "lat", "lng", "households", "built", "ppy", "chg_1y", "trade_count_1y",
+                    "jeonse_ratio", "sale_type", "edu_score", "edu_top_pct", "edu_rank", "pros", "cons", "notes")
+    cdir = os.path.join(OUT, "c")
+    os.makedirs(cdir, exist_ok=True)
+    for f in os.listdir(cdir):
+        os.remove(os.path.join(cdir, f))
+    summary = []
+    for c in cs:
+        sm = {k: c.get(k) for k in SUMMARY_KEYS}
+        sm["pros"], sm["cons"], sm["notes"] = c["pros"][:3], c["cons"][:2], (c.get("notes") or [])[:1]
+        sm["by_area"] = [{k: a.get(k) for k in ("area", "pyeong", "latest", "latest_date", "count", "jeonse", "jeonse_ratio")} for a in c["by_area"]]
+        sm["station"] = {k: c["station"][k] for k in ("name", "walk_min", "dist")}
+        sm["school"] = {k: c["school"][k] for k in ("elem", "elem_walk_min", "chopuma")}
+        summary.append(sm)
+        json.dump(c, open(os.path.join(cdir, c["id"] + ".json"), "w", encoding="utf-8"), ensure_ascii=False, separators=(",", ":"))
+    dump("complexes.json", summary)
     feats = []
     for z in zones:
         feats.append({"type": "Feature", "properties": {"name": z["name"], "kind": "zone", "note": zone_note},
