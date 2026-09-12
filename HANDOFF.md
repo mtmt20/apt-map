@@ -60,6 +60,7 @@
   생성물(app/data, app/apt)은 소스 저장소에서 제외(.gitignore) - gh-pages 로만 배포. 재빌드 시 반드시 build -> generate_pages -> deploy 순서.
   카카오 호출은 타임아웃 재시도 추가 (fetch_kakao_poi, fetch_neis). 좌표 6,809 전부, 학원 24,037곳 완료. 편의시설(kakao_poi)은 2차 진행 중(약 2천/6.8천) - 끝나면 build+deploy 재실행 필요.
   서울 전체 빌드 1분, 페이지 6,809개(63MB, page.css 공용), 요약 JSON 4.5MB(gzip 전송). 페이지 파일명 = 단지 id.
+  **서울 전체 버전 배포 완료** (2026-09-12 17시대). 편의시설 2차 끝나면 `build.py -> generate_pages.py -> deploy_github_pages.py` 한 번 더.
 
 ## 진행 중 / 남은 작업
 0. 배포 자동화: 실거래 갱신(월 1회 이상) -> build -> pages -> deploy 를 한 스크립트로 (Windows 작업 스케줄러, 위스키 Airflow 와 무관)
