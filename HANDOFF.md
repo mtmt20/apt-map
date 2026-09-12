@@ -79,7 +79,7 @@
 ## 진행 중 / 남은 작업
 0. (완료) 라이브 검증: 공식 학구·학교군·피드 확인. 학군 레이어 match 중복 라벨 오류·jrow float 겹침 수정 후 재배포.
 0. 배포 자동화: 실거래 갱신(월 1회 이상) -> build -> pages -> deploy 를 한 스크립트로 (Windows 작업 스케줄러, 위스키 Airflow 와 무관)
-0-1. SEOUL_KEY 받으면 `python pipeline/fetch_seoul_apt.py` -> build (세대수 커버리지 178/519 -> 대부분 채워질 것, 주차대수)
+0-1. (완료 2026-09-12) SEOUL_KEY 발급 -> 서울시 공동주택 2,888개 수집·매칭. 세대수 3,227/6,809, 주차 2,328 (나머지는 서울시 목록에도 없는 소규모 단지). hh_type 임대+분양 -> 혼합 정규화.
 0-1. 다른 구 추가 절차: fetch_trades/fetch_rent --lawd, fetch_kapt --sgg, geocode.py, fetch_neis --gu, fetch_kakao_poi, (bbox 밖이면 fetch_roads/fetch_poi --bbox 확장), build
 0-1. 정확한 임대 세대수: 서울 열린데이터광장 공동주택 정보 조사
 1. K-apt 이름 매칭 개선 (100/285): '래미안공덕5차' vs K-apt 표기 차이, 소규모 단지는 K-apt 자체에 없음(의무관리 대상만) -> 건축물대장 API 검토
