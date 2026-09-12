@@ -5,10 +5,14 @@
 ## 구조
 ```
 pipeline/
-  fetch_trades.py   국토교통부 실거래가 API -> data/raw/  (DATA_GO_KR_KEY 필요)
-  fetch_roads.py    OSM Overpass -> app/data/roads.geojson (큰길/골목/인도 분류, 키 불필요)
-  demo_data.py      키 없을 때 쓰는 데모 단지·학군·경매 (마포구 공덕·아현·염리)
-  build.py          위 소스를 합쳐 app/data/*.json 생성 (평당가, 1년 변동, 배정초등, 역거리, 대로변 여부, 장단점 자동 요약)
+  fetch_trades.py    국토교통부 실거래가 API -> data/raw/trades_*.json  (DATA_GO_KR_KEY 필요)
+  fetch_roads.py     OSM Overpass -> app/data/roads.geojson (큰길/골목/인도 분류, 키 불필요)
+  fetch_poi.py       OSM Overpass -> data/raw/poi.json (지하철역, 초등학교 위치)
+  fetch_boundary.py  OSM 행정경계 -> data/raw/boundary_<구>.geojson (좌표 검증용)
+  geocode_osm.py     단지명 <-> OSM 아파트 매칭으로 좌표 채움 (키 불필요, 경계 밖 제외)
+  geocode.py         카카오 주소검색으로 나머지 좌표 채움 (KAKAO_REST_API_KEY + 카카오맵 서비스 활성화 필요)
+  demo_data.py       키 없을 때 쓰는 데모 단지·학군·경매 (마포구 공덕·아현·염리)
+  build.py           위 소스를 합쳐 app/data/*.json 생성 (평당가, 1년 변동, 배정초등(보로노이 추정), 역거리, 대로변 여부, 장단점 자동 요약)
 app/
   index.html, app.js, style.css   MapLibre GL 기반 지도 + 하단 시트 UI
   data/                           build.py 산출물
@@ -24,11 +28,16 @@ python -m http.server 8765 --directory app
 # -> http://localhost:8765
 ```
 
-## 실데이터로 전환
-1. 공공데이터포털에서 "국토교통부_아파트 매매 실거래가 자료" 활용신청 -> 인증키를 `.env`의 `DATA_GO_KR_KEY`에 저장
-2. `python pipeline/fetch_trades.py --lawd 11440 --months 24` (11440 = 마포구)
-3. 단지 좌표: `data/raw/geocode.json` 에 `"법정동|단지명|지번": {lat, lng, addr, households, max_floor, far}` 형태로 채우기 (카카오 주소검색 API로 자동화 예정)
-4. `python pipeline/build.py` -> meta.mode 가 `real` 로 바뀌고 앱의 "데모 데이터" 배지가 사라짐
+## 실데이터 갱신 순서 (마포구 기준)
+```bash
+python pipeline/fetch_trades.py --lawd 11440 --months 24   # 실거래 (지난달 캐시, 이번달만 재조회)
+python pipeline/fetch_boundary.py --name 마포구             # 최초 1회
+python pipeline/fetch_poi.py                                # 역/초등학교, 가끔
+python pipeline/geocode_osm.py                              # 새 단지 좌표 (OSM)
+python pipeline/geocode.py                                  # 나머지 좌표 (카카오, 서비스 활성화 후)
+python pipeline/build.py
+```
+`data/raw/geocode.json` 에 좌표가 없는 단지는 앱에 안 나온다. 세대수/최고층/용적률은 K-apt 공동주택 API 연동 전까지 0 (화면에서 숨김).
 
 ## 데이터 출처 / 한계
 | 기능 | 현재 | 실서비스 계획 |

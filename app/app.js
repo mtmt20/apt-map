@@ -84,7 +84,7 @@
       layout: { "line-cap": "round", "line-join": "round", visibility: "none" },
       paint: { "line-color": "#f97316", "line-width": z(3, 10), "line-opacity": 0.95 } });
     map.on("click", "road-major", (e) => { const p = e.features[0].properties; toast(`${p.name || "이름 없는 큰길"} · ${p.lanes ? p.lanes + "차로 · " : ""}인도 ${p.sidewalk === "yes" ? "있음" : "추정"}`); });
-    map.on("click", "school-fill", (e) => { if (!e.originalEvent._mk) toast(`${e.features[0].properties.name} 통학구역 (데모 경계)`); });
+    map.on("click", "school-fill", (e) => { if (!e.originalEvent._mk) toast(`${e.features[0].properties.name} 통학구역 · ${e.features[0].properties.note || ""}`); });
     ["road-major", "school-fill"].forEach((id) => { map.on("mouseenter", id, () => map.getCanvas().style.cursor = "pointer"); map.on("mouseleave", id, () => map.getCanvas().style.cursor = ""); });
 
     // 경매
@@ -101,7 +101,7 @@
   function applyLayers() {
     const v = (ids, on) => ids.forEach((id) => map.getLayer(id) && map.setLayoutProperty(id, "visibility", on ? "visible" : "none"));
     v(["school-fill", "school-line"], state.layers.school);
-    state.schoolMarkers.forEach((m) => m.getElement().style.display = state.layers.school ? "" : "none");
+    state.schoolMarkers.forEach((m) => m.getElement().style.display = state.layers.school && map.getZoom() >= 14.3 ? "" : "none");
     v(["road-walk", "road-alley", "road-minor", "road-major"], state.layers.road);
     $("#legend").hidden = !state.layers.road;
     state.aucMarkers.forEach((m) => state.layers.auction ? m.addTo(map) : m.remove());
@@ -119,12 +119,16 @@
         m = state.markers[c.id] = new maplibregl.Marker({ element: el, anchor: "bottom", offset: [0, -4] }).setLngLat([c.lng, c.lat]).addTo(map);
       }
       const el = m.getElement();
+      const z = map.getZoom();
+      const compact = z < 14.8;
+      el.style.display = (z < 13.2 && c.trade_count_1y < 20) || (z < 14 && c.trade_count_1y < 10) || (z < 14.8 && c.trade_count_1y < 4) ? "none" : "";
+      el.classList.toggle("compact", compact);
       const dim = !areaMatch(c) || (state.q && !matchQ(c));
       el.classList.toggle("dim", dim);
       el.classList.toggle("sel", state.selected === c.id);
-      el.innerHTML = rep
-        ? `<small>${esc(c.name.length > 9 ? c.name.slice(0, 9) + "…" : c.name)}</small><b>${fmtPrice(rep.latest)}</b><small>${rep.area}㎡ ${fmtChg(c.chg_1y)}</small>`
-        : `<small>${esc(c.name)}</small><b>-</b>`;
+      el.innerHTML = !rep ? `<small>${esc(c.name)}</small><b>-</b>`
+        : compact ? `<b>${fmtPrice(rep.latest)}</b><small>${rep.area}㎡</small>`
+        : `<small>${esc(c.name.length > 9 ? c.name.slice(0, 9) + "…" : c.name)}</small><b>${fmtPrice(rep.latest)}</b><small>${rep.area}㎡ ${fmtChg(c.chg_1y)}</small>`;
     });
   }
   const matchQ = (c) => !state.q || (c.name + c.umd + c.addr).toLowerCase().includes(state.q.toLowerCase());
@@ -149,7 +153,7 @@
         ...c.cons.slice(0, 1).map((p) => `<span class="tag bad">${esc(p)}</span>`),
       ].join("");
       return `<div class="card ${state.selected === c.id ? "sel" : ""}" data-id="${c.id}">
-        <div><h3>${esc(c.name)}</h3><div class="sub">${esc(c.umd)} · ${c.households.toLocaleString()}세대 · ${c.built}년 · ${esc(c.station.name)} ${c.station.walk_min}분</div></div>
+        <div><h3>${esc(c.name)}</h3><div class="sub">${esc(c.umd)} · ${c.households ? c.households.toLocaleString() + "세대 · " : ""}${c.built}년 · ${esc(c.station.name)} ${c.station.walk_min}분</div></div>
         <div class="price">${rep ? fmtPrice(rep.latest) : "-"}<small>${rep ? "전용 " + rep.area + "㎡ 실거래" : ""} ${fmtChg(c.chg_1y)}</small></div>
         <div class="tags">${tags}</div></div>`;
     }).join("") || `<div class="muted" style="padding:20px 4px">조건에 맞는 단지가 없어요.</div>`;
@@ -201,7 +205,7 @@
       const age = new Date().getFullYear() - c.built;
       $("#detailView").innerHTML = `
         <div class="d-head"><button class="back" id="backBtn">‹</button>
-          <div><h2>${esc(c.name)}</h2><div class="sub">${esc(c.addr)} · <b>${c.households.toLocaleString()}세대</b> · ${c.built}년 (${age}년차) · 최고 ${c.max_floor}층 · 용적률 ${c.far}%</div></div></div>
+          <div><h2>${esc(c.name)}</h2><div class="sub">${esc(c.addr)}${c.households ? ` · <b>${c.households.toLocaleString()}세대</b>` : ""} · ${c.built}년 (${age}년차)${c.max_floor ? ` · 최고 ${c.max_floor}층` : ""}${c.far ? ` · 용적률 ${c.far}%` : ""}</div></div></div>
 
         <div class="section">
           <div class="atabs">${areas.map((a) => `<button class="atab ${bucket(a.area) === areaSel ? "on" : ""}" data-a="${bucket(a.area)}">${a.area}㎡ <span class="muted">${a.pyeong}평형</span></button>`).join("")}</div>
@@ -219,7 +223,7 @@
           ${c.cons.map((p) => `<div class="row bad"><i>−</i><span>${esc(p)}</span></div>`).join("")}
           ${!c.pros.length && !c.cons.length ? `<div class="muted">특이사항 없음</div>` : ""}</div></div>
 
-        <div class="section"><h4>배정 학군 <span class="r muted">초등 통학구역 기준</span></h4>
+        <div class="section"><h4>배정 학군 <span class="r muted">${esc(state.meta.zone_note || "초등 통학구역 기준")}</span></h4>
           <div class="school-hero"><div class="ic">🏫</div><div><b>${esc(c.school.elem)}</b><div class="n">도보 ${c.school.elem_walk_min}분 (${c.school.elem_dist}m) ${c.school.chopuma ? "· <b style='color:#7c3aed'>초품아</b>" : ""}</div></div></div>
           <div class="mids">${c.school.middle.map((m) => `<span class="tag">${esc(m)}</span>`).join("")}</div>
           <div class="note">${esc(c.school.middle_note)}</div></div>
@@ -299,6 +303,8 @@
     }, () => toast("위치를 가져오지 못했어요."));
   });
   map.on("click", () => { if (state.selected && innerWidth < 900) setSheet("peek"); });
+  let zt = null;
+  map.on("zoomend", () => { clearTimeout(zt); zt = setTimeout(() => { renderMarkers(); applyLayers(); }, 60); });
 
   // ---------- boot ----------
   Promise.all(["complexes", "auctions", "meta"].map((n) => fetch(`data/${n}.json`).then((r) => r.json())).concat(fetch("data/schools.geojson").then((r) => r.json())))
@@ -306,6 +312,7 @@
       Object.assign(state, { complexes, auctions, meta, schools });
       if (meta.mode === "demo") { $("#modeBadge").hidden = false; $("#modeBadge").textContent = "데모 데이터"; }
       $("#areaLabel").textContent = meta.area;
+      if (meta.center) map.jumpTo({ center: meta.center, zoom: meta.mode === "real" ? 13.6 : 14.6 });
       // 리스트/마커는 지도 로드와 무관하게 바로, 레이어는 스타일 준비 후
       renderMarkers(); renderList(); setSheet(innerWidth < 900 ? "half" : "full");
       const tryAdd = () => { if (map.getSource("schools")) return; if (map.isStyleLoaded()) addLayers(); else setTimeout(tryAdd, 300); };

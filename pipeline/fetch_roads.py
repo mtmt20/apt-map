@@ -23,7 +23,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 OUT = os.path.join(HERE, "..", "app", "data", "roads.geojson")
 
 # 기본 데모 지역: 서울 마포구 공덕/아현/염리동 일대
-DEFAULT_BBOX = "37.538,126.940,37.566,126.968"
+DEFAULT_BBOX = "37.520,126.860,37.605,126.975"   # 서울 마포구 전역
 
 OVERPASS_URLS = [
     "https://overpass-api.de/api/interpreter",
@@ -110,7 +110,7 @@ def to_geojson(osm):
         props = classify(el.get("tags", {}))
         if not props:
             continue
-        coords = [nodes[n] for n in el.get("nodes", []) if n in nodes]
+        coords = [(round(nodes[n][0], 5), round(nodes[n][1], 5)) for n in el.get("nodes", []) if n in nodes]
         if len(coords) < 2:
             continue
         feats.append({

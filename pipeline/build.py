@@ -79,6 +79,73 @@ def nearest_major_road(lat, lng, roads):
     return (round(best) if best < 1e9 else None), name
 
 
+def voronoi_zones(schools, bbox):
+    """초등학교 점 -> 최근접 기준 통학구역 추정 폴리곤 (bbox 로 클리핑). schools: [{name,lat,lng}]"""
+    import numpy as np
+    from scipy.spatial import Voronoi
+    s, w, n, e = bbox
+    lat0 = (s + n) / 2
+    kx, ky = 111320.0 * math.cos(math.radians(lat0)), 110540.0
+    pts = np.array([[(sc["lng"] - w) * kx, (sc["lat"] - s) * ky] for sc in schools])
+    W, H = (e - w) * kx, (n - s) * ky
+    # 무한 영역을 막기 위해 멀리 떨어진 가짜 점 4개 추가
+    far = 50 * max(W, H)
+    aug = np.vstack([pts, [[-far, -far], [far, -far], [-far, far], [far, far]]])
+    vor = Voronoi(aug)
+    clip = [(0, 0), (W, 0), (W, H), (0, H)]
+
+    def clip_poly(poly):
+        def inside(p, a, b):
+            return (b[0] - a[0]) * (p[1] - a[1]) - (b[1] - a[1]) * (p[0] - a[0]) >= 0
+
+        def inter(p1, p2, a, b):
+            x1, y1, x2, y2 = p1[0], p1[1], p2[0], p2[1]
+            x3, y3, x4, y4 = a[0], a[1], b[0], b[1]
+            den = (x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4) or 1e-12
+            t = ((x1 - x3) * (y3 - y4) - (y1 - y3) * (x3 - x4)) / den
+            return (x1 + t * (x2 - x1), y1 + t * (y2 - y1))
+        out = poly
+        for i in range(4):
+            a, b = clip[i], clip[(i + 1) % 4]
+            inp, out = out, []
+            if not inp:
+                break
+            sp = inp[-1]
+            for pt in inp:
+                if inside(pt, a, b):
+                    if not inside(sp, a, b):
+                        out.append(inter(sp, pt, a, b))
+                    out.append(pt)
+                elif inside(sp, a, b):
+                    out.append(inter(sp, pt, a, b))
+                sp = pt
+        return out
+
+    zones = []
+    for i, sc in enumerate(schools):
+        region = vor.regions[vor.point_region[i]]
+        if not region or -1 in region:
+            continue
+        poly = clip_poly([tuple(vor.vertices[v]) for v in region])
+        if len(poly) < 3:
+            continue
+        ring = [[round(w + x / kx, 5), round(s + y / ky, 5)] for x, y in poly]
+        ring.append(ring[0])
+        zones.append({"name": sc["name"], "ring": ring})
+    return zones
+
+
+def load_poi():
+    p = os.path.join(RAW, "poi.json")
+    if not os.path.exists(p):
+        return None
+    d = json.load(open(p, encoding="utf-8"))
+    s, w, n, e = [float(x) for x in d["bbox"].split(",")]
+    d["bbox"] = (s, w, n, e)
+    d["zones"] = voronoi_zones(d["elem_schools"], d["bbox"])
+    return d
+
+
 # ---------- 데이터 소스 ----------
 def load_real_complexes():
     files = sorted(glob.glob(os.path.join(RAW, "trades_*.json")))
@@ -126,7 +193,7 @@ def months_ago(d, n):
     return dt.date(y, m, 1)
 
 
-def enrich(c, roads, today):
+def enrich(c, roads, today, stations, schools, zones):
     tr = c["trades"]
     recent = [t for t in tr if dt.date.fromisoformat(t["date"]) >= months_ago(today, 3)]
     if len(recent) < 3:
@@ -136,7 +203,10 @@ def enrich(c, roads, today):
         y_ago = tr[:5]
     now_ppy, old_ppy = median_ppy(recent), median_ppy(y_ago)
     c["ppy"] = int(now_ppy) if now_ppy else None
-    c["chg_1y"] = round((now_ppy / old_ppy - 1) * 100, 1) if now_ppy and old_ppy else None
+    # 두 구간이 겹치거나 표본이 적으면 변동률을 내지 않는다 (0% 로 오해 방지)
+    overlap = set(map(id, recent)) & set(map(id, y_ago))
+    reliable = now_ppy and old_ppy and not overlap and len(tr) >= 6
+    c["chg_1y"] = round((now_ppy / old_ppy - 1) * 100, 1) if reliable else None
     c["trade_count_1y"] = sum(1 for t in tr if dt.date.fromisoformat(t["date"]) >= months_ago(today, 12))
 
     # 평형별 최근가
@@ -154,24 +224,24 @@ def enrich(c, roads, today):
         })
 
     # 역
-    st = sorted(((dist_m(c["lat"], c["lng"], s[2], s[3]), s) for s in demo_data.STATIONS), key=lambda x: x[0])
-    near = [(round(d), s[0], s[1]) for d, s in st if d <= 600]
+    st = sorted(((dist_m(c["lat"], c["lng"], s["lat"], s["lng"]), s) for s in stations), key=lambda x: x[0])
+    near = [(round(d), s["name"], s["line"]) for d, s in st if d <= 600]
     d0, s0 = st[0]
-    c["station"] = {"name": s0[0], "line": s0[1], "dist": round(d0), "walk_min": max(1, round(d0 / 70)),
+    c["station"] = {"name": s0["name"], "line": s0["line"], "dist": round(d0), "walk_min": max(1, round(d0 / 70)),
                     "within_600": [{"name": n, "line": l, "dist": d} for d, n, l in near]}
 
-    # 초등 배정 (폴리곤 포함 여부 -> 없으면 최근접)
+    # 초등 배정 (통학구역 폴리곤 포함 여부 -> 없으면 최근접)
+    by_name = {sc["name"]: sc for sc in schools}
     elem = None
-    for name, lat, lng, poly in demo_data.ELEM_SCHOOLS:
-        if point_in_ring(c["lng"], c["lat"], poly):
-            elem = (name, lat, lng)
+    for z in zones:
+        if point_in_ring(c["lng"], c["lat"], z["ring"][:-1]):
+            elem = by_name.get(z["name"])
             break
     if not elem:
-        name, lat, lng, _ = min(demo_data.ELEM_SCHOOLS, key=lambda s: dist_m(c["lat"], c["lng"], s[1], s[2]))
-        elem = (name, lat, lng)
-    de = dist_m(c["lat"], c["lng"], elem[1], elem[2])
+        elem = min(schools, key=lambda sc: dist_m(c["lat"], c["lng"], sc["lat"], sc["lng"]))
+    de = dist_m(c["lat"], c["lng"], elem["lat"], elem["lng"])
     c["school"] = {
-        "elem": elem[0], "elem_dist": round(de), "elem_walk_min": max(1, round(de / 60)),
+        "elem": elem["name"], "elem_dist": round(de), "elem_walk_min": max(1, round(de / 60)),
         "chopuma": de <= 300,
         "middle": demo_data.MIDDLE_ZONES.get(c["umd"], []),
         "middle_note": "중학교는 학교군 단위 배정 + 추첨 (특정 학교 확정 아님)",
@@ -234,9 +304,19 @@ def main():
     roads = json.load(open(roads_path, encoding="utf-8"))["features"] if os.path.exists(roads_path) else []
 
     real = load_real_complexes()
+    poi = load_poi() if real else None
     mode = "real" if real else "demo"
     cs = real or demo_data.complexes()
-    cs = [enrich(c, roads, today) for c in cs]
+    if poi:
+        stations, schools, zones = poi["stations"], poi["elem_schools"], poi["zones"]
+        zone_note = "최근접 학교 기준 추정 (공식 학구도 반영 전)"
+    else:
+        stations = [{"name": n, "line": l, "lat": la, "lng": lo} for n, l, la, lo in demo_data.STATIONS]
+        schools = [{"name": n, "lat": la, "lng": lo} for n, la, lo, _ in demo_data.ELEM_SCHOOLS]
+        zones = [{"name": n, "ring": poly + [poly[0]]} for n, _, _, poly in demo_data.ELEM_SCHOOLS]
+        zone_note = "데모 경계"
+    cs = [enrich(c, roads, today, stations, schools, zones) for c in cs]
+    cs = [c for c in cs if c["by_area"]]
 
     aucs = demo_data.auctions()
     by_id = {c["id"]: c for c in cs}
@@ -252,12 +332,20 @@ def main():
     os.makedirs(OUT, exist_ok=True)
     dump = lambda name, obj: json.dump(obj, open(os.path.join(OUT, name), "w", encoding="utf-8"), ensure_ascii=False, separators=(",", ":"))
     dump("complexes.json", cs)
-    dump("schools.geojson", demo_data.elem_schools_geojson())
+    feats = []
+    for z in zones:
+        feats.append({"type": "Feature", "properties": {"name": z["name"], "kind": "zone", "note": zone_note},
+                      "geometry": {"type": "Polygon", "coordinates": [z["ring"]]}})
+    for sc in schools:
+        feats.append({"type": "Feature", "properties": {"name": sc["name"], "kind": "school"},
+                      "geometry": {"type": "Point", "coordinates": [sc["lng"], sc["lat"]]}})
+    dump("schools.geojson", {"type": "FeatureCollection", "features": feats})
     dump("auctions.json", [a for a in aucs if "lat" in a])
     dump("meta.json", {
         "mode": mode, "built_at": dt.datetime.now().strftime("%Y-%m-%d %H:%M"),
-        "area": "서울 마포구 (공덕·아현·염리)", "complexes": len(cs), "roads": len(roads),
-        "center": [126.9515, 37.5505],
+        "area": "서울 마포구" if mode == "real" else "서울 마포구 (공덕·아현·염리 데모)", "complexes": len(cs), "roads": len(roads),
+        "center": [round(sum(c["lng"] for c in cs) / len(cs), 5), round(sum(c["lat"] for c in cs) / len(cs), 5)],
+        "zone_note": zone_note, "stations": len(stations), "schools": len(schools),
     })
     print("mode={} 단지 {}개, 도로 {}개, 경매 {}건 -> {}".format(mode, len(cs), len(roads), len(aucs), OUT))
     for c in cs[:5]:
