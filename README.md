@@ -11,6 +11,10 @@ pipeline/
   fetch_boundary.py  OSM 행정경계 -> data/raw/boundary_<구>.geojson (좌표 검증용)
   geocode_osm.py     단지명 <-> OSM 아파트 매칭으로 좌표 채움 (키 불필요, 경계 밖 제외)
   geocode.py         카카오 주소검색으로 나머지 좌표 채움 (KAKAO_REST_API_KEY + 카카오맵 서비스 활성화 필요)
+  fetch_rent.py      아파트 전월세 실거래 -> data/raw/rent_*.json (전세가율·갭)
+  fetch_kapt.py      K-apt 단지목록(V4)+기본정보(V5) -> data/raw/kapt.json (세대수·동수·최고층·분양/임대/혼합·복도식)
+  fetch_neis.py      나이스 학원·교습소 + 초·중학교 (카카오 좌표화) -> academies.json, schools_neis.json
+  fetch_kakao_poi.py 카카오 로컬로 단지 반경 어린이집·소아과·병원·마트·공원·도서관 개수 -> kakao_poi.json
   demo_data.py       키 없을 때 쓰는 데모 단지·학군·경매 (마포구 공덕·아현·염리)
   build.py           위 소스를 합쳐 app/data/*.json 생성 (평당가, 1년 변동, 배정초등(보로노이 추정), 역거리, 대로변 여부, 장단점 자동 요약)
 app/
@@ -34,7 +38,11 @@ python pipeline/fetch_trades.py --lawd 11440 --months 24   # 실거래 (지난�
 python pipeline/fetch_boundary.py --name 마포구             # 최초 1회
 python pipeline/fetch_poi.py                                # 역/초등학교, 가끔
 python pipeline/geocode_osm.py                              # 새 단지 좌표 (OSM)
-python pipeline/geocode.py                                  # 나머지 좌표 (카카오, 서비스 활성화 후)
+python pipeline/geocode.py                                  # 나머지 좌표 (카카오)
+python pipeline/fetch_rent.py --lawd 11440 --months 12      # 전월세
+python pipeline/fetch_kapt.py --sgg 11440                   # 세대수 등 (가끔)
+python pipeline/fetch_neis.py --gu 마포구                   # 학원/학교 (가끔)
+python pipeline/fetch_kakao_poi.py                          # 생활 편의 (새 단지만)
 python pipeline/build.py
 ```
 `data/raw/geocode.json` 에 좌표가 없는 단지는 앱에 안 나온다. 세대수/최고층/용적률은 K-apt 공동주택 API 연동 전까지 0 (화면에서 숨김).

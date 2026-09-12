@@ -230,7 +230,10 @@
 
         <div class="section"><h4>배정 학군 <span class="r muted">${esc(state.meta.zone_note || "초등 통학구역 기준")}</span></h4>
           <div class="school-hero"><div class="ic">🏫</div><div><b>${esc(c.school.elem)}</b><div class="n">도보 ${c.school.elem_walk_min}분 (${c.school.elem_dist}m) ${c.school.chopuma ? "· <b style='color:#7c3aed'>초품아</b>" : ""}</div></div></div>
-          <div class="mids">${c.school.middle.map((m) => `<span class="tag">${esc(m)}</span>`).join("")}</div>
+          ${c.edu ? `<div class="kv" style="margin-top:12px">
+            <div><div class="k">1km 내 교과학원</div><div class="v">${c.edu.exam_1km}개<small>${state.meta.area.split(" ").pop()} 상위 ${c.edu.exam_top_pct}%</small></div></div>
+            <div><div class="k">1km 내 학원 전체</div><div class="v">${c.edu.aca_1km}개<small>예체능 ${c.edu.art_1km}</small></div></div></div>` : ""}
+          <div class="mids">${(c.school.middle_detail && c.school.middle_detail.length ? c.school.middle_detail.map((m) => `<span class="tag">${esc(m.name)} <span class="muted">${m.dist}m${m.public === "사립" ? " · 사립" : ""}${m.coedu && m.coedu !== "남여공학" ? " · " + esc(m.coedu) : ""}</span></span>`) : c.school.middle.map((m) => `<span class="tag">${esc(m)}</span>`)).join("")}</div>
           <div class="note">${esc(c.school.middle_note)}</div></div>
 
         <div class="section"><h4>교통 · 도로 환경</h4><div class="kv">
@@ -240,6 +243,14 @@
           </div>
           <button class="btn ghost" style="margin-top:10px" id="roadBtn">🛣️ 지도에서 큰길·골목·인도 보기</button></div>
 
+        ${c.life ? `<div class="section"><h4>육아 · 생활 편의 <span class="r muted">단지 반경 기준</span></h4><div class="kv">
+          <div><div class="k">어린이집·유치원 (700m)</div><div class="v">${c.life.daycare}곳</div></div>
+          <div><div class="k">소아과 (1km)</div><div class="v">${c.life.pediatric}곳</div></div>
+          <div><div class="k">병원 (700m) · 약국 (500m)</div><div class="v">${c.life.hospital}<small>· ${c.life.pharmacy}</small></div></div>
+          <div><div class="k">대형마트 (1km) · 편의점 (300m)</div><div class="v">${c.life.mart}<small>· ${c.life.convenience}</small></div></div>
+          <div><div class="k">공원 (700m)</div><div class="v">${c.life.park}곳</div></div>
+          <div><div class="k">도서관 (1km)</div><div class="v">${c.life.library}곳</div></div></div>
+          <div class="note">카카오 지도 등록 기준 개수. 소아과는 키워드 검색이라 오차가 있어요.</div></div>` : ""}
         ${aucs.length ? `<div class="section"><h4>경매 물건 <span class="r muted">${esc(aucs[0].court)}</span></h4>
           ${aucs.map((a) => `<div class="auc"><div><b>${esc(a.unit)} · ${a.area}㎡</b><div class="s">${esc(a.case)} · 매각 ${a.sale_date} · ${a.fail_count}회 유찰</div>
             <div class="s">감정가 ${fmtPrice(a.appraisal)} → 최저가 <b>${fmtPrice(a.min_price)}</b>${a.recent_trade ? " · 같은 평형 실거래 " + fmtPrice(a.recent_trade) : ""}</div></div>
@@ -248,7 +259,7 @@
 
         <div class="section"><h4>실거래 내역 <span class="r muted">최근 ${Math.min(12, c.trades.length)}건</span></h4>
           <table class="tbl"><tr><th>계약일</th><th>평형</th><th>층</th><th class="r">가격</th></tr>
-          ${c.trades.slice().reverse().slice(0, 12).map((t) => `<tr><td>${t.date.slice(2).replace(/-/g, ".")}</td><td>${t.area}㎡</td><td>${t.floor}층</td><td class="r"><b>${fmtPrice(t.price)}</b></td></tr>`).join("")}</table></div>
+          ${c.trades.slice().reverse().slice(0, 12).map((t) => `<tr><td>${t.date.slice(2).replace(/-/g, ".")}</td><td>${Math.floor(t.area)}㎡</td><td>${t.floor}층</td><td class="r"><b>${fmtPrice(t.price)}</b></td></tr>`).join("")}</table></div>
 
         <div style="margin-top:14px"><button class="btn" id="reportBtn">이 단지 호가 제보하기</button></div>
         <div class="disclaim">${state.meta.mode === "demo" ? "⚠️ 지금은 데모 데이터입니다. 단지 위치·세대수는 대략값, 가격은 시세 흐름을 흉내낸 생성값이며 학군 경계도 예시입니다. 국토교통부 실거래가 API 키를 연결하면 실데이터로 바뀝니다." : "실거래가: 국토교통부 실거래가 공개시스템 (신고 지연 최대 30일). 학군: 학구도안내서비스 기준, 실제 배정은 교육청 공지를 확인하세요."}</div>`;

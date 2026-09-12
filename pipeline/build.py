@@ -142,6 +142,16 @@ def load_poi():
     d = json.load(open(p, encoding="utf-8"))
     s, w, n, e = [float(x) for x in d["bbox"].split(",")]
     d["bbox"] = (s, w, n, e)
+    d["middle"], d["academies"] = [], []
+    np_ = os.path.join(RAW, "schools_neis.json")
+    if os.path.exists(np_):                       # 나이스 공식 목록이 있으면 초등은 그걸로 (병설/분교 제외 처리됨)
+        ns = json.load(open(np_, encoding="utf-8"))
+        if ns.get("elem"):
+            d["elem_schools"] = [{"name": x["name"], "lat": x["lat"], "lng": x["lng"], "public": x.get("public", "")} for x in ns["elem"]]
+        d["middle"] = ns.get("middle", [])
+    ap_ = os.path.join(RAW, "academies.json")
+    if os.path.exists(ap_):
+        d["academies"] = json.load(open(ap_, encoding="utf-8"))
     d["zones"] = voronoi_zones(d["elem_schools"], d["bbox"])
     return d
 
@@ -201,6 +211,8 @@ def load_real_complexes():
             g = groups.setdefault(key, {"apt": r["apt"], "umd": r["umd"], "jibun": r["jibun"], "built": r["built"], "trades": []})
             g["trades"].append({"date": r["date"], "area": r["area"], "floor": r["floor"], "price": r["price"], "kind": r["kind"]})
     kapt, rent = load_kapt(), load_rent()
+    kp = os.path.join(RAW, "kakao_poi.json")
+    kpoi = json.load(open(kp, encoding="utf-8")) if os.path.exists(kp) else {}
     out = []
     for key, g in groups.items():
         loc = geo.get(key)
@@ -217,7 +229,7 @@ def load_real_complexes():
             "far": loc.get("far", 0), "areas": areas, "trades": sorted(g["trades"], key=lambda t: t["date"]),
             "rents": sorted(rent.get(key, []), key=lambda r: r["date"]),
             "sale_type": (k or {}).get("sale_type", ""), "hall": (k or {}).get("hall", ""), "heat": (k or {}).get("heat", ""),
-            "ask": None,
+            "life": kpoi.get(key), "ask": None,
         })
     return out
 
@@ -239,7 +251,7 @@ def months_ago(d, n):
     return dt.date(y, m, 1)
 
 
-def enrich(c, roads, today, stations, schools, zones):
+def enrich(c, roads, today, stations, schools, zones, middle=None, academies=None):
     tr = c["trades"]
     recent = [t for t in tr if dt.date.fromisoformat(t["date"]) >= months_ago(today, 3)]
     if len(recent) < 3:
@@ -296,12 +308,26 @@ def enrich(c, roads, today, stations, schools, zones):
     if not elem:
         elem = min(schools, key=lambda sc: dist_m(c["lat"], c["lng"], sc["lat"], sc["lng"]))
     de = dist_m(c["lat"], c["lng"], elem["lat"], elem["lng"])
+    if middle:
+        near_mid = sorted(((dist_m(c["lat"], c["lng"], m["lat"], m["lng"]), m) for m in middle), key=lambda x: x[0])[:3]
+        mids = ["{} {}".format(m["name"], "" if d > 1500 else "") .strip() for d, m in near_mid]
+        mid_detail = [{"name": m["name"], "dist": round(d), "public": m.get("public", ""), "coedu": m.get("coedu", "")} for d, m in near_mid]
+        mid_note = "가까운 중학교 3곳 (실제 배정은 학교군 내 추첨)"
+    else:
+        mids, mid_detail, mid_note = demo_data.MIDDLE_ZONES.get(c["umd"], []), [], "중학교는 학교군 단위 배정 + 추첨 (특정 학교 확정 아님)"
     c["school"] = {
         "elem": elem["name"], "elem_dist": round(de), "elem_walk_min": max(1, round(de / 60)),
         "chopuma": de <= 300,
-        "middle": demo_data.MIDDLE_ZONES.get(c["umd"], []),
-        "middle_note": "중학교는 학교군 단위 배정 + 추첨 (특정 학교 확정 아님)",
+        "middle": mids, "middle_detail": mid_detail, "middle_note": mid_note,
     }
+    # 학원 밀집도 (반경 1km): 전체 / 입시·보습 교과
+    if academies:
+        near = [x for x in academies if abs(x["lat"] - c["lat"]) < 0.0095 and abs(x["lng"] - c["lng"]) < 0.0115
+                and dist_m(c["lat"], c["lng"], x["lat"], x["lng"]) <= 1000]
+        c["edu"] = {"aca_1km": len(near), "exam_1km": sum(1 for x in near if "입시" in x.get("realm", "")),
+                    "art_1km": sum(1 for x in near if "예능" in x.get("realm", ""))}
+    else:
+        c["edu"] = None
 
     # 도로
     if roads:
@@ -345,6 +371,13 @@ def enrich(c, roads, today, stations, schools, zones):
         pros.append("1년 평당가 +{}%".format(c["chg_1y"]))
     if c["trade_count_1y"] <= 3:
         cons.append("최근 1년 거래 {}건 (가격 확인 어려움)".format(c["trade_count_1y"]))
+    life = c.get("life") or {}
+    if life.get("daycare") is not None and life["daycare"] >= 20:      # 마포구 중앙값 14
+        pros.append("어린이집·유치원 700m 내 {}곳 (많음)".format(life["daycare"]))
+    elif life.get("daycare") is not None and life["daycare"] <= 5:
+        cons.append("어린이집·유치원 700m 내 {}곳 (적음)".format(life["daycare"]))
+    if life.get("pediatric") is not None and life["pediatric"] == 0:
+        cons.append("1km 내 소아과 없음")
     if c["jeonse_ratio"] and c["jeonse_ratio"] >= 90:
         cons.append("전세가율 {}% (깡통전세 주의)".format(c["jeonse_ratio"]))
     # 중립 정보 (사람들이 잘 모르는 것)
@@ -385,8 +418,23 @@ def main():
         schools = [{"name": n, "lat": la, "lng": lo} for n, la, lo, _ in demo_data.ELEM_SCHOOLS]
         zones = [{"name": n, "ring": poly + [poly[0]]} for n, _, _, poly in demo_data.ELEM_SCHOOLS]
         zone_note = "데모 경계"
-    cs = [enrich(c, roads, today, stations, schools, zones) for c in cs]
+    middle, academies = (poi or {}).get("middle") or [], (poi or {}).get("academies") or []
+    cs = [enrich(c, roads, today, stations, schools, zones, middle, academies) for c in cs]
     cs = [c for c in cs if c["by_area"]]
+    # 학원 밀집도 구내 백분위 (교과학원 기준)
+    vals = sorted(c["edu"]["exam_1km"] for c in cs if c.get("edu"))
+    for c in cs:
+        if not c.get("edu"):
+            continue
+        v = c["edu"]["exam_1km"]
+        pct = 100 - int(round(sum(1 for x in vals if x <= v) / len(vals) * 100))     # 0 = 최상위
+        c["edu"]["exam_top_pct"] = max(1, pct if pct > 0 else 1)
+        if pct <= 20 and v >= 15:
+            c["pros"].insert(0, "학원가 인접 (1km 내 교과학원 {}개, 구 상위 {}%)".format(v, c["edu"]["exam_top_pct"]))
+            c["pros"] = c["pros"][:4]
+        elif v <= 2:
+            c["cons"].append("주변 교과학원 적음 (1km 내 {}개)".format(v))
+            c["cons"] = c["cons"][:4]
 
     aucs = demo_data.auctions()
     by_id = {c["id"]: c for c in cs}
@@ -415,7 +463,7 @@ def main():
         "mode": mode, "built_at": dt.datetime.now().strftime("%Y-%m-%d %H:%M"),
         "area": "서울 마포구" if mode == "real" else "서울 마포구 (공덕·아현·염리 데모)", "complexes": len(cs), "roads": len(roads),
         "center": [round(sum(c["lng"] for c in cs) / len(cs), 5), round(sum(c["lat"] for c in cs) / len(cs), 5)],
-        "zone_note": zone_note, "stations": len(stations), "schools": len(schools),
+        "zone_note": zone_note, "stations": len(stations), "schools": len(schools), "academies": len(academies),
     })
     print("mode={} 단지 {}개, 도로 {}개, 경매 {}건 -> {}".format(mode, len(cs), len(roads), len(aucs), OUT))
     for c in cs[:5]:
