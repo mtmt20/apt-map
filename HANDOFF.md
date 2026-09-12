@@ -45,8 +45,15 @@
   **서대문구 확장**: 실거래 24개월·전월세·K-apt·카카오 좌표 234개·학원(NEIS)·편의시설 수집 -> 마포+서대문 519개 단지 한 지도. geocode.py 는 sgg_cd 로 구를 자동 판별.
   서울시 공동주택 정보(OpenAptInfo: 분양/임대/혼합·세대수·주차·면적별 세대수, 좌표 포함) 수집기+build 연동 준비, **SEOUL_KEY 사용자 발급 대기**.
 
+- 2026-09-12 (컴퓨터 세션, 9차): **1단계(배포+SEO) 준비 완료**. `generate_pages.py` 로 단지별 정적 페이지 519개 + /apt/index.html + sitemap.xml + robots.txt,
+  앱 딥링크 `index.html?id=`, 상세에 "단지 상세 페이지" 링크. `deploy_github_pages.py` (GITHUB_TOKEN 으로 저장소 생성/푸시/Pages ON) 작성.
+  **실제 배포는 GITHUB_TOKEN 사용자 발급 대기**. 위스키(whiskyhot.com)는 이 PC 의 nginx+Cloudflare 라 건드리지 않고 GitHub Pages 로 분리.
+  알려진 이슈: 1년 변동률이 평형 섞인 중앙값이라 일부 단지 과장(-18.8% 등) -> 평형별 매칭으로 개선 필요.
+
 ## 진행 중 / 남은 작업
-0. SEOUL_KEY 받으면 `python pipeline/fetch_seoul_apt.py` -> build (세대수 커버리지 178/519 -> 대부분 채워질 것, 주차대수)
+0. GITHUB_TOKEN 받으면 `python pipeline/deploy_github_pages.py` -> URL 확인 -> generate_pages --base 를 실제 URL 로 재생성 후 재배포. 이후 Cloudflare 에서 apt.whiskyhot.com CNAME 검토
+0-0. 1년 변동률을 평형별(같은 area) 최근 vs 1년전 중앙값으로 계산하도록 build.py 수정
+0-1. SEOUL_KEY 받으면 `python pipeline/fetch_seoul_apt.py` -> build (세대수 커버리지 178/519 -> 대부분 채워질 것, 주차대수)
 0-1. 다른 구 추가 절차: fetch_trades/fetch_rent --lawd, fetch_kapt --sgg, geocode.py, fetch_neis --gu, fetch_kakao_poi, (bbox 밖이면 fetch_roads/fetch_poi --bbox 확장), build
 0-1. 정확한 임대 세대수: 서울 열린데이터광장 공동주택 정보 조사
 1. K-apt 이름 매칭 개선 (100/285): '래미안공덕5차' vs K-apt 표기 차이, 소규모 단지는 K-apt 자체에 없음(의무관리 대상만) -> 건축물대장 API 검토
