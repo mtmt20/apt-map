@@ -73,6 +73,10 @@ def main():
         open(os.path.join(tmp, "index.html"), "w", encoding="utf-8").write(html)
         open(os.path.join(tmp, "robots.txt"), "w", encoding="utf-8").write("User-agent: *\nAllow: /\nSitemap: https://{}.github.io/apt-map/sitemap.xml\n".format(a.owner))
         open(os.path.join(tmp, ".nojekyll"), "w").close()
+        # 루트 사이트맵 인덱스 -> apt-map 사이트맵 (네이버가 루트 경로를 요구할 때)
+        open(os.path.join(tmp, "sitemap.xml"), "w", encoding="utf-8").write(
+            '<?xml version="1.0" encoding="UTF-8"?><sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'
+            '<sitemap><loc>https://{}.github.io/apt-map/sitemap.xml</loc></sitemap></sitemapindex>'.format(a.owner))
         env = dict(os.environ, GH_TOKEN_FOR_PUSH=tok)
         helper = "!f() { echo username=x-access-token; echo password=$GH_TOKEN_FOR_PUSH; }; f"
         run = lambda cmd: subprocess.run(cmd, cwd=tmp, env=env, check=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
