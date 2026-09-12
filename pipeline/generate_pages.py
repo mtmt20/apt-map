@@ -23,8 +23,8 @@ def esc(x):
 
 
 def slugify(c):
-    s = re.sub(r"[^0-9a-zA-Z가-힣]+", "-", c["name"]).strip("-").lower()
-    return "{}-{}".format(c["umd"], s)
+    """페이지 파일명 = 단지 id (법정동-단지명-지번, build.py 와 동일) -> 항상 유일"""
+    return c["id"]
 
 
 def price(v):

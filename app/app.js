@@ -326,7 +326,7 @@
           ${c.trades.slice().reverse().slice(0, 12).map((t) => `<tr><td>${t.date.slice(2).replace(/-/g, ".")}</td><td>${Math.floor(t.area)}㎡</td><td>${t.floor}층</td><td class="r"><b>${fmtPrice(t.price)}</b></td></tr>`).join("")}</table></div>
 
         <div style="margin-top:14px"><button class="btn" id="reportBtn">이 단지 호가 제보하기</button>
-          <a class="btn ghost" style="margin-top:8px" href="apt/${encodeURIComponent(c.umd + "-" + c.name.replace(/[^0-9a-zA-Z가-힣]+/g, "-").replace(/^-|-$/g, "").toLowerCase())}.html">📄 단지 상세 페이지 (공유용)</a></div>
+          <a class="btn ghost" style="margin-top:8px" href="apt/${encodeURIComponent(c.id)}.html">📄 단지 상세 페이지 (공유용)</a></div>
         <div class="disclaim">${state.meta.mode === "demo" ? "⚠️ 지금은 데모 데이터입니다. 단지 위치·세대수는 대략값, 가격은 시세 흐름을 흉내낸 생성값이며 학군 경계도 예시입니다. 국토교통부 실거래가 API 키를 연결하면 실데이터로 바뀝니다." : "실거래가: 국토교통부 실거래가 공개시스템 (신고 지연 최대 30일). 학군: 학구도안내서비스 기준, 실제 배정은 교육청 공지를 확인하세요."}</div>`;
 
       $("#backBtn").onclick = closeDetail;
