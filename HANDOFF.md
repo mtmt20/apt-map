@@ -91,6 +91,9 @@
   (5) 다문화 학생 수: 학교알리미 API 항목(63 성별학생수 등)에 없음 -> 미제공. 학폭 심의 결과·학업성취는 캡차 -> 학교알리미 링크만 제공.
   검색엔진: 네이버 소유확인·사이트맵 제출 완료(루트 사이트 mtmt88087044-pixel.github.io 저장소, deploy_root_site.py), 구글 소유확인 완료(meta refresh 제거 후), 사이트맵 2건 제출 → 첫 상태 '가져올 수 없음'(재배포 타이밍) - 재시도 필요.
 
+- 2026-09-13: **도메인 jipkokmap.kr 연결 완료** (사용자 구매, 등록업체 DNS 에 A 4개 + CNAME www). GitHub Pages cname 설정, HTTPS 강제 ON, 인증서 approved.
+  라이브 https://jipkokmap.kr/ (github.io 주소는 새 도메인으로 리다이렉트). generate_pages base/알림 링크/워커 CORS 는 SITE_BASE·SITE_DOMAIN(.env) 기준. 검색엔진에는 새 도메인 재등록 필요.
+
 ## 진행 중 / 남은 작업
 0. 구글 서치콘솔 사이트맵 상태 재확인(며칠 뒤 자동 재시도됨). LOCALDATA 복구 시 유흥주점·단란주점·숙박업 수집 붙이기. 동 단위 인구는 KOSIS 키 받으면 진행.
 0. (완료) 라이브 검증: 공식 학구·학교군·피드 확인. 학군 레이어 match 중복 라벨 오류·jrow float 겹침 수정 후 재배포.
