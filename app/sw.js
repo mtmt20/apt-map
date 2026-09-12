@@ -49,14 +49,12 @@ self.addEventListener("fetch", (e) => {
     }));
     return;
   }
-  // 앱 셸: 네트워크 우선
+  // 앱 셸: 캐시 즉시 응답 + 백그라운드 갱신 (index.html 은 네트워크 우선으로 새 버전 감지)
+  const isIndex = /\/(index\.html)?$/.test(url.pathname);
   e.respondWith(caches.open(CACHE).then(async (c) => {
-    try {
-      const res = await fetch(req);
-      if (res.ok) c.put(req, res.clone());
-      return res;
-    } catch (err) {
-      return (await c.match(req)) || Response.error();
-    }
+    const hit = await c.match(req);
+    const net = fetch(req).then((res) => { if (res.ok) c.put(req, res.clone()); return res; }).catch(() => hit);
+    if (isIndex) return net.then((r) => r || hit);
+    return hit || net;
   }));
 });

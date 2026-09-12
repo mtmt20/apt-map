@@ -45,7 +45,7 @@ def chg(v):
 CSS = """
 :root{--fg:#0f172a;--muted:#64748b;--line:#e2e8f0;--bg:#fff;--bg2:#f4f6fa;--brand:#2563eb;--good:#16a34a;--bad:#dc2626}
 @media(prefers-color-scheme:dark){:root{--fg:#f1f5f9;--muted:#94a3b8;--line:#334155;--bg:#0f172a;--bg2:#1e293b}}
-*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font-family:Pretendard,-apple-system,"Apple SD Gothic Neo","Malgun Gothic",system-ui,sans-serif;line-height:1.5}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font-family:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Noto Sans KR","Malgun Gothic",system-ui,sans-serif;line-height:1.5}
 .wrap{max-width:760px;margin:0 auto;padding:16px 16px 60px}a{color:var(--brand);text-decoration:none}
 header.top{display:flex;justify-content:space-between;align-items:center;padding:8px 0 16px;border-bottom:1px solid var(--line);margin-bottom:16px}
 header.top .logo{font-weight:900;font-size:18px;color:var(--fg)}.btn{display:inline-block;padding:9px 14px;border-radius:12px;background:var(--brand);color:#fff;font-weight:800}
@@ -88,7 +88,6 @@ def page_html(c, base, all_by_umd):
     parts.append("""<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{t}</title><meta name="description" content="{d}"><link rel="canonical" href="{base}/apt/{slugq}.html">
 <meta property="og:title" content="{t}"><meta property="og:description" content="{d}"><meta property="og:type" content="article"><meta property="og:url" content="{base}/apt/{slugq}.html">
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
 <script type="application/ld+json">{ld}</script><link rel="stylesheet" href="page.css"></head><body><div class="wrap">
 <header class="top"><a class="logo" href="../index.html">🏠 집콕맵</a><a class="btn" href="../index.html?id={id}">지도에서 보기</a></header>
 <h1>{name}</h1><div class="sub">{addr} · {hh}{built}년 준공 ({age}년차){fl}{dong}</div>""".format(

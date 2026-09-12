@@ -26,7 +26,7 @@
 [hidden] { display: none !important; }
 html, body { margin: 0; height: 100%; overflow: hidden; }
 body {
-  font-family: "Pretendard Variable", Pretendard, -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Noto Sans KR", "Malgun Gothic", system-ui, sans-serif;
   color: var(--fg); background: var(--bg2); font-size: 15px; line-height: 1.45;
   -webkit-tap-highlight-color: transparent;
 }

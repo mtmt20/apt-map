@@ -83,7 +83,7 @@
 
     // 도로: 큰길은 서울 전체 파일, 골목/동네길은 화면에 걸친 격자 타일만 로드
     map.addSource("roads", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
-    map.addSource("roads-major", { type: "geojson", data: "data/roads_major.geojson" });
+    map.addSource("roads-major", { type: "geojson", data: { type: "FeatureCollection", features: [] } });   // 실제 데이터는 도로 레이어 켤 때
     const z = (a, b) => ["interpolate", ["linear"], ["zoom"], 13, a, 18, b];
     map.addLayer({ id: "road-walk", type: "line", source: "roads",
       filter: ["all", ["!=", ["get", "class"], "alley"], ["in", ["get", "sidewalk"], ["literal", ["yes", "likely"]]]],
@@ -124,7 +124,7 @@
     }).catch(() => {});
 
     // 기피시설 (OSM + 인허가)
-    map.addSource("nuisance", { type: "geojson", data: "data/nuisance.geojson" });
+    map.addSource("nuisance", { type: "geojson", data: { type: "FeatureCollection", features: [] } });      // 기피 레이어 켤 때 로드
     map.addLayer({ id: "nz-line", type: "line", source: "nuisance", filter: ["==", ["geometry-type"], "LineString"], layout: { visibility: "none" },
       paint: { "line-color": ["match", ["get", "kind"], "powerline", "#dc2626", "rail", "#6b7280", "#b45309"], "line-width": 2.5, "line-dasharray": [2, 1.5], "line-opacity": 0.85 } });
     map.addLayer({ id: "nz-point", type: "circle", source: "nuisance", filter: ["==", ["geometry-type"], "Point"], layout: { visibility: "none" }, minzoom: 12,
@@ -170,6 +170,12 @@
       }))).then(() => map.getSource("roads").setData({ type: "FeatureCollection", features: roadTiles.feats }));
     });
   }
+  const lazyLoaded = {};
+  function lazySource(id, url) {
+    if (lazyLoaded[id] || !map.getSource(id)) return;
+    lazyLoaded[id] = true;
+    fetch(url).then((r) => r.json()).then((gj) => map.getSource(id).setData(gj)).catch(() => { lazyLoaded[id] = false; });
+  }
   function applyCrowns() { const show = map.getZoom() < 13.3; state.crownMarkers.forEach((m) => m.getElement().style.display = show ? "" : "none"); }
   function applyLayers() {
     const v = (ids, on) => ids.forEach((id) => map.getLayer(id) && map.setLayoutProperty(id, "visibility", on ? "visible" : "none"));
@@ -180,7 +186,8 @@
     v(["nz-line", "nz-point"], state.layers.nuisance);
     if (map.getSource("dem")) { map.setTerrain(state.layers.terrain ? { source: "dem", exaggeration: 1.5 } : null); if (!state.layers.terrain && map.getPitch()) map.easeTo({ pitch: 0, bearing: 0 }); }
     $("#terrainLegend").hidden = !state.layers.terrain;
-    if (state.layers.road) loadRoadTiles();
+    if (state.layers.road) { lazySource("roads-major", "data/roads_major.geojson"); loadRoadTiles(); }
+    if (state.layers.nuisance) lazySource("nuisance", "data/nuisance.geojson");
     $("#legend").hidden = !state.layers.road;
     state.aucMarkers.forEach((m) => state.layers.auction ? m.addTo(map) : m.remove());
     $$(".lyr[data-layer]").forEach((b) => b.classList.toggle("on", !!state.layers[b.dataset.layer]));
