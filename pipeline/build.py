@@ -355,6 +355,7 @@ def load_real_complexes():
         sa = seoul_lookup(seoul, g["apt"], g["umd"], loc["lat"], loc["lng"]) if seoul else None
         if sa:   # 서울시 공동주택 정보로 빈 값 보강 (K-apt 없는 소규모 단지 포함)
             k = dict(k or {})
+            sa = dict(sa, hh_type={"임대+분양": "혼합"}.get(sa.get("hh_type"), sa.get("hh_type")))
             for a_, b_ in (("households", "households"), ("top_floor", None), ("dongs", "dongs"), ("hall", "hall"), ("heat", "heat"), ("sale_type", "hh_type")):
                 if b_ and not k.get(a_) and sa.get(b_):
                     k[a_] = sa[b_]
