@@ -19,6 +19,11 @@ RAW = os.path.join(HERE, "..", "data", "raw")
 OUT = os.path.join(RAW, "geocode.json")
 URL = "https://dapi.kakao.com/v2/local/search/address.json"
 KW_URL = "https://dapi.kakao.com/v2/local/search/keyword.json"
+SGG_NAMES = {"11440": "마포구", "11410": "서대문구", "11170": "용산구", "11560": "영등포구", "11380": "은평구",
+             "11110": "종로구", "11140": "중구", "11305": "강북구", "11680": "강남구", "11650": "서초구", "11710": "송파구",
+             "11470": "양천구", "11530": "구로구", "11500": "강서구", "11590": "동작구", "11620": "관악구", "11215": "광진구",
+             "11200": "성동구", "11290": "성북구", "11350": "노원구", "11320": "도봉구", "11230": "동대문구", "11260": "중랑구",
+             "11545": "금천구", "11740": "강동구"}
 
 
 def load_env():
@@ -59,14 +64,16 @@ def main():
     ok = fail = 0
     for i, k in enumerate(todo):
         umd, apt, jibun = k.split("|")
-        q = "{} {} {}".format(a.sgg, umd, jibun)
+        gu = SGG_NAMES.get(str(keys[k].get("sgg_cd", "")), a.sgg.split()[-1])
+        sgg = "서울 " + gu
+        q = "{} {} {}".format(sgg, umd, jibun)
         d = kakao(URL, key, q)
         src = "address"
         if not d:                                          # 지번 주소로 안 잡히면 단지명 키워드 검색
-            d = kakao(KW_URL, key, "{} {} {}".format(a.sgg, umd, apt))
+            d = kakao(KW_URL, key, "{} {} {}".format(sgg, umd, apt))
             src = "keyword"
         if d:
-            geo[k] = {"lat": float(d["y"]), "lng": float(d["x"]), "sgg": a.sgg.split()[-1],
+            geo[k] = {"lat": float(d["y"]), "lng": float(d["x"]), "sgg": gu,
                       "addr": d.get("address_name") or d.get("road_address_name") or q,
                       "households": 0, "max_floor": 0, "far": 0, "src": src}
             ok += 1

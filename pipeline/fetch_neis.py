@@ -111,7 +111,7 @@ def main():
         if (i + 1) % 200 == 0:
             print("  학원 좌표 {}/{}".format(i + 1, len(rows)))
     geo.save()
-    json.dump(acas, open(os.path.join(RAW, "academies.json"), "w", encoding="utf-8"), ensure_ascii=False)
+    json.dump(acas, open(os.path.join(RAW, "academies_{}.json".format(a.gu)), "w", encoding="utf-8"), ensure_ascii=False)
     print("학원 좌표 {}개 저장 (실패 {})".format(len(acas), miss))
 
     # 2) 초·중학교 (대상 구 + 이웃 구)
@@ -134,7 +134,14 @@ def main():
             })
         print("{} {}개 ({}권역)".format(kind, len(out[k]), "+".join(gus)))
     geo.save()
-    json.dump(out, open(os.path.join(RAW, "schools_neis.json"), "w", encoding="utf-8"), ensure_ascii=False, indent=1)
+    # 이미 있는 학교 목록과 합치기 (다른 구에서 수집한 것 유지)
+    sp = os.path.join(RAW, "schools_neis.json")
+    if os.path.exists(sp):
+        old = json.load(open(sp, encoding="utf-8"))
+        for k in ("elem", "middle"):
+            seen = {x["code"] for x in out[k]}
+            out[k] += [x for x in old.get(k, []) if x["code"] not in seen]
+    json.dump(out, open(sp, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
 
 
 if __name__ == "__main__":

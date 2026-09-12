@@ -186,9 +186,8 @@ def load_poi():
         if ns.get("elem"):
             d["elem_schools"] = [{"name": x["name"], "lat": x["lat"], "lng": x["lng"], "public": x.get("public", "")} for x in ns["elem"]]
         d["middle"] = ns.get("middle", [])
-    ap_ = os.path.join(RAW, "academies.json")
-    if os.path.exists(ap_):
-        d["academies"] = json.load(open(ap_, encoding="utf-8"))
+    for ap_ in glob.glob(os.path.join(RAW, "academies*.json")):
+        d["academies"] += json.load(open(ap_, encoding="utf-8"))
     d["zones"] = voronoi_zones(d["elem_schools"], d["bbox"])
     return d
 
@@ -225,6 +224,30 @@ def kapt_lookup(kapt, apt, umd):
     return cands[0] if len(cands) == 1 else None
 
 
+def load_seoul_apt():
+    p = os.path.join(RAW, "seoul_apt.json")
+    return json.load(open(p, encoding="utf-8")) if os.path.exists(p) else []
+
+
+def seoul_lookup(seoul, name, umd, lat, lng):
+    """좌표 200m 이내 후보 중 이름이 가장 비슷한 서울시 공동주택 레코드"""
+    import difflib
+    key = _norm(name)
+    best, best_s = None, 0.0
+    for r in seoul:
+        if not r["lat"] or abs(r["lat"] - lat) > 0.0025 or abs(r["lng"] - lng) > 0.003:
+            continue
+        if dist_m(lat, lng, r["lat"], r["lng"]) > 200:
+            continue
+        rk = _norm(r["name"])
+        sc = 1.0 if (key == rk or key in rk or rk in key) else difflib.SequenceMatcher(None, key, rk).ratio()
+        if umd and umd == r.get("umd"):
+            sc += 0.1
+        if sc > best_s:
+            best, best_s = r, sc
+    return best if best_s >= 0.6 else None
+
+
 def load_rent():
     """전월세 raw (fetch_rent.py). key -> [rows]"""
     out = {}
@@ -247,7 +270,7 @@ def load_real_complexes():
             key = "{}|{}|{}".format(r["umd"], r["apt"], r["jibun"])
             g = groups.setdefault(key, {"apt": r["apt"], "umd": r["umd"], "jibun": r["jibun"], "built": r["built"], "trades": []})
             g["trades"].append({"date": r["date"], "area": r["area"], "floor": r["floor"], "price": r["price"], "kind": r["kind"]})
-    kapt, rent = load_kapt(), load_rent()
+    kapt, rent, seoul = load_kapt(), load_rent(), load_seoul_apt()
     kp = os.path.join(RAW, "kakao_poi.json")
     kpoi = json.load(open(kp, encoding="utf-8")) if os.path.exists(kp) else {}
     out = []
@@ -258,6 +281,14 @@ def load_real_complexes():
         cid = key.lower().replace("|", "-").replace(" ", "")
         areas = sorted({t["area"] for t in g["trades"]})
         k = kapt_lookup(kapt, g["apt"], g["umd"]) if kapt else None
+        sa = seoul_lookup(seoul, g["apt"], g["umd"], loc["lat"], loc["lng"]) if seoul else None
+        if sa:   # 서울시 공동주택 정보로 빈 값 보강 (K-apt 없는 소규모 단지 포함)
+            k = dict(k or {})
+            for a_, b_ in (("households", "households"), ("top_floor", None), ("dongs", "dongs"), ("hall", "hall"), ("heat", "heat"), ("sale_type", "hh_type")):
+                if b_ and not k.get(a_) and sa.get(b_):
+                    k[a_] = sa[b_]
+            k["parking"] = sa.get("parking", 0)
+            k["hh_by_area"] = {"~60": sa["hh_60"], "60~85": sa["hh_85"], "85~135": sa["hh_135"], "135~": sa["hh_136"]}
         out.append({
             "id": cid, "name": g["apt"], "sgg": loc.get("sgg", ""), "umd": g["umd"], "jibun": g["jibun"],
             "addr": loc.get("addr", ""), "lat": loc["lat"], "lng": loc["lng"],
@@ -266,7 +297,7 @@ def load_real_complexes():
             "far": loc.get("far", 0), "areas": areas, "trades": sorted(g["trades"], key=lambda t: t["date"]),
             "rents": sorted(rent.get(key, []), key=lambda r: r["date"]),
             "sale_type": (k or {}).get("sale_type", ""), "hall": (k or {}).get("hall", ""), "heat": (k or {}).get("heat", ""),
-            "life": kpoi.get(key), "ask": None,
+            "life": kpoi.get(key), "parking": (k or {}).get("parking", 0), "hh_by_area": (k or {}).get("hh_by_area"), "ask": None,
         })
     return out
 
@@ -419,6 +450,12 @@ def enrich(c, roads, today, stations, schools, zones, middle=None, academies=Non
         cons.append("어린이집·유치원 700m 내 {}곳 (적음)".format(life["daycare"]))
     if life.get("pediatric") is not None and life["pediatric"] == 0:
         cons.append("1km 내 소아과 없음")
+    if c.get("parking") and c.get("households"):
+        c["parking_per_hh"] = round(c["parking"] / c["households"], 2)
+        if c["parking_per_hh"] >= 1.3:
+            pros.append("세대당 주차 {}대".format(c["parking_per_hh"]))
+        elif c["parking_per_hh"] < 0.8:
+            cons.append("세대당 주차 {}대 (부족)".format(c["parking_per_hh"]))
     if c["jeonse_ratio"] and c["jeonse_ratio"] >= 90:
         cons.append("전세가율 {}% (깡통전세 주의)".format(c["jeonse_ratio"]))
     # 중립 정보 (사람들이 잘 모르는 것)
@@ -564,7 +601,8 @@ def main():
     dump("auctions.json", [a for a in aucs if "lat" in a])
     dump("meta.json", {
         "mode": mode, "built_at": dt.datetime.now().strftime("%Y-%m-%d %H:%M"),
-        "area": "서울 마포구" if mode == "real" else "서울 마포구 (공덕·아현·염리 데모)", "complexes": len(cs), "roads": len(roads),
+        "area": ("서울 " + "·".join(sorted({c["sgg"] for c in cs if c.get("sgg")}))) if mode == "real" else "서울 마포구 (공덕·아현·염리 데모)",
+        "complexes": len(cs), "roads": len(roads),
         "center": [round(sum(c["lng"] for c in cs) / len(cs), 5), round(sum(c["lat"] for c in cs) / len(cs), 5)],
         "zone_note": zone_note, "stations": len(stations), "schools": len(schools), "academies": len(academies),
     })

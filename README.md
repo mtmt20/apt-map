@@ -14,6 +14,8 @@ pipeline/
   fetch_rent.py      아파트 전월세 실거래 -> data/raw/rent_*.json (전세가율·갭)
   fetch_kapt.py      K-apt 단지목록(V4)+기본정보(V5) -> data/raw/kapt.json (세대수·동수·최고층·분양/임대/혼합·복도식)
   fetch_neis.py      나이스 학원·교습소 + 초·중학교 (카카오 좌표화) -> academies.json, schools_neis.json
+  fetch_seoul_apt.py 서울시 공동주택 아파트 정보(열린데이터광장, SEOUL_KEY) -> seoul_apt.json (분양/임대/혼합·세대수·주차·면적별 세대수, K-apt 보강)
+  fetch_schoolinfo.py 학교알리미 OpenAPI(SCHOOLINFO_KEY) -> schoolinfo/<type>_<급>_<구>_<년>.json (학생수·학급당·전출입)
   fetch_kakao_poi.py 카카오 로컬로 단지 반경 어린이집·소아과·병원·마트·공원·도서관 개수 -> kakao_poi.json
   demo_data.py       키 없을 때 쓰는 데모 단지·학군·경매 (마포구 공덕·아현·염리)
   build.py           위 소스를 합쳐 app/data/*.json 생성 (평당가, 1년 변동, 배정초등(보로노이 추정), 역거리, 대로변 여부, 장단점 자동 요약)
