@@ -68,6 +68,7 @@ def main():
             step("seoul apt", ["pipeline/fetch_seoul_apt.py"])
     step("build", ["pipeline/build.py"], must=True)
     step("pages", ["pipeline/generate_pages.py"], must=True)
+    step("alerts", ["pipeline/notify_alerts.py"])
     if not a.no_deploy:
         step("deploy", ["pipeline/deploy_github_pages.py"], must=True)
     log.write("\nFAILED: {}\n".format(failed))

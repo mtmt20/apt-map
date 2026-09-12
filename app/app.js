@@ -211,6 +211,7 @@
   function renderList() {
     const list = visibleComplexes();
     $("#listCount").textContent = state.sort === "fav" ? `찜한 단지 ${list.length}개` : (map.getZoom() >= 12 && !state.q ? `화면 안 단지 ${list.length}개` : `단지 ${list.length}개`);
+    $("#alertBar").hidden = !(state.sort === "fav" && list.length && API);
     $("#list").innerHTML = list.map((c) => {
       const rep = repArea(c, state.area);
       const tags = [
@@ -351,8 +352,12 @@
       if (API) api(`/reports?id=${encodeURIComponent(id)}`).then((j) => {
         const box = $("#communityReports"); if (!box) return;
         const rs = j.reports || [];
-        box.innerHTML = rs.length ? `<div class="note" style="margin-top:10px">커뮤니티 제보 ${rs.length}건</div>` + rs.slice(0, 6).map((r) => `<div class="rep"><span><span class="k ${r.kind}">${r.kind === "deal" ? "실거래" : "호가"}</span>${r.area}㎡ <b>${fmtPrice(r.price)}</b>${r.note ? ` <span class="muted">· ${esc(r.note)}</span>` : ""}</span><span class="muted">${r.date}</span></div>`).join("")
+        box.innerHTML = rs.length ? `<div class="note" style="margin-top:10px">커뮤니티 제보 ${rs.length}건 · <a href="feed.html" style="color:var(--brand)">전체 피드</a></div>` + rs.slice(0, 6).map((r) => `<div class="rep"><span><span class="k ${r.kind}">${r.kind === "deal" ? "실거래" : "호가"}</span>${r.area}㎡ <b>${fmtPrice(r.price)}</b>${r.note ? ` <span class="muted">· ${esc(r.note)}</span>` : ""}</span><span class="muted">${r.date} <button class="flagBtn" data-ts="${r.ts}" title="잘못된 제보 신고">신고</button></span></div>`).join("")
           : `<div class="note">아직 제보가 없어요. 첫 제보를 남겨주세요.</div>`;
+        $$(".flagBtn", box).forEach((b) => b.onclick = () => {
+          if (!confirm("이 제보를 잘못된 정보로 신고할까요?")) return;
+          api("/flag", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ id, ts: Number(b.dataset.ts) }) }).then(() => { b.textContent = "신고됨"; b.disabled = true; }).catch(() => toast("신고에 실패했어요."));
+        });
       }).catch(() => { const box = $("#communityReports"); if (box) box.innerHTML = `<div class="note">제보 서버에 연결하지 못했어요.</div>`; });
     }
     render();
@@ -363,6 +368,16 @@
     state.selected = null; $("#detailView").hidden = true; $("#listView").hidden = false;
     renderMarkers(); renderList(); setSheet("half");
   }
+
+  // ---------- 실거래 알림 (이메일) ----------
+  $("#alertBtn").addEventListener("click", () => {
+    const ids = [...favs.ids]; if (!ids.length) return toast("먼저 단지를 찜해 주세요.");
+    const email = prompt("새 실거래가 등록되면 알려드릴 이메일 주소", localStorage.getItem("alertEmail") || "");
+    if (!email || !/^[^\s@]+@[^\s@]+\.[a-z]{2,}$/i.test(email)) return email ? toast("이메일 형식을 확인해 주세요.") : null;
+    api("/alerts", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ email: email.trim(), ids }) })
+      .then((j) => { if (j.error) throw new Error(j.error); localStorage.setItem("alertEmail", email.trim()); toast(`찜한 ${j.n}개 단지의 실거래 알림을 등록했어요.`); })
+      .catch(() => toast("알림 등록에 실패했어요."));
+  });
 
   // ---------- 제보 모달 ----------
   function openReportModal(c, rep, done) {

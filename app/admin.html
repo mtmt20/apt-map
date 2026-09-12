@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow">
+<title>제보 관리 | 집콕맵</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
+<link rel="stylesheet" href="apt/page.css">
+<style>.rep{display:flex;justify-content:space-between;gap:10px;padding:10px 0;border-bottom:1px solid var(--line);align-items:center}.del{font-size:12px;color:#fff;background:var(--bad);border:0;border-radius:8px;padding:6px 10px;cursor:pointer}.flags{color:var(--bad);font-weight:800}input{font:inherit;padding:10px 12px;border-radius:12px;border:1.5px solid var(--line);width:100%}</style>
+</head>
+<body><div class="wrap">
+<header class="top"><a class="logo" href="index.html">🏠 집콕맵 관리</a></header>
+<h1>제보 관리</h1>
+<div class="card"><label>관리자 키 <input id="key" type="password" placeholder="ADMIN_KEY"></label><p><button class="btn" id="load">불러오기</button></p></div>
+<div class="card" id="list">키를 입력하고 불러오기를 누르세요.</div>
+<h2>알림 등록</h2><div class="card" id="alerts">-</div>
+</div>
+<script src="config.js"></script>
+<script>
+(function () {
+  const API = (window.APT_CONFIG && window.APT_CONFIG.API_BASE) || "";
+  const $ = (s) => document.querySelector(s);
+  const price = (v) => v >= 10000 ? (v / 10000).toFixed(1).replace(/\.0$/, "") + "억" : v.toLocaleString() + "만";
+  const esc = (s) => String(s || "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  const saved = sessionStorage.getItem("adminKey"); if (saved) $("#key").value = saved;
+  $("#load").onclick = () => {
+    const key = $("#key").value.trim(); sessionStorage.setItem("adminKey", key);
+    fetch(`${API}/admin/reports?key=${encodeURIComponent(key)}`).then((r) => r.json()).then((j) => {
+      if (j.error) { $("#list").textContent = "권한 없음"; return; }
+      const rs = j.recent || [];
+      $("#list").innerHTML = rs.length ? rs.map((r) => `<div class="rep"><span>${r.kind === "deal" ? "실거래" : "호가"} · <a href="index.html?id=${encodeURIComponent(r.id)}">${esc(r.name || r.id)}</a> ${r.area}㎡ <b>${price(r.price)}</b> ${esc(r.note)} <span class="sub">${r.date}</span> ${r.flags ? `<span class="flags">신고 ${r.flags}</span>` : ""}</span><button class="del" data-id="${esc(r.id)}" data-ts="${r.ts}">삭제</button></div>`).join("") : "제보 없음";
+      document.querySelectorAll(".del").forEach((b) => b.onclick = () => {
+        if (!confirm("삭제할까요?")) return;
+        fetch(`${API}/admin/delete`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ key, id: b.dataset.id, ts: Number(b.dataset.ts) }) }).then(() => b.closest(".rep").remove());
+      });
+    });
+    fetch(`${API}/admin/alerts?key=${encodeURIComponent(key)}`).then((r) => r.json()).then((j) => {
+      const al = j.alerts || [];
+      $("#alerts").innerHTML = al.length ? al.map((a) => `<div class="rep"><span>${esc(a.email)} <span class="sub">단지 ${a.ids.length}개 · ${new Date(a.ts).toISOString().slice(0, 10)}</span></span></div>`).join("") : "등록 없음";
+    });
+  };
+})();
+</script>
+</body>
+</html>

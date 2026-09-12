@@ -61,7 +61,8 @@ def main():
     # Worker upload (module syntax + binding)
     src = open(os.path.join(ROOT, "worker", "worker.js"), encoding="utf-8").read()
     meta = {"main_module": "worker.js", "compatibility_date": "2025-01-01",
-            "bindings": [{"type": "kv_namespace", "name": "APT", "namespace_id": kv["id"]}]}
+            "bindings": [{"type": "kv_namespace", "name": "APT", "namespace_id": kv["id"]},
+                         {"type": "secret_text", "name": "ADMIN_KEY", "text": os.environ.get("ADMIN_KEY", "")}]}
     files = {
         "metadata": ("metadata.json", json.dumps(meta), "application/json"),
         "worker.js": ("worker.js", src, "application/javascript+module"),
