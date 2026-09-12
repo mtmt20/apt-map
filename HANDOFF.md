@@ -50,9 +50,12 @@
   **실제 배포는 GITHUB_TOKEN 사용자 발급 대기**. 위스키(whiskyhot.com)는 이 PC 의 nginx+Cloudflare 라 건드리지 않고 GitHub Pages 로 분리.
   알려진 이슈: 1년 변동률이 평형 섞인 중앙값이라 일부 단지 과장(-18.8% 등) -> 평형별 매칭으로 개선 필요.
 
+- 2026-09-12 (컴퓨터 세션, 10차): **배포 완료** https://mtmt88087044-pixel.github.io/apt-map/ (GitHub 저장소 mtmt88087044-pixel/apt-map, gh-pages).
+  재배포는 `python pipeline/build.py && python pipeline/generate_pages.py && python pipeline/deploy_github_pages.py`. 1년 변동률 평형별 계산으로 수정 완료.
+  도메인은 위스키(whiskyhot.com)에 붙이지 않기로 (주제 분리). 유입 생기면 집콕맵 전용 도메인 구매 후 Cloudflare 연결.
+
 ## 진행 중 / 남은 작업
-0. GITHUB_TOKEN 받으면 `python pipeline/deploy_github_pages.py` -> URL 확인 -> generate_pages --base 를 실제 URL 로 재생성 후 재배포. 이후 Cloudflare 에서 apt.whiskyhot.com CNAME 검토
-0-0. 1년 변동률을 평형별(같은 area) 최근 vs 1년전 중앙값으로 계산하도록 build.py 수정
+0. 배포 자동화: 실거래 갱신(월 1회 이상) -> build -> pages -> deploy 를 한 스크립트로 (Windows 작업 스케줄러, 위스키 Airflow 와 무관)
 0-1. SEOUL_KEY 받으면 `python pipeline/fetch_seoul_apt.py` -> build (세대수 커버리지 178/519 -> 대부분 채워질 것, 주차대수)
 0-1. 다른 구 추가 절차: fetch_trades/fetch_rent --lawd, fetch_kapt --sgg, geocode.py, fetch_neis --gu, fetch_kakao_poi, (bbox 밖이면 fetch_roads/fetch_poi --bbox 확장), build
 0-1. 정확한 임대 세대수: 서울 열린데이터광장 공동주택 정보 조사

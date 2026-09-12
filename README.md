@@ -1,5 +1,7 @@
 # 집콕맵 (apt-map) - 실거래·호가·학군·도로·경매를 지도 한 장에
 
+라이브: https://mtmt88087044-pixel.github.io/apt-map/
+
 "좋은 아파트를 싸게 사도록 돕는" 모바일 우선 웹앱 MVP. 정적 파일(HTML/JS) + Python 파이프라인.
 
 ## 구조
