@@ -38,11 +38,16 @@ def count(key, how, q, lat, lng, radius):
     url = CAT if how == "cat" else KW
     params = {"x": lng, "y": lat, "radius": radius, "size": 1}
     params["category_group_code" if how == "cat" else "query"] = q
-    for _ in range(3):
-        r = requests.get(url, params=params, headers={"Authorization": "KakaoAK " + key}, timeout=15)
-        if r.status_code == 200:
-            return r.json()["meta"]["total_count"]
-        time.sleep(1)
+    for attempt in range(4):
+        try:
+            r = requests.get(url, params=params, headers={"Authorization": "KakaoAK " + key}, timeout=20)
+            if r.status_code == 200:
+                return r.json()["meta"]["total_count"]
+            if r.status_code == 429:
+                time.sleep(5)
+        except requests.RequestException:
+            pass
+        time.sleep(2 * (attempt + 1))
     return None
 
 
@@ -53,7 +58,7 @@ def main():
         raise SystemExit("KAKAO_REST_API_KEY 없음")
     geo = json.load(open(os.path.join(RAW, "geocode.json"), encoding="utf-8"))
     out = json.load(open(OUT, encoding="utf-8")) if os.path.exists(OUT) else {}
-    todo = [k for k in geo if k not in out]
+    todo = [k for k in geo if k not in out or any(v is None for v in out[k].values())]
     print("단지 {}개 중 집계 필요 {}개 (쿼리 {}종)".format(len(geo), len(todo), len(QUERIES)))
     for i, k in enumerate(todo):
         g = geo[k]

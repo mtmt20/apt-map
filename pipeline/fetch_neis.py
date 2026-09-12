@@ -59,13 +59,18 @@ class Geocoder:
         for url, q in ((KAKAO, addr), (KAKAO_KW, fallback_kw)):
             if not q:
                 continue
-            r = requests.get(url, params={"query": q, "size": 1}, headers={"Authorization": "KakaoAK " + self.key}, timeout=15)
+            try:
+                r = requests.get(url, params={"query": q, "size": 1}, headers={"Authorization": "KakaoAK " + self.key}, timeout=20)
+            except requests.RequestException:
+                time.sleep(3)
+                continue
             if r.status_code == 200 and r.json().get("documents"):
                 d = r.json()["documents"][0]
                 res = {"lat": float(d["y"]), "lng": float(d["x"])}
                 break
             time.sleep(0.05)
-        self.cache[addr] = res
+        if res:
+            self.cache[addr] = res
         self.n += 1
         if self.n % 50 == 0:
             self.save()
