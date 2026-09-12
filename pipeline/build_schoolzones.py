@@ -95,9 +95,11 @@ def read_csv(path):
 
 def zones_from(shp_path, sido, link, loc, tol):
     sf = shapefile.Reader(shp_path, encoding="cp949")
+    fields = [f[0] for f in sf.fields[1:]]
     out = []
     for i, rec in enumerate(sf.iterRecords()):
-        if rec["SD_CD"] != sido:
+        rec = dict(zip(fields, list(rec)))
+        if rec.get("SD_CD") != sido:
             continue
         shp = sf.shape(i)
         parts = list(shp.parts) + [len(shp.points)]
@@ -113,8 +115,8 @@ def zones_from(shp_path, sido, link, loc, tol):
         for sid, nm in link.get(rec["HAKGUDO_ID"], []):
             l = loc.get(sid)
             schools.append({"id": sid, "name": nm, "lat": l[0] if l else None, "lng": l[1] if l else None})
-        out.append({"id": rec["HAKGUDO_ID"], "name": rec["HAKGUDO_NM"], "shared": rec["HAKGUDO_GB"] == "1",
-                    "sgg": rec["SGG_CD"], "edu": rec["EDU_NM"], "schools": schools, "rings": rings})
+        out.append({"id": rec["HAKGUDO_ID"], "name": rec["HAKGUDO_NM"], "shared": rec.get("HAKGUDO_GB") == "1",
+                    "sgg": rec.get("SGG_CD", ""), "edu": rec.get("EDU_NM", ""), "schools": schools, "rings": rings})
     return out
 
 
@@ -136,12 +138,16 @@ def main():
         base = r.get("데이터기준일자", base)
     elem = zones_from(os.path.join(D, "elem_zone", "elem_zone"), a.sido, link, loc, a.tol)
     middle = zones_from(os.path.join(D, "middle_zone", "middle_zone"), a.sido, link, loc, a.tol)
-    out = {"base_date": base, "sido": a.sido, "elem": elem, "middle": middle}
+    hp = os.path.join(D, "high_zone", "high_zone")
+    high = zones_from(hp, a.sido, link, loc, a.tol) if os.path.exists(hp + ".shp") else []
+    out = {"base_date": base, "sido": a.sido, "elem": elem, "middle": middle, "high": high}
     p = os.path.join(RAW, "schoolzones_seoul.json")
     json.dump(out, open(p, "w", encoding="utf-8"), ensure_ascii=False, separators=(",", ":"))
     pts = sum(len(r) for z in elem for r in z["rings"])
-    print("초등 학구 {}개 (공동 {}), 중학교 학군 {}개, 좌표점 {} -> {} ({:.1f}MB)".format(
-        len(elem), sum(1 for z in elem if z["shared"]), len(middle), pts, p, os.path.getsize(p) / 1e6))
+    print("초등 학구 {}개 (공동 {}), 중학교 학군 {}개, 고등학교 학교군 {}개, 좌표점 {} -> {} ({:.1f}MB)".format(
+        len(elem), sum(1 for z in elem if z["shared"]), len(middle), len(high), pts, p, os.path.getsize(p) / 1e6))
+    for z in high[:3]:
+        print("  고교군:", z["name"], "학교", len(z["schools"]))
     no_school = [z["name"] for z in elem if not z["schools"]]
     print("학교 연계 없는 초등 학구:", len(no_school), no_school[:5])
 

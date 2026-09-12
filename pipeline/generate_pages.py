@@ -124,6 +124,11 @@ def page_html(c, base, all_by_umd):
         " · 공동통학구역: " + " / ".join(esc(x) for x in c["school"]["elem_shared"]) if c["school"].get("elem_shared") else ""))
     if c["school"].get("middle_zone"):
         parts.append('<p><b>중학교 학군</b>: {}</p>'.format(esc(c["school"]["middle_zone"])))
+    hi = c["school"].get("high")
+    if hi and hi.get("general"):
+        parts.append('<p><b>고등학교 {}</b>: {}</p>'.format(esc(hi.get("zone") or "인근 일반고"), ", ".join("{} ({}m{})".format(esc(x["name"]), x["dist"], " · 대학진학 {}%".format(x["adv_pct"]) if x.get("adv_pct") is not None else "") for x in hi["general"])))
+        if hi.get("special"):
+            parts.append('<p><b>인근 자율·특목고</b>: {}</p>'.format(", ".join("{} {} ({:.1f}km)".format(esc(x["type"]), esc(x["name"]), x["dist"] / 1000) for x in hi["special"])))
     if st:
         parts.append('<p class="sub">학생 {:,}명{} · 학급당 {}명{}</p>'.format(st["students"], (" (전년 {:+.1f}%)".format(st["chg_pct"]) if st.get("chg_pct") is not None else ""), st.get("class_size"),
                                                                            (" · 순전입 {:+d}명".format(st["net_move"]) if st.get("net_move") is not None else "")))

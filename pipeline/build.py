@@ -33,6 +33,8 @@ PY = 3.3058
 SCHOOL_STATS = {}
 TERRAIN = None
 MIDDLE_ZONES_OFFICIAL = []
+HIGH_ZONES_OFFICIAL = []
+HIGH_SCHOOLS = {}
 
 
 # ---------- geo utils ----------
@@ -206,6 +208,37 @@ def load_schoolinfo():
             "net_move_pct": round((mi - mo) / cur["students"] * 100, 1) if mi is not None and mo is not None and cur["students"] else None,
         }
     return out
+
+
+def load_high_schools():
+    """고등학교: 나이스 유형(일반/자율/특목/특성화) + 학교알리미 좌표(type 0, knd 04) + 진학률(type 51)"""
+    p = os.path.join(RAW, "high_schools_neis.json")
+    if not os.path.exists(p):
+        return {}
+    hs = {h["name"]: dict(h) for h in json.load(open(p, encoding="utf-8"))}
+    for fp in glob.glob(os.path.join(RAW, "schoolinfo", "0_04_*_*.json")):
+        for r in json.load(open(fp, encoding="utf-8")):
+            h = hs.setdefault(r["SCHUL_NM"], {"name": r["SCHUL_NM"], "type": "", "track": ""})
+            try:
+                h["lat"], h["lng"] = float(r.get("LTTUD") or 0), float(r.get("LGTUD") or 0)
+            except (TypeError, ValueError):
+                pass
+            h.setdefault("public", r.get("FOND_SC_CODE", ""))
+            h.setdefault("coedu", {"남": "남", "여": "여"}.get(r.get("COEDU_SC_CODE", ""), "남여공학"))
+    grad = {}
+    for fp in sorted(glob.glob(os.path.join(RAW, "schoolinfo", "51_04_*_*.json"))):
+        yr = int(os.path.basename(fp)[:-5].split("_")[-1])
+        for r in json.load(open(fp, encoding="utf-8")):
+            tot = int(r.get("ALL_SUM") or 0)
+            adv = int(r.get("SUPRTI_GRDTN_BOYST_FGR") or 0) or (int(r.get("PRTI_GRDTN_BOYST_FGR") or 0) + int(r.get("PRTI_GRDTN_FES_FGR") or 0))
+            if tot:
+                prev = grad.get(r["SCHUL_NM"])
+                if not prev or prev["year"] < yr:
+                    grad[r["SCHUL_NM"]] = {"year": yr, "grads": tot, "adv_pct": round(adv / tot * 100)}
+    for n, g in grad.items():
+        if n in hs:
+            hs[n]["adv"] = g
+    return {n: h for n, h in hs.items() if h.get("lat")}
 
 
 def load_poi():
@@ -491,7 +524,25 @@ def enrich(c, roads, today, stations, schools, zones, middle=None, academies=Non
         st = (SCHOOL_STATS or {}).get(m["name"])
         if st:
             m["stats"] = {k: st[k] for k in ("students", "chg_pct", "class_size", "net_move", "net_move_pct")}
+    # 고등학교: 소속 학교군의 일반고(가까운 순 5) + 반경 3km 자율/특목고
+    high = None
+    if HIGH_SCHOOLS:
+        hz = next((z for z, ring in HIGH_ZONES_OFFICIAL if point_in_ring(c["lng"], c["lat"], ring[:-1])), None)
+        zone_names = {sc["name"] for sc in (hz or {}).get("schools", [])}
+        gen = []
+        for n, h in HIGH_SCHOOLS.items():
+            d = dist_m(c["lat"], c["lng"], h["lat"], h["lng"])
+            if (n in zone_names or (not hz and d <= 3000)) and h.get("type", "일반고") in ("일반고", ""):
+                gen.append((d, h))
+        gen.sort(key=lambda x: x[0])
+        spec = sorted(((dist_m(c["lat"], c["lng"], h["lat"], h["lng"]), h) for h in HIGH_SCHOOLS.values() if h.get("type") in ("자율고", "특목고")), key=lambda x: x[0])
+        spec = [(d, h) for d, h in spec if d <= 3000][:4]
+        fmt = lambda d, h: {"name": h["name"], "dist": round(d), "type": h.get("type", ""), "public": h.get("public", ""), "coedu": h.get("coedu", ""),
+                            "adv_pct": (h.get("adv") or {}).get("adv_pct"), "special": h.get("special", "")}
+        high = {"zone": hz["name"] if hz else None, "zone_total": len(zone_names) if hz else None,
+                "general": [fmt(d, h) for d, h in gen[:5]], "special": [fmt(d, h) for d, h in spec]}
     c["school"] = {
+        "high": high,
         "elem": elem["name"], "elem_dist": round(de), "elem_walk_min": max(1, round(de / 60)),
         "chopuma": de <= 300, "elem_stats": (SCHOOL_STATS or {}).get(elem["name"]),
         "elem_shared": elem_shared, "elem_official": zone_hit is not None and "zone_id" in zone_hit,
@@ -631,7 +682,9 @@ def main():
     middle, academies = (poi or {}).get("middle") or [], (poi or {}).get("academies") or []
     global MIDDLE_ZONES_OFFICIAL
     MIDDLE_ZONES_OFFICIAL = [(z, ring) for z in ((poi or {}).get("official") or {}).get("middle", []) for ring in z["rings"]]
-    global SCHOOL_STATS, TERRAIN
+    global SCHOOL_STATS, TERRAIN, HIGH_ZONES_OFFICIAL, HIGH_SCHOOLS
+    HIGH_ZONES_OFFICIAL = [(z, ring) for z in ((poi or {}).get("official") or {}).get("high", []) for ring in z["rings"]]
+    HIGH_SCHOOLS = load_high_schools() if real else {}
     SCHOOL_STATS = load_schoolinfo() if real else {}
     if Terrain and os.path.isdir(os.path.join(RAW, "terrain")):
         TERRAIN = Terrain()
