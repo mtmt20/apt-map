@@ -25,7 +25,7 @@
   const favBtn = (id) => `<button class="fav ${favs.ids.has(id) ? "on" : ""}" data-id="${esc(id)}" title="찜" aria-label="찜">♥</button>`;
 
   // ---------- utils ----------
-  const fmtPrice = (v) => v == null ? "-" : v >= 10000 ? (v / 10000).toFixed(v >= 100000 ? 0 : 1).replace(/\.0$/, "") + "억" : v.toLocaleString() + "만";
+  const fmtPrice = (v) => v == null ? "-" : v >= 10000 ? (v / 10000).toFixed(v >= 1000000 ? 0 : 1).replace(/\.0$/, "") + "억" : v.toLocaleString() + "만";
   const fmtChg = (v) => v == null ? "" : `<span class="chg ${v >= 0 ? "up" : "down"}">${v >= 0 ? "+" : ""}${v}%</span>`;
   const bucket = (area) => area < 70 ? "59" : area < 100 ? "84" : "114";
   const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
