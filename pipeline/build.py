@@ -649,9 +649,10 @@ def enrich(c, roads, today, stations, schools, zones, middle=None, academies=Non
         # 신고가: 최근 6개월 거래가 이 평형 역대(24개월) 최고가
         if recent and max(t["price"] for t in recent) >= peak and len(ts) >= 4:
             sig["up"].append("최근 6개월 신고가 경신 ({}㎡ {:,}만)".format(main_area, peak))
-        # 하락: 최근가가 최고가 대비 -10% 이상
-        if len(ts) >= 4 and last <= peak * 0.9:
-            sig["risk"].append("{}㎡ 최근가가 최고가 대비 {:.0f}%".format(main_area, (last / peak - 1) * 100))
+        # 하락: 최근 3건 중앙값이 최고가 대비 -10% 이상 (신고가 경신 중이면 제외)
+        last3 = statistics.median(t["price"] for t in ts[-3:])
+        if len(ts) >= 4 and last3 <= peak * 0.9 and not (recent and max(t["price"] for t in recent) >= peak):
+            sig["risk"].append("{}㎡ 최근 시세가 최고가 대비 {:.0f}%".format(main_area, (last3 / peak - 1) * 100))
     # 거래 절벽 / 거래 증가: 최근 6개월 vs 그 이전 12개월 월평균
     r6 = sum(1 for t in tr if dt.date.fromisoformat(t["date"]) >= months_ago(today, 6))
     p12 = sum(1 for t in tr if months_ago(today, 18) <= dt.date.fromisoformat(t["date"]) < months_ago(today, 6))
