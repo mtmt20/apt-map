@@ -5,7 +5,7 @@
 ## 지금 작업 중 (끝나면 본인 줄 삭제)
 | 세션 | 시작 | 작업 | 만지는 파일 |
 |---|---|---|---|
-| 컴퓨터 | 2026-09-12 17:46 | 3번: 호가 제보·찜 백엔드 (Cloudflare Worker+KV) + 앱 UI | worker/, pipeline/deploy_worker.py, app/app.js, app/index.html, app/style.css |
+| (비어 있음) | | | |
 
 
 ## 최근 업데이트
@@ -62,7 +62,13 @@
   서울 전체 빌드 1분, 페이지 6,809개(63MB, page.css 공용), 요약 JSON 4.5MB(gzip 전송). 페이지 파일명 = 단지 id.
   **서울 전체 버전 배포 완료** (2026-09-12 17시대). 편의시설 2차 끝나면 `build.py -> generate_pages.py -> deploy_github_pages.py` 한 번 더.
 
+- 2026-09-12 (컴퓨터 세션, 12차): **3번 완료 - 제보·찜 백엔드**. Cloudflare Worker `aptmap-api` + KV `aptmap` (계정 0faa426e…, workers.dev 서브도메인 `jipkokmap` API 로 생성).
+  API https://aptmap-api.jipkokmap.workers.dev (/reports GET·POST, /recent, /favs GET·POST, /health). 앱은 app/config.js 의 API_BASE 로 연결, 없으면 기기 저장으로 폴백.
+  앱: 제보 모달(호가/실거래·면적·가격·메모, 허니팟), 상세에 커뮤니티 제보 목록, ♥ 찜 + "내 찜" 칩, 칩 더블클릭 = 기기 간 동기화 링크(?fav=CODE).
+  워커 재배포: `python pipeline/deploy_worker.py` (CLOUDFLARE_API_TOKEN). KV 에 테스트 제보 1건(id test-단지-1) 남아 있음 - 삭제 API 없음, 무해.
+
 ## 진행 중 / 남은 작업
+0. 제보 검수/신고 기능, 제보 피드 페이지(/recent), 찜 단지 가격 변동 알림(이메일) 은 미구현
 0. 배포 자동화: 실거래 갱신(월 1회 이상) -> build -> pages -> deploy 를 한 스크립트로 (Windows 작업 스케줄러, 위스키 Airflow 와 무관)
 0-1. SEOUL_KEY 받으면 `python pipeline/fetch_seoul_apt.py` -> build (세대수 커버리지 178/519 -> 대부분 채워질 것, 주차대수)
 0-1. 다른 구 추가 절차: fetch_trades/fetch_rent --lawd, fetch_kapt --sgg, geocode.py, fetch_neis --gu, fetch_kakao_poi, (bbox 밖이면 fetch_roads/fetch_poi --bbox 확장), build

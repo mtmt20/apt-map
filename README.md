@@ -58,6 +58,12 @@ python pipeline/deploy_github_pages.py --owner <owner> --repo apt-map           
 ```
 단지 페이지는 `app/apt/<동>-<단지명>.html`, 앱 딥링크는 `index.html?id=<단지id>`.
 
+## 제보·찜 API (Cloudflare Worker)
+```bash
+python pipeline/deploy_worker.py     # CLOUDFLARE_API_TOKEN 필요. worker/worker.js 업로드 + KV 바인딩 + app/config.js 갱신
+```
+엔드포인트: `/reports?id=` (GET), `/reports` (POST {id,name,area,price,kind,note}), `/recent`, `/favs?code=`, `/favs` (POST {code,ids}), `/health`
+
 ## 데이터 출처 / 한계
 | 기능 | 현재 | 실서비스 계획 |
 |---|---|---|
