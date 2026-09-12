@@ -126,7 +126,7 @@ def page_html(c, base, all_by_umd):
         parts.append('<p><b>중학교 학군</b>: {}</p>'.format(esc(c["school"]["middle_zone"])))
     hi = c["school"].get("high")
     if hi and hi.get("general"):
-        parts.append('<p><b>고등학교 {}</b>: {}</p>'.format(esc(hi.get("zone") or "인근 일반고"), ", ".join("{} ({}m{})".format(esc(x["name"]), x["dist"], " · 대학진학 {}%".format(x["adv_pct"]) if x.get("adv_pct") is not None else "") for x in hi["general"])))
+        parts.append('<p><b>고등학교 {}</b>: {}</p>'.format(esc(hi.get("zone") or "인근 일반고"), ", ".join("{} ({}m)".format(esc(x["name"]), x["dist"]) for x in hi["general"])))
         if hi.get("special"):
             parts.append('<p><b>인근 자율·특목고</b>: {}</p>'.format(", ".join("{} {} ({:.1f}km)".format(esc(x["type"]), esc(x["name"]), x["dist"] / 1000) for x in hi["special"])))
     if st:

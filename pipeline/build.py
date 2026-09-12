@@ -538,7 +538,7 @@ def enrich(c, roads, today, stations, schools, zones, middle=None, academies=Non
         spec = sorted(((dist_m(c["lat"], c["lng"], h["lat"], h["lng"]), h) for h in HIGH_SCHOOLS.values() if h.get("type") in ("자율고", "특목고")), key=lambda x: x[0])
         spec = [(d, h) for d, h in spec if d <= 3000][:4]
         fmt = lambda d, h: {"name": h["name"], "dist": round(d), "type": h.get("type", ""), "public": h.get("public", ""), "coedu": h.get("coedu", ""),
-                            "adv_pct": (h.get("adv") or {}).get("adv_pct"), "special": h.get("special", "")}
+                            "special": h.get("special", "")}
         high = {"zone": hz["name"] if hz else None, "zone_total": len(zone_names) if hz else None,
                 "general": [fmt(d, h) for d, h in gen[:5]], "special": [fmt(d, h) for d, h in spec]}
     c["school"] = {
