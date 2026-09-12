@@ -71,6 +71,10 @@ def main():
         shutil.copytree(os.path.join(ROOT, "app"), os.path.join(tmp, "site"))
         site = os.path.join(tmp, "site")
         open(os.path.join(site, ".nojekyll"), "w").close()
+        dom = os.environ.get("SITE_DOMAIN", "")
+        if dom:
+            open(os.path.join(site, "CNAME"), "w").write(dom + "
+")
         swp = os.path.join(site, "sw.js")
         if os.path.exists(swp):
             import time as _t

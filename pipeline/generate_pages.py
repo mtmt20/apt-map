@@ -14,6 +14,9 @@ import re
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, HERE)
+from fetch_trades import load_env  # noqa: E402
+load_env()
 APP = os.path.join(HERE, "..", "app")
 PY = 3.3058
 
@@ -214,7 +217,7 @@ def index_html(cs, base):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--base", default="https://mtmt88087044-pixel.github.io/apt-map")
+    ap.add_argument("--base", default=os.environ.get("SITE_BASE") or "https://jipkokmap.kr")
     a = ap.parse_args()
     base = a.base.rstrip("/")
     cdir = os.path.join(APP, "data", "c")

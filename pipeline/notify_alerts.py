@@ -24,7 +24,7 @@ from fetch_trades import load_env, RAW  # noqa: E402
 
 STATE = os.path.join(RAW, "alert_state.json")
 CDIR = os.path.join(ROOT, "app", "data", "c")
-SITE = "https://mtmt88087044-pixel.github.io/apt-map"
+SITE = os.environ.get("SITE_BASE") or "https://jipkokmap.kr"
 
 
 def fmt(v):

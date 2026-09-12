@@ -10,12 +10,12 @@
  *  GET  /health
  * KV 바인딩: APT, 시크릿: ADMIN_KEY
  */
-const ALLOW = [/^https:\/\/[a-z0-9-]+\.github\.io$/, /^http:\/\/localhost(:\d+)?$/, /^http:\/\/127\.0\.0\.1(:\d+)?$/];
+const ALLOW = [/^https:\/\/(www\.)?jipkokmap\.kr$/, /^https:\/\/[a-z0-9-]+\.github\.io$/, /^http:\/\/localhost(:\d+)?$/, /^http:\/\/127\.0\.0\.1(:\d+)?$/];
 
 function cors(origin) {
   const ok = origin && ALLOW.some((re) => re.test(origin));
   return {
-    "Access-Control-Allow-Origin": ok ? origin : "https://mtmt88087044-pixel.github.io",
+    "Access-Control-Allow-Origin": ok ? origin : "https://jipkokmap.kr",
     "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
     "Access-Control-Allow-Headers": "content-type",
     "Access-Control-Max-Age": "86400",

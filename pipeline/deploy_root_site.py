@@ -64,9 +64,9 @@ def main():
         metas += '<meta name="google-site-verification" content="{}">\n'.format(google)
     html = """<!doctype html><html lang="ko"><head><meta charset="utf-8">
 {metas}<title>집콕맵</title><meta name="description" content="서울 아파트 실거래가·전세가율·학군·도로·생활편의 지도">
-<link rel="canonical" href="https://{owner}.github.io/apt-map/">
-<script>if (!/bot|crawl|spider|google|naver|yeti/i.test(navigator.userAgent)) location.replace("/apt-map/" + location.search + location.hash);</script>
-</head><body><h1>집콕맵</h1><p>서울 아파트 실거래가·전세가율·학군·도로·생활편의를 지도 한 장에서. <a href="/apt-map/">집콕맵 열기</a> · <a href="/apt-map/apt/index.html">단지별 페이지 목록</a></p></body></html>
+<link rel="canonical" href="https://jipkokmap.kr/">
+<script>if (!/bot|crawl|spider|google|naver|yeti/i.test(navigator.userAgent)) location.replace("https://jipkokmap.kr/" + location.search + location.hash);</script>
+</head><body><h1>집콕맵</h1><p>서울 아파트 실거래가·전세가율·학군·도로·생활편의를 지도 한 장에서. <a href="https://jipkokmap.kr/">집콕맵 열기</a> · <a href="https://jipkokmap.kr/apt/index.html">단지별 페이지 목록</a></p></body></html>
 """.format(metas=metas, owner=a.owner)
     tmp = tempfile.mkdtemp(prefix="rootsite_")
     try:
