@@ -83,13 +83,13 @@ def page_html(c, base, all_by_umd):
     }
     parts = []
     parts.append("""<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>{t}</title><meta name="description" content="{d}"><link rel="canonical" href="{base}/apt/{slug}.html">
-<meta property="og:title" content="{t}"><meta property="og:description" content="{d}"><meta property="og:type" content="article"><meta property="og:url" content="{base}/apt/{slug}.html">
+<title>{t}</title><meta name="description" content="{d}"><link rel="canonical" href="{base}/apt/{slugq}.html">
+<meta property="og:title" content="{t}"><meta property="og:description" content="{d}"><meta property="og:type" content="article"><meta property="og:url" content="{base}/apt/{slugq}.html">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
 <script type="application/ld+json">{ld}</script><link rel="stylesheet" href="page.css"></head><body><div class="wrap">
 <header class="top"><a class="logo" href="../index.html">🏠 집콕맵</a><a class="btn" href="../index.html?id={id}">지도에서 보기</a></header>
 <h1>{name}</h1><div class="sub">{addr} · {hh}{built}년 준공 ({age}년차){fl}{dong}</div>""".format(
-        t=esc(title), d=esc(desc), base=base, slug=slug, ld=json.dumps(ld, ensure_ascii=False), css=CSS, id=esc(c["id"]), name=esc(c["name"]), addr=esc(c["addr"]),
+        t=esc(title), d=esc(desc), base=base, slug=slug, slugq=__import__("urllib.parse").parse.quote(slug), ld=json.dumps(ld, ensure_ascii=False), css=CSS, id=esc(c["id"]), name=esc(c["name"]), addr=esc(c["addr"]),
         hh=("<b>{:,}세대</b> · ".format(c["households"]) if c.get("households") else ""), built=c["built"], age=age,
         fl=(" · 최고 {}층".format(c["max_floor"]) if c.get("max_floor") else ""), dong=(" · {}개동".format(c["dongs"]) if c.get("dongs") else "")))
 
@@ -214,7 +214,7 @@ def main():
     for c in cs:
         slug, h = page_html(c, base, by_umd)
         open(os.path.join(out, slug + ".html"), "w", encoding="utf-8").write(h)
-        urls.append("{}/apt/{}.html".format(base, slug))
+        urls.append("{}/apt/{}.html".format(base, __import__("urllib.parse").parse.quote(slug)))
     open(os.path.join(out, "index.html"), "w", encoding="utf-8").write(index_html(cs, base))
     today = dt.date.today().isoformat()
     sm = ['<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">',
