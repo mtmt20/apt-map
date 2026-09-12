@@ -47,7 +47,7 @@ def main():
     ap.add_argument("--knd", default="02,03")
     ap.add_argument("--year", default="")
     ap.add_argument("--sido", default="11")
-    ap.add_argument("--sgg", default="")
+    ap.add_argument("--sgg", default="11440", help="시군구 코드 (2026년부터 필수)")
     a = ap.parse_args()
     key = os.environ.get("SCHOOLINFO_KEY", "")
     if not key:
@@ -57,7 +57,7 @@ def main():
     if a.probe:
         found = {}
         for t in range(0, 121):
-            j = call(key, t, "03", a.year or None, a.sido, a.sgg or None)
+            j = call(key, t, "03", a.year or None, a.sido, a.sgg)
             lst = j.get("list") or []
             code, msg = j.get("resultCode"), j.get("resultMsg")
             if lst:
@@ -73,9 +73,9 @@ def main():
 
     for t in a.types.split(","):
         for knd in a.knd.split(","):
-            j = call(key, t, knd, a.year or None, a.sido, a.sgg or None)
+            j = call(key, t, knd, a.year or None, a.sido, a.sgg)
             lst = j.get("list") or []
-            fn = os.path.join(OUT, "{}_{}_{}.json".format(t, knd, a.year or "latest"))
+            fn = os.path.join(OUT, "{}_{}_{}_{}.json".format(t, knd, a.sgg, a.year or "latest"))
             json.dump(lst, open(fn, "w", encoding="utf-8"), ensure_ascii=False)
             print("apiType {} knd {}: {}건 ({}) -> {}".format(t, knd, len(lst), j.get("resultMsg"), fn))
             time.sleep(0.3)

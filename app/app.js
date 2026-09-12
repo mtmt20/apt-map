@@ -229,12 +229,13 @@
           ${!c.pros.length && !c.cons.length ? `<div class="muted">특이사항 없음</div>` : ""}</div></div>
 
         <div class="section"><h4>배정 학군 <span class="r muted">${esc(state.meta.zone_note || "초등 통학구역 기준")}</span></h4>
-          <div class="school-hero"><div class="ic">🏫</div><div><b>${esc(c.school.elem)}</b><div class="n">도보 ${c.school.elem_walk_min}분 (${c.school.elem_dist}m) ${c.school.chopuma ? "· <b style='color:#7c3aed'>초품아</b>" : ""}</div></div></div>
+          <div class="school-hero"><div class="ic">🏫</div><div><b>${esc(c.school.elem)}</b><div class="n">도보 ${c.school.elem_walk_min}분 (${c.school.elem_dist}m) ${c.school.chopuma ? "· <b style='color:#7c3aed'>초품아</b>" : ""}</div>
+            ${c.school.elem_stats ? `<div class="n">학생 ${c.school.elem_stats.students.toLocaleString()}명${c.school.elem_stats.chg_pct != null ? ` (전년 ${fmtChg(c.school.elem_stats.chg_pct)})` : ""} · 학급당 ${c.school.elem_stats.class_size}명${c.school.elem_stats.net_move != null ? ` · 순전입 <b class="${c.school.elem_stats.net_move > 0 ? "up" : c.school.elem_stats.net_move < 0 ? "down" : ""}">${c.school.elem_stats.net_move > 0 ? "+" : ""}${c.school.elem_stats.net_move}명</b>` : ""}${c.school.elem_rank ? ` · 전입 선호 ${c.school.elem_rank[0]}위/${c.school.elem_rank[1]}` : ""}</div>` : ""}</div></div>
           ${c.edu ? `<div class="kv" style="margin-top:12px">
             <div><div class="k">1km 내 교과학원</div><div class="v">${c.edu.exam_1km}개<small>${state.meta.area.split(" ").pop()} 상위 ${c.edu.exam_top_pct}%</small></div></div>
             <div><div class="k">1km 내 학원 전체</div><div class="v">${c.edu.aca_1km}개<small>예체능 ${c.edu.art_1km}</small></div></div></div>` : ""}
-          <div class="mids">${(c.school.middle_detail && c.school.middle_detail.length ? c.school.middle_detail.map((m) => `<span class="tag">${esc(m.name)} <span class="muted">${m.dist}m${m.public === "사립" ? " · 사립" : ""}${m.coedu && m.coedu !== "남여공학" ? " · " + esc(m.coedu) : ""}</span></span>`) : c.school.middle.map((m) => `<span class="tag">${esc(m)}</span>`)).join("")}</div>
-          <div class="note">${esc(c.school.middle_note)}</div></div>
+          <div class="mids">${(c.school.middle_detail && c.school.middle_detail.length ? c.school.middle_detail.map((m) => `<span class="tag">${esc(m.name)} <span class="muted">${m.dist}m${m.public === "사립" ? " · 사립" : ""}${m.coedu && m.coedu !== "남여공학" ? " · " + esc(m.coedu) : ""}${m.stats ? ` · ${m.stats.students}명 · 학급당 ${m.stats.class_size}` : ""}</span></span>`) : c.school.middle.map((m) => `<span class="tag">${esc(m)}</span>`)).join("")}</div>
+          <div class="note">${esc(c.school.middle_note)}${c.school.elem_stats ? " · 학생 수·전출입은 학교알리미 " + c.school.elem_stats.year + "년 공시" : ""}</div></div>
 
         <div class="section"><h4>교통 · 도로 환경</h4><div class="kv">
           <div><div class="k">가까운 역</div><div class="v">${esc(c.station.name)}<small>${esc(c.station.line)} · ${c.station.walk_min}분</small></div></div>

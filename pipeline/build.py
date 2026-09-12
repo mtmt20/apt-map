@@ -25,6 +25,7 @@ ROOT = os.path.join(HERE, "..")
 RAW = os.path.join(ROOT, "data", "raw")
 OUT = os.path.join(ROOT, "app", "data")
 PY = 3.3058
+SCHOOL_STATS = {}
 
 
 # ---------- geo utils ----------
@@ -133,6 +134,42 @@ def voronoi_zones(schools, bbox):
         ring.append(ring[0])
         zones.append({"name": sc["name"], "ring": ring})
     return zones
+
+
+def load_schoolinfo():
+    """학교알리미 -> 학교명 -> {students, students_prev, chg_pct, class_size, move_in, move_out, net_move, year}"""
+    d = os.path.join(RAW, "schoolinfo")
+    if not os.path.isdir(d):
+        return {}
+    by_year = {}
+    for fp in glob.glob(os.path.join(d, "*_*_*_*.json")):
+        t, knd, sgg, yr = os.path.basename(fp)[:-5].split("_")
+        for r in json.load(open(fp, encoding="utf-8")):
+            rec = by_year.setdefault(r["SCHUL_NM"], {}).setdefault(int(yr), {"knd": knd})
+            if t == "62":
+                tot = str(r.get("COL_FGR_SUM", "0")).split("(")[0]
+                rec["students"] = int(tot or 0)
+                rec["class_size"] = float(r.get("AVG_FGR_SUM") or 0)
+                rec["classes"] = str(r.get("COL_SUM", "")).split("(")[0]
+            elif t == "10":
+                rec["move_in"] = int(r.get("MVIN_SUM") or 0)
+                rec["move_out"] = int(r.get("MVT_SUM") or 0)
+                rec["students10"] = int(r.get("STDNT_SUM") or 0)
+    out = {}
+    for name, yrs in by_year.items():
+        ys = sorted(y for y, v in yrs.items() if v.get("students"))
+        if not ys:
+            continue
+        cur, prev = yrs[ys[-1]], (yrs[ys[-2]] if len(ys) > 1 else None)
+        chg = round((cur["students"] / prev["students"] - 1) * 100, 1) if prev and prev.get("students") else None
+        mi, mo = cur.get("move_in"), cur.get("move_out")
+        out[name] = {
+            "year": ys[-1], "students": cur["students"], "chg_pct": chg, "class_size": cur.get("class_size"),
+            "classes": cur.get("classes", ""), "move_in": mi, "move_out": mo,
+            "net_move": (mi - mo) if mi is not None and mo is not None else None,
+            "net_move_pct": round((mi - mo) / cur["students"] * 100, 1) if mi is not None and mo is not None and cur["students"] else None,
+        }
+    return out
 
 
 def load_poi():
@@ -315,9 +352,13 @@ def enrich(c, roads, today, stations, schools, zones, middle=None, academies=Non
         mid_note = "가까운 중학교 3곳 (실제 배정은 학교군 내 추첨)"
     else:
         mids, mid_detail, mid_note = demo_data.MIDDLE_ZONES.get(c["umd"], []), [], "중학교는 학교군 단위 배정 + 추첨 (특정 학교 확정 아님)"
+    for m in mid_detail:
+        st = (SCHOOL_STATS or {}).get(m["name"])
+        if st:
+            m["stats"] = {k: st[k] for k in ("students", "chg_pct", "class_size", "net_move", "net_move_pct")}
     c["school"] = {
         "elem": elem["name"], "elem_dist": round(de), "elem_walk_min": max(1, round(de / 60)),
-        "chopuma": de <= 300,
+        "chopuma": de <= 300, "elem_stats": (SCHOOL_STATS or {}).get(elem["name"]),
         "middle": mids, "middle_detail": mid_detail, "middle_note": mid_note,
     }
     # 학원 밀집도 (반경 1km): 전체 / 입시·보습 교과
@@ -419,8 +460,31 @@ def main():
         zones = [{"name": n, "ring": poly + [poly[0]]} for n, _, _, poly in demo_data.ELEM_SCHOOLS]
         zone_note = "데모 경계"
     middle, academies = (poi or {}).get("middle") or [], (poi or {}).get("academies") or []
+    global SCHOOL_STATS
+    SCHOOL_STATS = load_schoolinfo() if real else {}
+    # 초등 순전입/학생증가 구내 순위 -> 장단점
+    elem_rank = {}
+    if SCHOOL_STATS:
+        el = [(n, v) for n, v in SCHOOL_STATS.items() if v.get("net_move_pct") is not None and any(x["name"] == n for x in schools)]
+        el.sort(key=lambda x: -(x[1]["net_move_pct"] or 0))
+        for i, (n, v) in enumerate(el):
+            elem_rank[n] = (i + 1, len(el))
     cs = [enrich(c, roads, today, stations, schools, zones, middle, academies) for c in cs]
     cs = [c for c in cs if c["by_area"]]
+    for c in cs:
+        st = c["school"].get("elem_stats")
+        if st:
+            rk = elem_rank.get(c["school"]["elem"])
+            c["school"]["elem_rank"] = rk
+            if st.get("chg_pct") is not None and st["chg_pct"] >= 3:
+                c["pros"].append("배정 초등 학생 수 증가 (전년 대비 +{}%)".format(st["chg_pct"]))
+            elif st.get("chg_pct") is not None and st["chg_pct"] <= -8:
+                c["cons"].append("배정 초등 학생 수 감소 (전년 대비 {}%)".format(st["chg_pct"]))
+            if st.get("class_size") and st["class_size"] >= 28:
+                c["cons"].append("배정 초등 과밀 (학급당 {}명)".format(st["class_size"]))
+            if rk and rk[0] <= max(3, rk[1] // 5):
+                c["pros"].append("배정 초등 전입 선호도 상위 (권역 {}위/{})".format(rk[0], rk[1]))
+            c["pros"], c["cons"] = c["pros"][:5], c["cons"][:5]
     # 학원 밀집도 구내 백분위 (교과학원 기준)
     vals = sorted(c["edu"]["exam_1km"] for c in cs if c.get("edu"))
     for c in cs:
