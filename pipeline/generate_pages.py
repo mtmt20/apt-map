@@ -118,7 +118,12 @@ def page_html(c, base, all_by_umd):
     parts.append('<h2>학군</h2><div class="card">')
     if c.get("edu_score") is not None:
         parts.append('<div class="sub">학군 지수 <b>{}</b>/100 · 권역 {}위 (상위 {}%)</div>'.format(c["edu_score"], c.get("edu_rank"), c.get("edu_top_pct")))
-    parts.append('<p><b>배정 초등학교(추정)</b>: {} · 도보 {}분 ({}m){}</p>'.format(esc(c["school"]["elem"]), c["school"]["elem_walk_min"], c["school"]["elem_dist"], " · <b style='color:#7c3aed'>초품아</b>" if c["school"]["chopuma"] else ""))
+    parts.append('<p><b>배정 초등학교{}</b>: {} · 도보 {}분 ({}m){}{}</p>'.format(
+        "(교육청 공식 학구)" if c["school"].get("elem_official") else "(추정)", esc(c["school"]["elem"]), c["school"]["elem_walk_min"], c["school"]["elem_dist"],
+        " · <b style='color:#7c3aed'>초품아</b>" if c["school"]["chopuma"] else "",
+        " · 공동통학구역: " + " / ".join(esc(x) for x in c["school"]["elem_shared"]) if c["school"].get("elem_shared") else ""))
+    if c["school"].get("middle_zone"):
+        parts.append('<p><b>중학교 학군</b>: {}</p>'.format(esc(c["school"]["middle_zone"])))
     if st:
         parts.append('<p class="sub">학생 {:,}명{} · 학급당 {}명{}</p>'.format(st["students"], (" (전년 {:+.1f}%)".format(st["chg_pct"]) if st.get("chg_pct") is not None else ""), st.get("class_size"),
                                                                            (" · 순전입 {:+d}명".format(st["net_move"]) if st.get("net_move") is not None else "")))
@@ -128,7 +133,7 @@ def page_html(c, base, all_by_umd):
     mids = c["school"].get("middle_detail") or []
     if mids:
         parts.append('<p><b>가까운 중학교</b>: ' + ", ".join("{} ({}m{})".format(esc(m["name"]), m["dist"], " · 사립" if m.get("public") == "사립" else "") for m in mids) + '</p>')
-    parts.append('<div class="note">초등 배정은 학교 위치 기준 추정이며 실제 학구도와 다를 수 있습니다. 중학교는 학교군 내 추첨 배정입니다. 학생 수·전출입은 학교알리미 공시.</div></div>')
+    parts.append('<div class="note">초등 통학구역은 학구도안내서비스(교육청 공식) 기준이며 매년 조정될 수 있습니다. 중학교는 학교군 내 추첨 배정입니다. 학생 수·전출입은 학교알리미 공시.</div></div>')
 
     # 교통/도로 + 편의
     parts.append('<h2>교통 · 도로 · 생활 편의</h2><div class="card"><div class="kv">')

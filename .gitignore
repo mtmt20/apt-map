@@ -4,3 +4,4 @@ __pycache__/
 *.pyc
 app/data/
 app/apt/
+logs/

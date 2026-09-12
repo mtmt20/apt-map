@@ -27,6 +27,7 @@ RAW = os.path.join(ROOT, "data", "raw")
 OUT = os.path.join(ROOT, "app", "data")
 PY = 3.3058
 SCHOOL_STATS = {}
+MIDDLE_ZONES_OFFICIAL = []
 
 
 # ---------- geo utils ----------
@@ -234,7 +235,28 @@ def load_poi():
     d["middle"] += [v for (k, n), v in si.items() if k == "03" and n not in have_m]
     for ap_ in glob.glob(os.path.join(RAW, "academies*.json")):
         d["academies"] += json.load(open(ap_, encoding="utf-8"))
-    d["zones"] = voronoi_zones(d["elem_schools"], d["bbox"])
+    zp = os.path.join(RAW, "schoolzones_seoul.json")
+    d["official"] = None
+    if os.path.exists(zp):
+        off = json.load(open(zp, encoding="utf-8"))
+        d["official"] = off
+        # 공식 통학구역: zones 형식(name, ring)으로 변환. 링은 첫 파트를 외곽으로 사용, 학교 여러 곳이면 공동학구
+        zones = []
+        for z in off["elem"]:
+            names = [sc["name"] for sc in z["schools"]] or [z["name"].replace("통학구역", "")]
+            for ring in z["rings"]:
+                zones.append({"name": " · ".join(names), "ring": ring, "schools": z["schools"], "shared": z["shared"], "zone_id": z["id"]})
+        d["zones"] = zones
+        d["zone_note"] = "학구도안내서비스 {} 기준 (교육청 공식)".format(off.get("base_date", ""))
+        # 공식 학교 좌표로 초등 목록 보강 (이름 기준)
+        have = {x["name"] for x in d["elem_schools"]}
+        for z in off["elem"]:
+            for sc in z["schools"]:
+                if sc["name"] not in have and sc.get("lat"):
+                    d["elem_schools"].append({"name": sc["name"], "lat": sc["lat"], "lng": sc["lng"]})
+                    have.add(sc["name"])
+    else:
+        d["zones"] = voronoi_zones(d["elem_schools"], d["bbox"])
     return d
 
 
@@ -426,17 +448,35 @@ def enrich(c, roads, today, stations, schools, zones, middle=None, academies=Non
 
     # 초등 배정 (통학구역 폴리곤 포함 여부 -> 없으면 최근접)
     by_name = {sc["name"]: sc for sc in schools}
-    elem = None
+    elem, elem_shared, zone_hit = None, [], None
     for z in zones:
         if point_in_ring(c["lng"], c["lat"], z["ring"][:-1]):
-            elem = by_name.get(z["name"])
+            zone_hit = z
+            cands = [sc for sc in z.get("schools", []) if sc.get("lat")] or ([by_name[z["name"]]] if z["name"] in by_name else [])
+            if cands:
+                cands.sort(key=lambda sc: dist_m(c["lat"], c["lng"], sc["lat"], sc["lng"]))
+                elem = cands[0]
+                elem_shared = [sc["name"] for sc in cands] if len(cands) > 1 else []
             break
     if not elem:
         elem = min(schools, key=lambda sc: dist_m(c["lat"], c["lng"], sc["lat"], sc["lng"]))
     de = dist_m(c["lat"], c["lng"], elem["lat"], elem["lng"])
-    if middle:
+    mid_zone = next((z for z, ring in MIDDLE_ZONES_OFFICIAL if point_in_ring(c["lng"], c["lat"], ring[:-1])), None)
+    mid_by_name = {m["name"]: m for m in middle}
+    if mid_zone and mid_zone.get("schools"):
+        cands = []
+        for sc in mid_zone["schools"]:
+            m = mid_by_name.get(sc["name"], {})
+            lat, lng = (sc.get("lat") or m.get("lat")), (sc.get("lng") or m.get("lng"))
+            if lat:
+                cands.append((dist_m(c["lat"], c["lng"], lat, lng), sc["name"], m))
+        cands.sort(key=lambda x: x[0])
+        mids = [n for _, n, _ in cands[:6]]
+        mid_detail = [{"name": n, "dist": round(d), "public": m.get("public", ""), "coedu": m.get("coedu", "")} for d, n, m in cands[:6]]
+        mid_note = "{} 소속 중학교 {}곳 중 가까운 순 (학교군 내 추첨 배정, 학구도안내서비스 기준)".format(mid_zone["name"], len(cands))
+    elif middle:
         near_mid = sorted(((dist_m(c["lat"], c["lng"], m["lat"], m["lng"]), m) for m in middle), key=lambda x: x[0])[:3]
-        mids = ["{} {}".format(m["name"], "" if d > 1500 else "") .strip() for d, m in near_mid]
+        mids = [m["name"] for d, m in near_mid]
         mid_detail = [{"name": m["name"], "dist": round(d), "public": m.get("public", ""), "coedu": m.get("coedu", "")} for d, m in near_mid]
         mid_note = "가까운 중학교 3곳 (실제 배정은 학교군 내 추첨)"
     else:
@@ -448,6 +488,8 @@ def enrich(c, roads, today, stations, schools, zones, middle=None, academies=Non
     c["school"] = {
         "elem": elem["name"], "elem_dist": round(de), "elem_walk_min": max(1, round(de / 60)),
         "chopuma": de <= 300, "elem_stats": (SCHOOL_STATS or {}).get(elem["name"]),
+        "elem_shared": elem_shared, "elem_official": zone_hit is not None and "zone_id" in zone_hit,
+        "middle_zone": mid_zone["name"] if mid_zone else None,
         "middle": mids, "middle_detail": mid_detail, "middle_note": mid_note,
     }
     # 학원 밀집도 (반경 1km): 전체 / 입시·보습 교과
@@ -556,13 +598,15 @@ def main():
     cs = real or demo_data.complexes()
     if poi:
         stations, schools, zones = poi["stations"], poi["elem_schools"], poi["zones"]
-        zone_note = "최근접 학교 기준 추정 (공식 학구도 반영 전)"
+        zone_note = poi.get("zone_note") or "최근접 학교 기준 추정 (공식 학구도 반영 전)"
     else:
         stations = [{"name": n, "line": l, "lat": la, "lng": lo} for n, l, la, lo in demo_data.STATIONS]
         schools = [{"name": n, "lat": la, "lng": lo} for n, la, lo, _ in demo_data.ELEM_SCHOOLS]
         zones = [{"name": n, "ring": poly + [poly[0]]} for n, _, _, poly in demo_data.ELEM_SCHOOLS]
         zone_note = "데모 경계"
     middle, academies = (poi or {}).get("middle") or [], (poi or {}).get("academies") or []
+    global MIDDLE_ZONES_OFFICIAL
+    MIDDLE_ZONES_OFFICIAL = [(z, ring) for z in ((poi or {}).get("official") or {}).get("middle", []) for ring in z["rings"]]
     global SCHOOL_STATS
     SCHOOL_STATS = load_schoolinfo() if real else {}
     # 초등 순전입/학생증가 구내 순위 -> 장단점
@@ -676,7 +720,7 @@ def main():
     dump("complexes.json", summary)
     feats = []
     for z in zones:
-        feats.append({"type": "Feature", "properties": {"name": z["name"], "kind": "zone", "note": zone_note},
+        feats.append({"type": "Feature", "properties": {"name": z["name"], "kind": "zone", "note": zone_note, "shared": bool(z.get("shared"))},
                       "geometry": {"type": "Polygon", "coordinates": [z["ring"]]}})
     for sc in schools:
         feats.append({"type": "Feature", "properties": {"name": sc["name"], "kind": "school"},
