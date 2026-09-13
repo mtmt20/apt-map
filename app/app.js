@@ -10,7 +10,8 @@
     complexes: [], auctions: [], schools: null, meta: null,
     area: "all", sort: null, q: "",
     selected: null, markers: {}, aucMarkers: [], schoolMarkers: [], crownMarkers: [],
-    layers: { school: true, road: false, auction: false, terrain: false, nuisance: false },
+    layers: { school: true, road: false, auction: false, terrain: false, nuisance: false, amenity: false },
+    compare: JSON.parse(localStorage.getItem("compare") || "[]"), budget: null,
   };
 
   // ---------- API / 찜 ----------
@@ -123,6 +124,23 @@
       applyCrowns();
     }).catch(() => {});
 
+    // 주요시설 (병원·마트·어린이집·도서관·공원·놀이터) + 선택 단지 반경 원
+    map.addSource("amenity", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
+    map.addSource("range", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
+    const AM_COLOR = ["match", ["get", "kind"], "hospital", "#dc2626", "emergency", "#b91c1c", "clinic_ped", "#f97316", "mart", "#2563eb", "kindergarten", "#f59e0b", "playground", "#eab308", "library", "#7c3aed", "park", "#16a34a", "university", "#0ea5e9", "police", "#334155", "#64748b"];
+    map.addLayer({ id: "am-park", type: "fill", source: "amenity", filter: ["==", ["get", "kind"], "park_area"], layout: { visibility: "none" }, paint: { "fill-color": "#22c55e", "fill-opacity": 0.22 } });
+    map.addLayer({ id: "range-fill", type: "fill", source: "range", layout: { visibility: "none" }, paint: { "fill-color": "#2563eb", "fill-opacity": ["case", ["==", ["get", "r"], 500], 0.10, 0.05] } });
+    map.addLayer({ id: "range-line", type: "line", source: "range", layout: { visibility: "none" }, paint: { "line-color": "#2563eb", "line-width": 1.5, "line-dasharray": [3, 2] } });
+    map.addLayer({ id: "am-point", type: "circle", source: "amenity", filter: ["all", ["==", ["geometry-type"], "Point"], ["!=", ["get", "kind"], "park_area"]], layout: { visibility: "none" }, minzoom: 12,
+      paint: { "circle-radius": ["interpolate", ["linear"], ["zoom"], 12, 3.5, 16, 8], "circle-color": AM_COLOR, "circle-stroke-color": "#fff", "circle-stroke-width": 1.5, "circle-opacity": 0.95 } });
+    if (map.getStyle().glyphs) {
+      map.addLayer({ id: "am-label", type: "symbol", source: "amenity", filter: ["all", ["==", ["geometry-type"], "Point"], ["!=", ["get", "kind"], "park_area"]], minzoom: 14.5, layout: { visibility: "none",
+        "text-field": ["get", "name"], "text-font": ["Noto Sans Bold"], "text-size": ["interpolate", ["linear"], ["zoom"], 14.5, 12, 17, 15], "text-offset": [0, 1.1], "text-anchor": "top", "text-optional": true, "text-max-width": 8 },
+        paint: { "text-color": AM_COLOR, "text-halo-color": dark ? "#0f172a" : "#ffffff", "text-halo-width": 1.8 } });
+    }
+    map.on("click", "am-point", (e) => { const p = e.features[0].properties; toast(`${p.label}${p.name ? " · " + p.name : ""}${p.area ? " · " + Math.round(p.area / 10000 * 10) / 10 + "ha" : ""}`); });
+    map.on("mouseenter", "am-point", () => map.getCanvas().style.cursor = "pointer"); map.on("mouseleave", "am-point", () => map.getCanvas().style.cursor = "");
+
     // 기피시설 (OSM + 인허가)
     map.addSource("nuisance", { type: "geojson", data: { type: "FeatureCollection", features: [] } });      // 기피 레이어 켤 때 로드
     map.addLayer({ id: "nz-line", type: "line", source: "nuisance", filter: ["==", ["geometry-type"], "LineString"], layout: { visibility: "none" },
@@ -170,6 +188,16 @@
       }))).then(() => map.getSource("roads").setData({ type: "FeatureCollection", features: roadTiles.feats }));
     });
   }
+  function circlePoly(lng, lat, r) {
+    const kx = 111320 * Math.cos(lat * Math.PI / 180), ky = 110540, pts = [];
+    for (let i = 0; i <= 64; i++) { const t = (i / 64) * 2 * Math.PI; pts.push([lng + (r * Math.cos(t)) / kx, lat + (r * Math.sin(t)) / ky]); }
+    return pts;
+  }
+  function drawRange() {
+    const src = map.getSource("range"); if (!src) return;
+    const c = state.selected && state.complexes.find((x) => x.id === state.selected);
+    src.setData({ type: "FeatureCollection", features: c ? [500, 1000].map((r) => ({ type: "Feature", properties: { r }, geometry: { type: "Polygon", coordinates: [circlePoly(c.lng, c.lat, r)] } })) : [] });
+  }
   const lazyLoaded = {};
   function lazySource(id, url) {
     if (lazyLoaded[id] || !map.getSource(id)) return;
@@ -188,6 +216,9 @@
     $("#terrainLegend").hidden = !state.layers.terrain;
     if (state.layers.road) { lazySource("roads-major", "data/roads_major.geojson"); loadRoadTiles(); }
     if (state.layers.nuisance) lazySource("nuisance", "data/nuisance.geojson");
+    v(["am-park", "am-point", "am-label", "range-fill", "range-line"], state.layers.amenity);
+    if (state.layers.amenity) { lazySource("amenity", "data/amenities.geojson"); drawRange(); }
+    $("#amLegend").hidden = !state.layers.amenity;
     $("#legend").hidden = !state.layers.road;
     state.aucMarkers.forEach((m) => state.layers.auction ? m.addTo(map) : m.remove());
     $$(".lyr[data-layer]").forEach((b) => b.classList.toggle("on", !!state.layers[b.dataset.layer]));
@@ -243,7 +274,7 @@
   // ---------- list ----------
   function visibleComplexes() {
     let list = state.complexes.filter((c) => areaMatch(c) && matchQ(c));
-    if (!state.q && map.getZoom() >= 12 && state.sort !== "fav") {   // 검색어 없으면 지도 화면 안 단지만
+    if (!state.q && map.getZoom() >= 12 && state.sort !== "fav" && state.sort !== "budget") {   // 검색어 없으면 지도 화면 안 단지만
       const bb = map.getBounds();
       list = list.filter((c) => c.lat > bb.getSouth() && c.lat < bb.getNorth() && c.lng > bb.getWest() && c.lng < bb.getEast());
     }
@@ -254,12 +285,21 @@
     else if (state.sort === "edu") list = list.filter((c) => c.edu_score != null).sort((a, b) => b.edu_score - a.edu_score);
     else if (state.sort === "fav") { list = state.complexes.filter((c) => favs.ids.has(c.id) && areaMatch(c)); }
     else if (state.sort === "up") list = list.filter((c) => c.up_n).sort((a, b) => (b.up_n - b.risk_n) - (a.up_n - a.risk_n) || b.trade_count_1y - a.trade_count_1y);
+    else if (state.sort === "kid") list = list.filter((c) => c.kid != null).sort((a, b) => b.kid - a.kid || b.trade_count_1y - a.trade_count_1y);
+    else if (state.sort === "budget" && state.budget) {
+      const B = state.budget;
+      list = state.complexes.filter((c) => areaMatch(c) && (!B.gu || c.sgg === B.gu) && (!B.station || (c.stn || "").includes(B.station)))
+        .map((c) => { const r = repArea(c, state.area); return r && r.latest <= B.max && r.latest >= B.min ? c : null; }).filter(Boolean)
+        .sort((a, b) => (B.kid ? (b.kid || 0) - (a.kid || 0) : (b.edu_score || 0) - (a.edu_score || 0)) || b.trade_count_1y - a.trade_count_1y);
+    }
     else list.sort((a, b) => b.trade_count_1y - a.trade_count_1y);
     return list.slice(0, 150);
   }
   function renderList() {
     const list = visibleComplexes();
-    $("#listCount").textContent = state.sort === "fav" ? `찜한 단지 ${list.length}개` : (map.getZoom() >= 12 && !state.q ? `화면 안 단지 ${list.length}개` : `단지 ${list.length}개`);
+    $("#compareBar").hidden = !state.compare.length;
+    $("#compareBar").querySelector("span").textContent = `비교 ${state.compare.length}/3`;
+    $("#listCount").textContent = state.sort === "budget" ? `예산 조건 ${list.length}개` : state.sort === "fav" ? `찜한 단지 ${list.length}개` : (map.getZoom() >= 12 && !state.q ? `화면 안 단지 ${list.length}개` : `단지 ${list.length}개`);
     $("#alertBar").hidden = !(state.sort === "fav" && list.length && API);
     $("#list").innerHTML = list.map((c) => {
       const rep = repArea(c, state.area);
@@ -272,6 +312,7 @@
         ...(c.edu_score != null && c.edu_top_pct <= 30 ? [`<span class="tag school">학군 ${c.edu_score}점 · 상위 ${c.edu_top_pct}%</span>`] : []),
         ...(c.terrain && c.terrain.station_dh != null && c.terrain.station_dh >= 30 ? [`<span class="tag bad">언덕 +${c.terrain.station_dh}m</span>`] : []),
         ...(c.nz ? [`<span class="tag bad">기피시설 ${c.nz}</span>`] : []),
+        ...(c.kid != null && c.kid_pct <= 25 ? [`<span class="tag school">👶 아이 키우기 ${c.kid}점</span>`] : []),
         ...(c.risk_n ? [`<span class="tag bad">위험 신호 ${c.risk_n}</span>`] : []),
         ...(c.up_n ? [`<span class="tag good">상승 신호 ${c.up_n}</span>`] : []),
       ].join("");
@@ -284,6 +325,14 @@
   }
 
   // ---------- detail ----------
+  function radarSVG(axes) {
+    const keys = Object.keys(axes), n = keys.length, R = 62, cx = 90, cy = 78;
+    const pt = (i, v) => { const ang = -Math.PI / 2 + (2 * Math.PI * i) / n; const r = R * v / 100; return [cx + r * Math.cos(ang), cy + r * Math.sin(ang)]; };
+    const grid = [25, 50, 75, 100].map((v) => `<polygon points="${keys.map((k, i) => pt(i, v).join(",")).join(" ")}" fill="none" stroke="var(--line)" stroke-width="1"/>`).join("");
+    const poly = keys.map((k, i) => pt(i, axes[k]).join(",")).join(" ");
+    const labels = keys.map((k, i) => { const [x, y] = pt(i, 128); return `<text x="${x}" y="${y}" font-size="10" fill="var(--muted)" text-anchor="middle" dominant-baseline="middle">${esc(k)}</text>`; }).join("");
+    return `<svg viewBox="0 0 180 156" style="width:180px;height:156px;flex:0 0 auto">${grid}<polygon points="${poly}" fill="rgba(124,58,237,.25)" stroke="#7c3aed" stroke-width="2"/>${labels}</svg>`;
+  }
   function chartSVG(trades, areaSel) {
     const pts = trades.filter((t) => !areaSel || bucket(t.area) === areaSel).map((t) => ({ d: new Date(t.date), v: t.price / (t.area / PY), p: t.price }));
     if (pts.length < 2) return `<div class="muted" style="font-size:13px">거래가 적어 추세를 그릴 수 없어요.</div>`;
@@ -319,7 +368,7 @@
     }
     const c = c0;
     state.selected = id;
-    renderMarkers();
+    renderMarkers(); drawRange();
     map.flyTo({ center: [c.lng, c.lat], zoom: Math.max(map.getZoom(), 15.2), offset: [0, innerWidth < 900 ? -innerHeight * 0.18 : 0], duration: 700 });
     const areas = c.by_area || [];
     let areaSel = state.area !== "all" && areas.some((a) => bucket(a.area) === state.area) ? state.area : (areas.some((a) => bucket(a.area) === "84") ? "84" : bucket(areas[0].area));
@@ -347,7 +396,17 @@
             <div class="lbl"><span>호가가 실거래보다 <b class="${ask.gap_pct >= 0 ? "up" : "down"}">${ask.gap_pct >= 0 ? "+" : ""}${ask.gap_pct}%</b> 높음</span><span class="muted">${esc(ask.source)}</span></div></div>` : ""}
           <div id="communityReports"><div class="note">${API ? "제보 불러오는 중…" : "제보 서버 연결 전 (내 기기 저장)"}${reports.length ? " · 내 제보: " + reports.map((r) => fmtPrice(r.price) + " (" + r.date + ")").join(", ") : ""}</div></div>
           <div style="margin-top:12px">${chartSVG(c.trades, areaSel)}</div>
+          ${c.phase ? `<div class="note" style="margin-top:8px">📈 지금 국면: <b>${esc(c.phase)}</b></div>` : ""}
         </div>
+
+        ${c.kid ? `<div class="section"><h4>👶 아이 키우기 점수 <span class="r muted">서울 상위 ${c.kid.top_pct}%</span></h4>
+          <div style="display:flex;gap:10px;align-items:center">${radarSVG(c.kid.axes)}<div style="flex:1"><div class="big" style="font-size:34px">${c.kid.score}<small>/100</small></div>
+            ${Object.entries(c.kid.axes).map(([k, v]) => `<div style="display:flex;justify-content:space-between;font-size:12.5px;padding:2px 0"><span class="muted">${esc(k)}</span><b>${v}</b></div>`).join("")}</div></div>
+          <div class="note">초등 접근·학군·보육/의료·지형/보행·환경/안전·생활 편의 6축 가중 평균. 세 아이 키우는 부모 관점의 참고 지표예요.</div>
+          <button class="btn ghost" style="margin-top:10px" id="cmpBtn">${state.compare.includes(c.id) ? "✓ 비교 목록에 있음" : "⚖ 비교 목록에 담기"} (${state.compare.length}/3)</button></div>` : ""}
+
+        ${(() => { const truths = [...c.cons, ...(c.notes || []), ...c.signals.risk].filter((x, i, arr) => arr.indexOf(x) === i); return truths.length ? `<div class="section"><h4>🕵️ 동네 진실 <span class="r muted">광고엔 안 나오는 것</span></h4><div class="plist">${truths.map((p) => `<div class="row info"><i>!</i><span>${esc(p)}</span></div>`).join("")}</div>
+          <button class="btn ghost" style="margin-top:10px" id="shareTruthBtn">📋 이 내용 복사해서 공유</button></div>` : ""; })()}
 
         ${c.signals && (c.signals.risk.length || c.signals.up.length) ? `<div class="section"><h4>위험 · 상승 신호 <span class="r muted">최근 24개월 실거래 기준</span></h4><div class="plist">
           ${c.signals.up.map((p) => `<div class="row good"><i>↑</i><span>${esc(p)}</span></div>`).join("")}
@@ -388,6 +447,10 @@
           ${Object.values(c.nuisance).sort((x, y) => x.dist - y.dist).slice(0, 8).map((v) => `<div class="rep"><span>${v.within ? "⚠️ " : ""}${esc(v.label)}${v.name ? ` <span class="muted">· ${esc(v.name)}</span>` : ""}</span><span class="${v.within ? "up" : "muted"}"><b>${v.dist >= 1000 ? (v.dist / 1000).toFixed(1) + "km" : v.dist + "m"}</b>${v.count > 1 ? ` · ${v.count}곳` : ""}</span></div>`).join("")}
           <div class="note">⚠️ 는 종류별 기준 거리 안(변전소 300m, 유흥·모텔 200m, 송전선·철도 100m 등). 오픈스트리트맵·지방행정 인허가 자료 기준이라 누락이 있을 수 있어요.</div>
           <button class="btn ghost" style="margin-top:10px" id="nzBtn">🚧 지도에서 기피시설 보기</button></div>` : ""}
+        ${c.amen && Object.keys(c.amen).length ? `<div class="section"><h4>가까운 주요시설 <span class="r muted">직선거리</span></h4>
+          ${["kindergarten", "playground", "clinic_ped", "hospital", "emergency", "mart", "park", "library", "police", "university"].filter((k) => c.amen[k]).map((k) => { const v = c.amen[k]; return `<div class="rep"><span>${esc(v.label)}${v.name ? ` <span class="muted">· ${esc(v.name)}</span>` : ""}${v.area_m2 ? ` <span class="muted">${(v.area_m2 / 10000).toFixed(1)}ha</span>` : ""}</span><span class="${v.dist <= 500 ? "good" : "muted"}" style="${v.dist <= 500 ? "color:var(--good)" : ""}"><b>${v.dist >= 1000 ? (v.dist / 1000).toFixed(1) + "km" : v.dist + "m"}</b></span></div>`; }).join("")}
+          ${c.school.cross_major != null ? `<div class="note">🚸 초등 통학로: ${c.school.cross_major ? "<b style='color:var(--bad)'>큰길을 건너야 할 가능성</b> (직선 기준, 지하보도·육교는 반영 안 됨)" : "큰길 횡단 없음 (직선 기준)"}</div>` : ""}
+          <button class="btn ghost" style="margin-top:10px" id="amBtn">🏥 지도에서 주요시설 · 반경 500m/1km 보기</button></div>` : ""}
         ${c.life ? `<div class="section"><h4>육아 · 생활 편의 <span class="r muted">단지 반경 기준</span></h4><div class="kv">
           <div><div class="k">어린이집·유치원 (700m)</div><div class="v">${c.life.daycare}곳</div></div>
           <div><div class="k">소아과 (1km)</div><div class="v">${c.life.pediatric}곳</div></div>
@@ -412,6 +475,12 @@
 
       $("#backBtn").onclick = closeDetail;
       $$(".atab").forEach((b) => b.onclick = () => { areaSel = b.dataset.a; render(); });
+      if ($("#cmpBtn")) $("#cmpBtn").onclick = () => { toggleCompare(id); render(); };
+      if ($("#amBtn")) $("#amBtn").onclick = () => { state.layers.amenity = true; applyLayers(); setSheet("peek"); map.flyTo({ center: [c.lng, c.lat], zoom: 15.3 }); };
+      if ($("#shareTruthBtn")) $("#shareTruthBtn").onclick = () => {
+        const txt = `[집콕맵] ${c.name} 동네 진실\n` + [...c.cons, ...(c.notes || []), ...c.signals.risk].map((x) => "- " + x).join("\n") + `\nhttps://jipkokmap.kr/?id=${encodeURIComponent(c.id)}`;
+        (navigator.clipboard ? navigator.clipboard.writeText(txt) : Promise.reject()).then(() => toast("복사했어요. 카톡에 붙여넣기!")).catch(() => prompt("복사해서 공유하세요", txt));
+      };
       if ($("#nzBtn")) $("#nzBtn").onclick = () => { state.layers.nuisance = true; applyLayers(); setSheet("peek"); map.flyTo({ center: [c.lng, c.lat], zoom: 15.5 }); };
       $("#roadBtn").onclick = () => { state.layers.road = true; applyLayers(); setSheet("peek"); map.flyTo({ center: [c.lng, c.lat], zoom: 16.5 }); };
       $$(".d-head .fav").forEach((b) => b.onclick = (e) => { e.stopPropagation(); toggleFav(id); });
@@ -432,7 +501,7 @@
     setSheet(sheetState || "half");
   }
   function closeDetail() {
-    state.selected = null; $("#detailView").hidden = true; $("#listView").hidden = false;
+    state.selected = null; drawRange(); $("#detailView").hidden = true; $("#listView").hidden = false;
     renderMarkers(); renderList(); setSheet("half");
   }
 
@@ -444,6 +513,61 @@
     api("/alerts", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ email: email.trim(), ids }) })
       .then((j) => { if (j.error) throw new Error(j.error); localStorage.setItem("alertEmail", email.trim()); toast(`찜한 ${j.n}개 단지의 실거래 알림을 등록했어요.`); })
       .catch(() => toast("알림 등록에 실패했어요."));
+  });
+
+  // ---------- 단지 비교 ----------
+  function toggleCompare(id) {
+    const i = state.compare.indexOf(id);
+    if (i >= 0) state.compare.splice(i, 1); else { if (state.compare.length >= 3) return toast("비교는 3개까지예요. 하나를 빼주세요."); state.compare.push(id); }
+    localStorage.setItem("compare", JSON.stringify(state.compare)); renderList();
+  }
+  async function openCompare() {
+    const ids = state.compare.slice(0, 3); if (ids.length < 2) return toast("비교할 단지를 2개 이상 담아주세요.");
+    const cs = await Promise.all(ids.map(async (id) => { const c = state.complexes.find((x) => x.id === id); if (c && !c.trades) Object.assign(c, await fetch(`data/c/${encodeURIComponent(id)}.json`).then((r) => r.json())); return c; }));
+    const rep = (c) => repArea(c, state.area) || (c.by_area || [])[0] || {};
+    const rows = [
+      ["대표 실거래", (c) => `${fmtPrice(rep(c).latest)} <small class="muted">${rep(c).area}㎡</small>`],
+      ["평당가", (c) => c.ppy ? c.ppy.toLocaleString() + "만" : "-"],
+      ["1년 변동", (c) => fmtChg(c.chg_1y) || "-"],
+      ["전세가율", (c) => c.jeonse_ratio ? c.jeonse_ratio + "%" : "-"],
+      ["세대수 / 준공", (c) => `${c.households ? c.households.toLocaleString() + "세대" : "-"} / ${c.built}년`],
+      ["👶 아이 키우기", (c) => c.kid ? `<b>${c.kid.score}</b> (상위 ${c.kid.top_pct}%)` : "-"],
+      ["학군 지수", (c) => c.edu_score != null ? `${c.edu_score} (상위 ${c.edu_top_pct}%)` : "-"],
+      ["배정 초등", (c) => `${esc(c.school.elem)} ${c.school.elem_walk_min}분${c.school.chopuma ? " · 초품아" : ""}`],
+      ["가까운 역", (c) => `${esc(c.station.name)} ${c.station.walk_min}분`],
+      ["지형", (c) => c.terrain ? `해발 ${c.terrain.elev}m · 경사 ${c.terrain.slope_pct}%` : "-"],
+      ["기피시설(기준내)", (c) => { const v = Object.values(c.nuisance || {}).filter((x) => x.within); return v.length ? v.map((x) => esc(x.label) + " " + x.dist + "m").join("<br>") : "없음"; }],
+      ["어린이집·소아과", (c) => c.life ? `${c.life.daycare}곳 · ${c.life.pediatric}곳` : "-"],
+      ["주차(세대당)", (c) => c.parking_per_hh ? c.parking_per_hh + "대" : "-"],
+      ["위험/상승 신호", (c) => `${c.signals.risk.length} / ${c.signals.up.length}`],
+      ["국면", (c) => c.phase ? esc(c.phase) : "-"],
+    ];
+    $("#compareBox").innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center"><h3 style="margin:0">단지 비교</h3><button class="btn ghost" id="cmpClose" style="width:auto;padding:6px 10px">닫기</button></div>
+      <div style="overflow-x:auto;margin-top:10px"><table class="tbl cmp"><tr><th></th>${cs.map((c) => `<th><a href="#" data-id="${esc(c.id)}" class="cmpName">${esc(c.name)}</a><br><small class="muted">${esc(c.umd)}</small></th>`).join("")}</tr>
+      ${rows.map(([k, f]) => `<tr><th>${k}</th>${cs.map((c) => `<td>${f(c)}</td>`).join("")}</tr>`).join("")}</table></div>
+      <div class="note">비교 목록 비우기: <button class="fav" id="cmpClear" style="font-size:13px">🗑 전체 삭제</button></div>`;
+    $("#compareModal").hidden = false;
+    $("#cmpClose").onclick = () => { $("#compareModal").hidden = true; };
+    $("#cmpClear").onclick = () => { state.compare = []; localStorage.setItem("compare", "[]"); $("#compareModal").hidden = true; renderList(); };
+    $$(".cmpName").forEach((el) => el.onclick = (e) => { e.preventDefault(); $("#compareModal").hidden = true; openDetail(el.dataset.id, "full"); });
+  }
+  $("#compareOpen").addEventListener("click", openCompare);
+  $("#compareModal").addEventListener("click", (e) => { if (e.target === $("#compareModal")) $("#compareModal").hidden = true; });
+
+  // ---------- 예산으로 찾기 ----------
+  $("#budgetChip").addEventListener("click", () => { $("#budgetModal").hidden = false; });
+  $("#budgetCancel").addEventListener("click", () => { $("#budgetModal").hidden = true; });
+  $("#budgetModal").addEventListener("click", (e) => { if (e.target === $("#budgetModal")) $("#budgetModal").hidden = true; });
+  $("#budgetForm").addEventListener("submit", (e) => {
+    e.preventDefault();
+    const f = e.target;
+    const max = Math.round(parseFloat(f.max.value || "0") * 10000), min = Math.round(parseFloat(f.min.value || "0") * 10000);
+    if (!max) return toast("최대 예산을 억 단위로 넣어주세요.");
+    state.budget = { max, min, gu: f.gu.value, station: f.station.value.trim(), kid: f.kid.checked };
+    if (f.area.value) { state.area = f.area.value; $$("[data-area]").forEach((x) => x.classList.toggle("on", x.dataset.area === state.area)); }
+    state.sort = "budget"; $$("[data-sort]").forEach((x) => x.classList.toggle("on", x.dataset.sort === "budget"));
+    $("#budgetModal").hidden = true; renderMarkers(); renderList(); setSheet("full");
+    const first = visibleComplexes()[0]; if (first) map.flyTo({ center: [first.lng, first.lat], zoom: 13 });
   });
 
   // ---------- 3D 기울이기 ----------
@@ -534,6 +658,8 @@
       if (meta.mode === "demo") { $("#modeBadge").hidden = false; $("#modeBadge").textContent = "데모 데이터"; }
       $("#areaLabel").textContent = meta.area;
       $("#gapChip").hidden = !complexes.some((c) => c.jeonse_ratio);
+      const gus = [...new Set(complexes.map((c) => c.sgg).filter(Boolean))].sort();
+      $("#budgetGu").innerHTML = `<option value="">서울 전체</option>` + gus.map((g) => `<option value="${esc(g)}">${esc(g)}</option>`).join("");
       if (meta.center) map.jumpTo({ center: meta.center, zoom: meta.mode === "real" ? 13.6 : 14.6 });
       const deep = new URLSearchParams(location.search).get("id");   // 정적 페이지 -> 앱 딥링크
       if (deep && complexes.some((c) => c.id === deep)) setTimeout(() => openDetail(deep, "half"), 400);

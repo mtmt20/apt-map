@@ -241,3 +241,13 @@ button { font: inherit; color: inherit; cursor: pointer; border: 0; background: 
 .mk.crown b { color: #b45309; }
 .mk.crown::after { background: #fff7ed; }
 @media (prefers-color-scheme: dark) { .mk.crown { background: #3b2f1a; } .mk.crown::after { background: #3b2f1a; } .mk.crown b { color: #fbbf24; } }
+
+.tbl.cmp th { white-space: nowrap; font-size: 12px; }
+.tbl.cmp td { font-size: 13px; vertical-align: top; min-width: 120px; }
+.tbl.cmp tr > th:first-child { position: sticky; left: 0; background: var(--bg); }
+.tbl.cmp a { color: var(--brand); text-decoration: none; font-weight: 800; }
+
+.legend.big { font-size: 13.5px; font-weight: 600; }
+.legend .d { display: inline-block; width: 11px; height: 11px; border-radius: 50%; margin-right: 7px; vertical-align: -1px; border: 1.5px solid #fff; box-shadow: 0 0 0 1px rgba(0,0,0,.15); }
+.mk.school { font-size: 13.5px; }
+.legend { font-size: 13px; }

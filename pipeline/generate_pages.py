@@ -106,6 +106,14 @@ def page_html(c, base, all_by_umd):
             a["area"], a["pyeong"], price(a["latest"]), a["latest_date"], ("{} ({}%)".format(price(a["jeonse"]), a["jeonse_ratio"]) if a.get("jeonse") and a.get("jeonse_ratio") else "-"), a["count"]))
     parts.append('</table></div>')
 
+    # 아이 키우기 점수
+    kid = c.get("kid")
+    if kid:
+        parts.append('<h2>아이 키우기 점수</h2><div class="card"><div class="big">{}<small>/100 · 서울 상위 {}%</small></div><div class="kv" style="margin-top:10px">{}</div><div class="note">초등 접근·학군·보육/의료·지형/보행·환경/안전·생활 편의 6축 가중 평균 (참고용)</div></div>'.format(
+            kid["score"], kid.get("top_pct"), "".join('<div><div class="k">{}</div><div class="v">{}</div></div>'.format(esc(k), v) for k, v in kid["axes"].items())))
+    if c.get("phase"):
+        parts.append('<p class="sub">📈 지금 국면: <b>{}</b></p>'.format(esc(c["phase"])))
+
     # 장단점
     parts.append('<h2>장단점 요약</h2><div class="card"><ul class="plist">')
     for p in c["pros"]:
@@ -166,6 +174,16 @@ def page_html(c, base, all_by_umd):
             parts.append('<li class="bad"><i>!</i><span>{}</span></li>'.format(esc(x)))
         parts.append('</ul><div class="note">최근 24개월 실거래·전월세로 자동 계산한 참고 지표입니다. 투자 판단의 근거가 아닙니다.</div></div>')
 
+    # 주요시설
+    am = c.get("amen") or {}
+    if am:
+        parts.append('<h2>가까운 주요시설</h2><div class="card"><div class="kv">')
+        for k in ("kindergarten", "playground", "clinic_ped", "hospital", "mart", "park", "library"):
+            v = am.get(k)
+            if v:
+                parts.append('<div><div class="k">{}</div><div class="v">{}<small>{}</small></div></div>'.format(esc(v["label"]), "{:.1f}km".format(v["dist"] / 1000) if v["dist"] >= 1000 else "{}m".format(v["dist"]), esc(v.get("name") or "")))
+        parts.append('</div>{}</div>'.format('<div class="note">초등 통학로: {}</div>'.format("큰길을 건너야 할 가능성 (직선 기준)" if c["school"].get("cross_major") else "큰길 횡단 없음 (직선 기준)")))
+
     # 기피시설
     nz = sorted((c.get("nuisance") or {}).values(), key=lambda v: v["dist"])
     if nz:
@@ -198,7 +216,7 @@ def index_html(cs, base):
         by_gu.setdefault(c["sgg"], {}).setdefault(c["umd"], []).append(c)
     parts = ["""<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>서울 아파트 단지별 실거래가·전세가율·학군 목록 | 집콕맵</title><meta name="description" content="서울 {n}개 아파트 단지의 최근 실거래가, 전세가율, 배정 초등학교, 학원 밀집도, 장단점 요약을 단지별 페이지로 정리했습니다.">
-<link rel="canonical" href="{base}/apt/index.html"><link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css"><link rel="stylesheet" href="page.css"></head><body><div class="wrap">
+<link rel="canonical" href="{base}/apt/index.html"><link rel="stylesheet" href="page.css"></head><body><div class="wrap">
 <header class="top"><a class="logo" href="../index.html">🏠 집콕맵</a><a class="btn" href="../index.html">지도로 보기</a></header>
 <h1>단지별 실거래가·전세가율·학군</h1><div class="sub">서울 {n}개 단지 · {gus}</div>""".format(n=len(cs), base=base, css=CSS, gus=" · ".join(sorted(by_gu)))]
     for gu in sorted(by_gu):
@@ -207,8 +225,9 @@ def index_html(cs, base):
             parts.append('<div class="card list"><b>{}</b>'.format(esc(umd)))
             for c in sorted(by_gu[gu][umd], key=lambda x: -x["trade_count_1y"]):
                 r = next((a for a in (c.get("by_area") or []) if 70 <= a["area"] < 100), (c.get("by_area") or [None])[0])
-                parts.append('<a href="{}.html"><b>{}</b><span>{} · {}년{}{}</span></a>'.format(slugify(c), esc(c["name"]), price(r["latest"]) if r else "-", c["built"],
-                                                                                           " · 초품아" if c["school"]["chopuma"] else "", " · 전세가율 {}%".format(c["jeonse_ratio"]) if c.get("jeonse_ratio") else ""))
+                parts.append('<a href="{}.html"><b>{}</b><span>{} · {}년{}{}{}</span></a>'.format(slugify(c), esc(c["name"]), price(r["latest"]) if r else "-", c["built"],
+                                                                                           " · 초품아" if c["school"]["chopuma"] else "", " · 전세가율 {}%".format(c["jeonse_ratio"]) if c.get("jeonse_ratio") else "",
+                                                                                           " · 아이키우기 {}".format(c["kid"]["score"]) if c.get("kid") else ""))
             parts.append("</div>")
     parts.append('<div class="disclaim">공공데이터 기반 자동 생성 자료입니다. 생성 {}</div></div></body></html>'.format(dt.date.today().isoformat()))
     return "".join(parts)

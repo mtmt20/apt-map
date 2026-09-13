@@ -36,6 +36,7 @@ MIDDLE_ZONES_OFFICIAL = []
 HIGH_ZONES_OFFICIAL = []
 HIGH_SCHOOLS = {}
 NUISANCE = {}
+AMENITIES = {}
 
 
 # ---------- geo utils ----------
@@ -249,6 +250,50 @@ NUISANCE_KINDS = {
     "rail": ("지상 철도", 100), "motorway": ("고속도로·자동차전용도로", 150),
     "adult_biz": ("유흥주점·단란주점", 200), "lodging": ("숙박업소", 200),
 }
+
+
+AMENITY_KINDS = {"hospital": "병원", "clinic_ped": "소아과", "mart": "대형마트·백화점", "kindergarten": "어린이집·유치원", "library": "도서관",
+                 "park": "공원", "university": "대학", "playground": "놀이터", "police": "경찰서·파출소", "emergency": "응급실"}
+
+
+def load_amenities():
+    p = os.path.join(RAW, "amenities_osm.json")
+    if not os.path.exists(p):
+        return {}
+    d = json.load(open(p, encoding="utf-8"))
+    for kind, items in d.items():
+        d[kind] = {"points": items, "pidx": grid_index(items, lambda x: [(x["lng"], x["lat"])])}
+    return d
+
+
+def amenities_near(am, lat, lng):
+    """종류별 최근접 시설 이름·거리 (2km 내)"""
+    res = {}
+    for kind, d in am.items():
+        best = None
+        for x in grid_near(d["pidx"], lng, lat, r=2):
+            dd = dist_m(lat, lng, x["lat"], x["lng"])
+            if dd <= 2000 and (best is None or dd < best[0]):
+                best = (dd, x)
+        if best:
+            res[kind] = {"label": AMENITY_KINDS.get(kind, kind), "name": best[1].get("name", ""), "dist": round(best[0]), "area_m2": best[1].get("area_m2")}
+    return res
+
+
+def crosses_major_road(lat1, lng1, lat2, lng2, roads_idx):
+    """두 점을 잇는 직선이 큰길과 교차하는지 (통학로 큰길 횡단 여부, 근사)"""
+    def ccw(A, B, C):
+        return (C[1] - A[1]) * (B[0] - A[0]) > (B[1] - A[1]) * (C[0] - A[0])
+    def inter(A, B, C, D):
+        return ccw(A, C, D) != ccw(B, C, D) and ccw(A, B, C) != ccw(A, B, D)
+    A, B = (lng1, lat1), (lng2, lat2)
+    mlng, mlat = (lng1 + lng2) / 2, (lat1 + lat2) / 2
+    for f in grid_near(roads_idx, mlng, mlat, r=1):
+        cs = f["geometry"]["coordinates"]
+        for i in range(len(cs) - 1):
+            if inter(A, B, tuple(cs[i]), tuple(cs[i + 1])):
+                return True
+    return False
 
 
 def load_nuisance():
@@ -633,6 +678,9 @@ def enrich(c, roads, today, stations, schools, zones, middle=None, academies=Non
 
     # 기피시설
     c["nuisance"] = nuisance_near(NUISANCE, c["lat"], c["lng"]) if NUISANCE else {}
+    # 주요시설 최근접 + 통학로 큰길 횡단 여부
+    c["amen"] = amenities_near(AMENITIES, c["lat"], c["lng"]) if AMENITIES else {}
+    c["school"]["cross_major"] = bool(roads and _ROAD_IDX and crosses_major_road(c["lat"], c["lng"], elem["lat"], elem["lng"], list(_ROAD_IDX.values())[0]))
 
     # 위험·상승 신호 (자체 실거래/전월세 데이터)
     age = today.year - c["built"]
@@ -682,6 +730,65 @@ def enrich(c, roads, today, stations, schools, zones, middle=None, academies=Non
     elif age >= 30:
         sig["up"].append("준공 30년↑ (재건축 연한 충족)")
     c["signals"] = sig
+    # 국면 한 줄: 최근 6개월 평당가 vs 이전 12개월, 거래량
+    def _ppy_med(ts_):
+        return statistics.median(ppy(t) for t in ts_) if ts_ else None
+    rec6 = [t for t in tr if dt.date.fromisoformat(t["date"]) >= months_ago(today, 6)]
+    prev12 = [t for t in tr if months_ago(today, 18) <= dt.date.fromisoformat(t["date"]) < months_ago(today, 6)]
+    m6, m12 = _ppy_med(rec6), _ppy_med(prev12)
+    if m6 and m12 and len(rec6) >= 2 and len(prev12) >= 3:
+        d = (m6 / m12 - 1) * 100
+        vol = (len(rec6) / 6.0) / (len(prev12) / 12.0)
+        if d >= 5 and vol >= 1.0:
+            ph = "상승 지속 (최근 6개월 평당가 {:+.0f}%, 거래 활발)".format(d)
+        elif d >= 5:
+            ph = "가격은 올랐지만 거래 감소 (평당가 {:+.0f}%)".format(d)
+        elif d <= -5:
+            ph = "조정 국면 (최근 6개월 평당가 {:+.0f}%)".format(d)
+        elif vol <= 0.5:
+            ph = "거래 위축, 가격 횡보 ({:+.0f}%)".format(d)
+        else:
+            ph = "횡보 (최근 6개월 평당가 {:+.0f}%)".format(d)
+    else:
+        ph = None
+    c["phase"] = ph
+
+    # 아이 키우기 점수 (0~100, 6축)
+    def clamp(v):
+        return max(0, min(100, int(round(v))))
+    sch = c["school"]
+    ax = {}
+    de_ = sch["elem_dist"]
+    ax["초등 접근"] = 100 if de_ <= 300 else 75 if de_ <= 500 else 45 if de_ <= 800 else 15
+    ax["학군"] = clamp(c.get("edu_score") or 40)
+    lf = c.get("life") or {}
+    care = 0
+    dc = lf.get("daycare")
+    if dc is not None:
+        care += 50 if dc >= 20 else 35 if dc >= 10 else 20 if dc >= 5 else 5
+    pd_ = lf.get("pediatric")
+    if pd_ is not None:
+        care += 30 if pd_ >= 3 else 20 if pd_ >= 1 else 0
+    if (lf.get("hospital") or 0) >= 10 and (lf.get("pharmacy") or 0) >= 3:
+        care += 20
+    ax["보육·의료"] = clamp(care if lf else 50)
+    tr_ = c.get("terrain") or {}
+    sl, dh = tr_.get("slope_pct"), tr_.get("station_dh")
+    walk = 100 if (sl is not None and sl <= 2 and (dh is None or abs(dh) < 10)) else 70 if (sl is not None and sl <= 5) else 40 if (sl is not None and sl <= 8) else 15 if sl is not None else 50
+    if c["road"].get("roadside"):
+        walk -= 20
+    ax["지형·보행"] = clamp(walk)
+    nz_n = sum(1 for v in c.get("nuisance", {}).values() if v["within"])
+    ax["환경·안전"] = 100 if nz_n == 0 else 60 if nz_n == 1 else 30 if nz_n == 2 else 5
+    liv = 0
+    pph = c.get("parking_per_hh")
+    liv += 40 if (pph or 0) >= 1.2 else 25 if (pph or 0) >= 0.9 else 10 if pph else 20
+    liv += 25 if (lf.get("park") or 0) >= 3 else 10
+    liv += 15 if (lf.get("library") or 0) >= 1 else 0
+    liv += 20 if (lf.get("mart") or 0) >= 1 else 5
+    ax["생활 편의"] = clamp(liv)
+    W = {"초등 접근": 0.20, "학군": 0.15, "보육·의료": 0.20, "지형·보행": 0.15, "환경·안전": 0.15, "생활 편의": 0.15}
+    c["kid"] = {"score": clamp(sum(ax[k] * w for k, w in W.items())), "axes": ax}
 
     # 장단점
     age = today.year - c["built"]
@@ -725,6 +832,10 @@ def enrich(c, roads, today, stations, schools, zones, middle=None, academies=Non
         cons.append("어린이집·유치원 700m 내 {}곳 (적음)".format(life["daycare"]))
     if life.get("pediatric") is not None and life["pediatric"] == 0:
         cons.append("1km 내 소아과 없음")
+    if c["school"].get("cross_major") and c["school"]["elem_dist"] <= 800:
+        cons.append("초등 통학로에 큰길 횡단 (직선 기준)")
+    elif c["school"]["chopuma"] and not c["school"].get("cross_major"):
+        pros.append("통학로 큰길 없음")
     nz_hits = [v for v in c["nuisance"].values() if v["within"]]
     nz_hits.sort(key=lambda v: v["dist"])
     for v in nz_hits[:2]:
@@ -795,8 +906,9 @@ def main():
     middle, academies = (poi or {}).get("middle") or [], (poi or {}).get("academies") or []
     global MIDDLE_ZONES_OFFICIAL
     MIDDLE_ZONES_OFFICIAL = [(z, ring) for z in ((poi or {}).get("official") or {}).get("middle", []) for ring in z["rings"]]
-    global SCHOOL_STATS, TERRAIN, HIGH_ZONES_OFFICIAL, HIGH_SCHOOLS, NUISANCE
+    global SCHOOL_STATS, TERRAIN, HIGH_ZONES_OFFICIAL, HIGH_SCHOOLS, NUISANCE, AMENITIES
     NUISANCE = load_nuisance() if real else {}
+    AMENITIES = load_amenities() if real else {}
     HIGH_ZONES_OFFICIAL = [(z, ring) for z in ((poi or {}).get("official") or {}).get("high", []) for ring in z["rings"]]
     HIGH_SCHOOLS = load_high_schools() if real else {}
     SCHOOL_STATS = load_schoolinfo() if real else {}
@@ -864,6 +976,15 @@ def main():
             if c["edu_top_pct"] <= 10:
                 c["pros"].insert(0, "학군 지수 {} (구 상위 {}%)".format(c["edu_score"], c["edu_top_pct"]))
                 c["pros"] = c["pros"][:5]
+    # 아이 키우기 점수 순위
+    ks = sorted((c["kid"]["score"] for c in cs if c.get("kid")), reverse=True)
+    for c in cs:
+        if c.get("kid"):
+            r_ = ks.index(c["kid"]["score"]) + 1
+            c["kid"]["rank"], c["kid"]["top_pct"] = r_, max(1, int(round(r_ / len(ks) * 100)))
+            if c["kid"]["top_pct"] <= 10:
+                c["pros"].insert(0, "아이 키우기 점수 {} (서울 상위 {}%)".format(c["kid"]["score"], c["kid"]["top_pct"]))
+                c["pros"] = c["pros"][:5]
     # 학원 밀집도 구내 백분위 (교과학원 기준)
     vals = sorted(c["edu"]["exam_1km"] for c in cs if c.get("edu"))
     for c in cs:
@@ -911,6 +1032,9 @@ def main():
             sm["terrain"] = {k: c["terrain"].get(k) for k in ("elev", "station_dh", "slope_pct")}
         sm["nz"] = sum(1 for v in c.get("nuisance", {}).values() if v["within"])
         sm["risk_n"], sm["up_n"] = len(c["signals"]["risk"]), len(c["signals"]["up"])
+        sm["kid"] = c["kid"]["score"] if c.get("kid") else None
+        sm["kid_pct"] = c["kid"].get("top_pct") if c.get("kid") else None
+        sm["stn"] = c["station"]["name"]
         sm["school"] = {k: c["school"][k] for k in ("elem", "elem_walk_min", "chopuma")}
         summary.append(sm)
         json.dump(c, open(os.path.join(cdir, c["id"] + ".json"), "w", encoding="utf-8"), ensure_ascii=False, separators=(",", ":"))
@@ -931,6 +1055,15 @@ def main():
         for l in d["lines"]:
             nfeats.append({"type": "Feature", "properties": {"kind": kind, "label": label, "name": l.get("name", "")}, "geometry": {"type": "LineString", "coordinates": l["coords"]}})
     dump("nuisance.geojson", {"type": "FeatureCollection", "features": nfeats})
+    afeats = []
+    for kind, d in AMENITIES.items():
+        label = AMENITY_KINDS.get(kind, kind)
+        for x in d["points"]:
+            afeats.append({"type": "Feature", "properties": {"kind": kind, "label": label, "name": x.get("name", ""), "area": x.get("area_m2")},
+                           "geometry": {"type": "Point", "coordinates": [x["lng"], x["lat"]]}})
+            if x.get("ring"):
+                afeats.append({"type": "Feature", "properties": {"kind": "park_area", "name": x.get("name", "")}, "geometry": {"type": "Polygon", "coordinates": [x["ring"]]}})
+    dump("amenities.geojson", {"type": "FeatureCollection", "features": afeats})
 
     # 구 경계 + 구별 통계 + 대장 아파트 (줌 아웃 뷰)
     try:
