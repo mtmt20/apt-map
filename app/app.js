@@ -326,12 +326,12 @@
 
   // ---------- detail ----------
   function radarSVG(axes) {
-    const keys = Object.keys(axes), n = keys.length, R = 62, cx = 90, cy = 78;
+    const keys = Object.keys(axes), n = keys.length, R = 58, cx = 92, cy = 88;
     const pt = (i, v) => { const ang = -Math.PI / 2 + (2 * Math.PI * i) / n; const r = R * v / 100; return [cx + r * Math.cos(ang), cy + r * Math.sin(ang)]; };
     const grid = [25, 50, 75, 100].map((v) => `<polygon points="${keys.map((k, i) => pt(i, v).join(",")).join(" ")}" fill="none" stroke="var(--line)" stroke-width="1"/>`).join("");
     const poly = keys.map((k, i) => pt(i, axes[k]).join(",")).join(" ");
     const labels = keys.map((k, i) => { const [x, y] = pt(i, 128); return `<text x="${x}" y="${y}" font-size="10" fill="var(--muted)" text-anchor="middle" dominant-baseline="middle">${esc(k)}</text>`; }).join("");
-    return `<svg viewBox="0 0 180 156" style="width:180px;height:156px;flex:0 0 auto">${grid}<polygon points="${poly}" fill="rgba(124,58,237,.25)" stroke="#7c3aed" stroke-width="2"/>${labels}</svg>`;
+    return `<svg viewBox="0 0 184 176" style="width:184px;height:176px;flex:0 0 auto">${grid}<polygon points="${poly}" fill="rgba(124,58,237,.25)" stroke="#7c3aed" stroke-width="2"/>${labels}</svg>`;
   }
   function chartSVG(trades, areaSel) {
     const pts = trades.filter((t) => !areaSel || bucket(t.area) === areaSel).map((t) => ({ d: new Date(t.date), v: t.price / (t.area / PY), p: t.price }));
