@@ -24,6 +24,14 @@
   }
   function toggleFav(id) { if (favs.ids.has(id)) favs.ids.delete(id); else favs.ids.add(id); saveFavs(); renderList(); $$(".fav").forEach((b) => { if (b.dataset.id === id) b.classList.toggle("on", favs.ids.has(id)); }); }
   const gBadge = (coedu) => coedu === "남" ? `<span class="gb boy">남</span>` : coedu === "여" ? `<span class="gb girl">여</span>` : `<span class="gb co">공학</span>`;
+  document.addEventListener("click", (e) => {
+    const b = e.target.closest(".cb-copy");
+    if (!b) return;
+    const t = b.dataset.addr || "";
+    const done = () => { const o = b.textContent; b.textContent = "복사됨"; setTimeout(() => (b.textContent = o), 1500); };
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(t).then(done).catch(() => {});
+    else { const ta = document.createElement("textarea"); ta.value = t; document.body.appendChild(ta); ta.select(); try { document.execCommand("copy"); done(); } catch (err) {} document.body.removeChild(ta); }
+  });
   const favBtn = (id) => `<button class="fav ${favs.ids.has(id) ? "on" : ""}" data-id="${esc(id)}" title="찜" aria-label="찜">♥</button>`;
 
   // ---------- utils ----------
@@ -468,6 +476,13 @@
             <div class="s">감정가 ${fmtPrice(a.appraisal)} → 최저가 <b>${fmtPrice(a.min_price)}</b>${a.recent_trade ? " · 같은 평형 실거래 " + fmtPrice(a.recent_trade) : ""}</div></div>
             <div class="pct">-${a.discount_pct}%</div></div>`).join("")}
           <div class="note">경매는 권리분석(임차인·선순위 등)이 필수예요. 최저가만 보고 판단하지 마세요.</div></div>` : ""}
+        ${(window.APT_CONFIG && window.APT_CONFIG.COURT_LINK) ? `<div class="section"><h4>경매로 나온 물건 확인</h4>
+          <div class="courtbox">
+            <div class="cb-addr"><span>${esc(c.addr)}</span><button class="cb-copy" data-addr="${esc(c.addr)}">주소 복사</button></div>
+            <div class="s">대한민국 법원 <b>법원경매정보</b>에서 이 주소로 직접 조회할 수 있어요. 첫 화면에서 <b>시/도 → 시·군·구 → 동</b>을 고르고 검색하세요.</div>
+            <a class="cb-go" href="https://www.courtauction.go.kr" target="_blank" rel="noopener noreferrer">법원경매정보 열기</a>
+            <div class="note">대한민국 법원이 운영하는 법원경매정보 사이트로 연결됩니다. 집콕맵과 제휴하거나 추천하는 관계가 아니며, 물건 정보와 권리관계는 해당 사이트와 법원 공고가 기준입니다.</div>
+          </div></div>` : ""}
 
         <div class="section"><h4>실거래 내역 <span class="r muted">최근 ${Math.min(12, c.trades.length)}건</span></h4>
           <table class="tbl"><tr><th>계약일</th><th>평형</th><th>층</th><th class="r">가격</th></tr>

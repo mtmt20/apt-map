@@ -218,6 +218,13 @@ def page_html(c, base, all_by_umd):
         for _h, _t in (("acq", "취득세"), ("fee", "중개수수료"), ("dsr", "내 대출한도"), ("loan", "대출 월상환금"), ("hold", "보유세"), ("move", "갈아타기 비용")):
             parts.append('<a class="tag" href="{}#{}" style="font-size:13.5px;padding:7px 12px">{}</a>'.format(_q, _h, _t))
         parts.append('</div><p class="note" style="margin-top:10px">집값 외에 취득세·중개수수료·이사비로 보통 매매가의 4~6%가 더 듭니다. 부모님께 빌릴 때 증여세와 은행·보험사 대출 비교는 <a href="../fund.html">자금 마련 가이드</a>를 보세요.</p></div>')
+    if os.environ.get("COURTAUCTION_LINK") == "1":
+        parts.append('<h2>경매로 나온 물건 확인</h2><div class="card">'
+                     '<p><b>{addr}</b></p>'
+                     '<p>대한민국 법원 <b>법원경매정보</b>에서 이 주소로 직접 조회할 수 있습니다. 첫 화면에서 시/도 → 시·군·구 → 동을 고르고 검색하세요.</p>'
+                     '<p><a class="btn" href="https://www.courtauction.go.kr" target="_blank" rel="noopener noreferrer">법원경매정보 열기</a></p>'
+                     '<p class="note">대한민국 법원이 운영하는 법원경매정보 사이트로 연결됩니다. 집콕맵과 제휴하거나 추천하는 관계가 아니며, 물건 정보와 권리관계는 해당 사이트와 법원 공고가 기준입니다.</p>'
+                     '</div>'.format(addr=esc(c["addr"])))
     parts.append('<p style="margin-top:20px"><a class="btn" href="../index.html?id={}">지도에서 이 단지 보기</a> &nbsp; <a href="index.html">전체 단지 목록</a> &nbsp; <a href="../calc.html">계산기</a></p>'.format(esc(c["id"])))
     parts.append('<div class="disclaim">집콕맵은 공공데이터(국토교통부 실거래가, K-apt, 나이스, 학교알리미)와 오픈스트리트맵, 카카오 지도 정보를 조합해 자동 생성한 참고 자료입니다. 매매 판단 전 반드시 현장과 등기부등본, 교육청 배정 공지를 확인하세요. 생성 {}</div></div></body></html>'.format(dt.date.today().isoformat()))
     return slug, "".join(parts)
