@@ -615,13 +615,15 @@ def enrich(c, roads, today, stations, schools, zones, middle=None, academies=Non
         for _, n, m in cands:
             ce = m.get("coedu") or "남여공학"
             gcount["남" if ce == "남" else "여" if ce == "여" else "공학"] += 1
-        c["school"]["middle_gender"] = gcount
+        mid_gender = gcount
     elif middle:
+        mid_gender = None
         near_mid = sorted(((dist_m(c["lat"], c["lng"], m["lat"], m["lng"]), m) for m in middle), key=lambda x: x[0])[:3]
         mids = [m["name"] for d, m in near_mid]
         mid_detail = [{"name": m["name"], "dist": round(d), "public": m.get("public", ""), "coedu": m.get("coedu", "")} for d, m in near_mid]
         mid_note = "가까운 중학교 3곳 (실제 배정은 학교군 내 추첨)"
     else:
+        mid_gender = None
         mids, mid_detail, mid_note = demo_data.MIDDLE_ZONES.get(c["umd"], []), [], "중학교는 학교군 단위 배정 + 추첨 (특정 학교 확정 아님)"
     for m in mid_detail:
         st = (SCHOOL_STATS or {}).get(m["name"])
@@ -654,7 +656,7 @@ def enrich(c, roads, today, stations, schools, zones, middle=None, academies=Non
         "chopuma": de <= 300, "elem_stats": (SCHOOL_STATS or {}).get(elem["name"]),
         "elem_shared": elem_shared, "elem_official": zone_hit is not None and "zone_id" in zone_hit,
         "middle_zone": mid_zone["name"] if mid_zone else None,
-        "middle": mids, "middle_detail": mid_detail, "middle_note": mid_note,
+        "middle": mids, "middle_detail": mid_detail, "middle_note": mid_note, "middle_gender": mid_gender,
     }
     # 학원 밀집도 (반경 1km): 전체 / 입시·보습 교과
     if academies:
