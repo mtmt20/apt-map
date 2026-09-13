@@ -251,3 +251,5 @@ button { font: inherit; color: inherit; cursor: pointer; border: 0; background: 
 .legend .d { display: inline-block; width: 11px; height: 11px; border-radius: 50%; margin-right: 7px; vertical-align: -1px; border: 1.5px solid #fff; box-shadow: 0 0 0 1px rgba(0,0,0,.15); }
 .mk.school { font-size: 13.5px; }
 .legend { font-size: 13px; }
+
+.note a { color: var(--brand); font-weight: 700; text-decoration: none; }
