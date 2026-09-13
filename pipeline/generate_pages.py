@@ -209,7 +209,16 @@ def page_html(c, base, all_by_umd):
             xr = next((a for a in (x.get("by_area") or []) if 70 <= a["area"] < 100), (x.get("by_area") or [None])[0])
             parts.append('<a href="{}.html"><b>{}</b><span>{} · {}년{}</span></a>'.format(slugify(x), esc(x["name"]), price(xr["latest"]) if xr else "-", x["built"], " · 초품아" if x["school"]["chopuma"] else ""))
         parts.append('</div>')
-    parts.append('<p style="margin-top:20px"><a class="btn" href="../index.html?id={}">지도에서 이 단지 보기</a> &nbsp; <a href="index.html">전체 단지 목록</a></p>'.format(esc(c["id"])))
+    # 이 단지를 살 때 드는 돈 -> 계산기로 (대표 실거래가 prefill)
+    _ba = sorted(c.get("by_area") or [], key=lambda b: -b["count"])
+    if _ba and _ba[0].get("latest"):
+        _eok = round(_ba[0]["latest"] / 10000.0, 1)
+        _q = "../calc.html?price={}&name={}".format(_eok, __import__("urllib.parse").parse.quote(c["name"]))
+        parts.append('<h2>이 단지를 살 때 드는 돈</h2><div class="card"><p>대표 실거래가 <b>{}억</b>({}㎡) 기준으로 계산기를 채워 뒀습니다.</p><div class="tags">'.format(_eok, _ba[0]["area"]))
+        for _h, _t in (("acq", "취득세"), ("fee", "중개수수료"), ("dsr", "내 대출한도"), ("loan", "대출 월상환금"), ("hold", "보유세"), ("move", "갈아타기 비용")):
+            parts.append('<a class="tag" href="{}#{}" style="font-size:13.5px;padding:7px 12px">{}</a>'.format(_q, _h, _t))
+        parts.append('</div><p class="note" style="margin-top:10px">집값 외에 취득세·중개수수료·이사비로 보통 매매가의 4~6%가 더 듭니다. 부모님께 빌릴 때 증여세와 은행·보험사 대출 비교는 <a href="../fund.html">자금 마련 가이드</a>를 보세요.</p></div>')
+    parts.append('<p style="margin-top:20px"><a class="btn" href="../index.html?id={}">지도에서 이 단지 보기</a> &nbsp; <a href="index.html">전체 단지 목록</a> &nbsp; <a href="../calc.html">계산기</a></p>'.format(esc(c["id"])))
     parts.append('<div class="disclaim">집콕맵은 공공데이터(국토교통부 실거래가, K-apt, 나이스, 학교알리미)와 오픈스트리트맵, 카카오 지도 정보를 조합해 자동 생성한 참고 자료입니다. 매매 판단 전 반드시 현장과 등기부등본, 교육청 배정 공지를 확인하세요. 생성 {}</div></div></body></html>'.format(dt.date.today().isoformat()))
     return slug, "".join(parts)
 

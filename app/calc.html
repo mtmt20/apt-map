@@ -475,6 +475,24 @@
   }
   window.addEventListener("hashchange", fromHash);
   load();
+  // 단지 페이지에서 넘어온 가격(억)을 채운다: calc.html?price=9.5#acq
+  try {
+    var qp = new URLSearchParams(location.search), pv = parseFloat(qp.get("price"));
+    if (pv > 0) {
+      ["#aqPrice", "#feeAmt", "#dsPrice", "#mvBuy"].forEach(function (id) {
+        var e = $(id); if (e) e.value = pv;
+      });
+      var nm = qp.get("name");
+      if (nm) {
+        var n = document.createElement("div");
+        n.className = "card";
+        n.style.cssText = "margin:10px 0 0";
+        n.innerHTML = "<b>" + nm.replace(/[<>&]/g, "") + "</b> 의 실거래가 " + pv + "억을 각 계산기에 채웠습니다. 값을 바꿔서 다시 계산해 보세요.";
+        var tb = document.getElementById("tabs");
+        tb.parentNode.insertBefore(n, tb);
+      }
+    }
+  } catch (err) {}
   all();
   fromHash();
 })();
