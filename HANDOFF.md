@@ -127,6 +127,18 @@
   - 주의: 세무 자문이 아니라는 고지를 두 페이지 모두에 넣었음. 세율 바뀌면 `calc_js.py` 의 SALE/RENT/CFT2/CFT3/propTax/acqRate 와 `content_fund.py` 의 GIFT/LEGAL 만 고치면 됨.
 
 
+- 2026-09-14 (20차): **경매/공매 물건 가격** 조사 + 수집기 골격.
+  - 현재 `app/data/auctions.json` 은 0건(데모 전용). 지도 ⚖️ 경매 레이어·상세 UI 는 이미 완성돼 있어 데이터만 붙이면 됨.
+  - **법원경매(courtauction.go.kr)는 하지 않기로.** 공식 오픈API 없음(대법원 제공 없음, CODEF 등은 유료 스크래핑 중계).
+    자동 요청에는 "시스템안내" 페이지를 돌려주는 구조라 사실상 자동수집 차단. 네이버부동산과 같은 범주로 취급.
+  - **온비드(캠코) 공매는 공식 무료 API 존재** -> `pipeline/fetch_auction.py` 신규. 엔드포인트 `https://apis.data.go.kr/B010003/Onbid*Srvc2`.
+    확인된 서비스: OnbidPbancListSrvc2/getPbancList(공고목록), OnbidRlstDtlSrvc2/getRlstDtlInf(부동산 물건상세),
+    OnbidPbancCltrDtlSrvc2(공고상세 물건정보), OnbidCltrBidDtlSrvc2(입찰정보). 부동산 물건목록은 오퍼레이션명 미확정.
+  - `--probe` 로 승인 후 서비스/오퍼레이션/응답 필드를 확정해 `data/raw/auction_probe.json` 에 저장하고, 본 수집은 그 결과를 읽어 동작.
+    지금 돌리면 전부 NO_OPENAPI_SERVICE_ERROR (활용신청 미승인). **사용자 활용신청 3건 대기 중.**
+  - 주의: 온비드 공매는 법원경매보다 물량이 훨씬 적어 서울 아파트는 시기에 따라 0건일 수 있음. 데이터 확인 후 앱 라벨을 "경매"->"공매"로 바꿀 것.
+
+
 ## 진행 중 / 남은 작업
 0. 활용신청 3건 완료 시: 응급실(소아)·미세먼지(동/측정소)·스쿨존 레이어. 애드센스 승인용 콘텐츠(사이트 소개·지표 설명·구별 랭킹 글) + 쿠팡 파트너스 '이사 준비' 페이지.
 0. 구글 서치콘솔 사이트맵 상태 재확인(며칠 뒤 자동 재시도됨). LOCALDATA 복구 시 유흥주점·단란주점·숙박업 수집 붙이기. 동 단위 인구는 KOSIS 키 받으면 진행.
