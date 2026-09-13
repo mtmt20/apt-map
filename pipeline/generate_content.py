@@ -17,6 +17,9 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 APP = os.path.join(HERE, "..", "app")
 sys.path.insert(0, HERE)
 from fetch_trades import load_env  # noqa: E402
+from content_calc import CALC_BODY, CALC_CSS  # noqa: E402
+from calc_js import CALC_JS  # noqa: E402
+from content_fund import FUND_BODY, FUND_JS  # noqa: E402
 load_env()
 BASE = (os.environ.get("SITE_BASE") or "https://jipkokmap.kr").rstrip("/")
 CONTACT = os.environ.get("CONTACT_EMAIL", "")
@@ -37,9 +40,9 @@ def shell(title, desc, body, path, extra_head=""):
 <title>{t}</title><meta name="description" content="{d}"><link rel="canonical" href="{base}/{path}">
 <meta property="og:title" content="{t}"><meta property="og:description" content="{d}"><meta property="og:url" content="{base}/{path}">
 <link rel="icon" type="image/svg+xml" href="{root}icon.svg"><link rel="stylesheet" href="{root}apt/page.css">{extra}</head><body><div class="wrap">
-<header class="top"><a class="logo" href="{root}index.html">🏠 집콕맵</a><nav style="display:flex;gap:10px;font-size:13px"><a href="{root}rank/index.html">랭킹</a><a href="{root}guide.html">지표 설명</a><a href="{root}about.html">소개</a><a class="btn" href="{root}index.html">지도</a></nav></header>
+<header class="top"><a class="logo" href="{root}index.html">🏠 집콕맵</a><nav style="display:flex;gap:10px;font-size:13px"><a href="{root}calc.html">계산기</a><a href="{root}rank/index.html">랭킹</a><a href="{root}guide.html">지표 설명</a><a href="{root}about.html">소개</a><a class="btn" href="{root}index.html">지도</a></nav></header>
 {body}
-<footer class="disclaim" style="margin-top:40px;border-top:1px solid var(--line);padding-top:14px">집콕맵 · <a href="{root}about.html">소개</a> · <a href="{root}guide.html">지표 설명</a> · <a href="{root}privacy.html">개인정보처리방침</a> · <a href="{root}moving.html">이사 준비</a> · <a href="{root}feed.html">제보 피드</a><br>공공데이터(국토교통부·교육부·한국교육시설안전원·나이스·학교알리미·서울시)와 오픈스트리트맵, 카카오 지도 정보를 조합해 자동 생성한 참고 자료입니다. 매매 판단 전 반드시 현장·등기부·교육청 공지를 확인하세요.</footer>
+<footer class="disclaim" style="margin-top:40px;border-top:1px solid var(--line);padding-top:14px">집콕맵 · <a href="{root}about.html">소개</a> · <a href="{root}guide.html">지표 설명</a> · <a href="{root}calc.html">계산기</a> · <a href="{root}fund.html">자금 마련</a> · <a href="{root}privacy.html">개인정보처리방침</a> · <a href="{root}moving.html">이사 준비</a> · <a href="{root}feed.html">제보 피드</a><br>공공데이터(국토교통부·교육부·한국교육시설안전원·나이스·학교알리미·서울시)와 오픈스트리트맵, 카카오 지도 정보를 조합해 자동 생성한 참고 자료입니다. 매매 판단 전 반드시 현장·등기부·교육청 공지를 확인하세요.</footer>
 </div></body></html>""".format(t=esc(title), d=esc(desc), base=BASE, path=path, root="../" if "/" in path else "", body=body, extra=extra_head)
 
 
@@ -259,6 +262,14 @@ def main():
         "guide.html": shell("집콕맵 지표 설명 · 아이 키우기 점수, 학군 지수, 위험·상승 신호", "집콕맵의 점수와 태그가 어떻게 계산되는지 기준을 모두 공개합니다.", GUIDE, "guide.html"),
         "privacy.html": shell("개인정보처리방침 | 집콕맵", "집콕맵 개인정보처리방침", PRIVACY.format(contact=contact), "privacy.html"),
     }
+    pages["calc.html"] = shell(
+        "부동산 계산기 · 취득세·중개수수료·대출 상환금·보유세 | 집콕맵",
+        "매매가만 넣으면 취득세, 중개수수료, 대출 월 상환금, 내 소득 기준 대출한도, 보유세, 전월세 환산, 갈아타기 비용을 한 번에 계산합니다.",
+        CALC_BODY + CALC_JS, "calc.html", CALC_CSS)
+    pages["fund.html"] = shell(
+        "집 살 돈 마련하기 · 정책대출·부모님 증여와 차용·은행 vs 보험사 | 집콕맵",
+        "정책대출 조건, 부모님께 빌릴 때 무이자 한도와 차용증 작성법, 증여세 공제, 1금융권과 보험사 대출의 장단점을 정리했습니다.",
+        FUND_BODY + FUND_JS, "fund.html", CALC_CSS)
     lp = os.path.join(HERE, "..", "data", "coupang_links.json")
     links = json.load(open(lp, encoding="utf-8")) if os.path.exists(lp) else {}
     pages["moving.html"] = shell("이사 준비 체크리스트 · 아이 있는 집 기준 | 집콕맵", "계약 전부터 이사 후 2주까지, 아이 있는 가정이 놓치기 쉬운 이사 준비 항목", moving_page(links), "moving.html")
@@ -273,7 +284,7 @@ def main():
         add = "".join("<url><loc>{}/{}</loc><lastmod>{}</lastmod><changefreq>weekly</changefreq></url>".format(BASE, __import__("urllib.parse").parse.quote(p), today) for p in pages)
         sm = sm.replace("</urlset>", add + "</urlset>")
         open(sm_path, "w", encoding="utf-8").write(sm)
-    print("콘텐츠 페이지 {}개 생성 (about/guide/privacy/moving + 랭킹 {})".format(len(pages), len(pages) - 4))
+    print("콘텐츠 페이지 {}개 생성 (about/guide/privacy/moving/calc/fund + 랭킹 {})".format(len(pages), len(pages) - 6))
 
 
 if __name__ == "__main__":
