@@ -23,6 +23,7 @@
     if (favs.code) api("/favs", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ code: favs.code, ids: [...favs.ids] }) }).catch(() => {});
   }
   function toggleFav(id) { if (favs.ids.has(id)) favs.ids.delete(id); else favs.ids.add(id); saveFavs(); renderList(); $$(".fav").forEach((b) => { if (b.dataset.id === id) b.classList.toggle("on", favs.ids.has(id)); }); }
+  const gBadge = (coedu) => coedu === "남" ? `<span class="gb boy">남</span>` : coedu === "여" ? `<span class="gb girl">여</span>` : `<span class="gb co">공학</span>`;
   const favBtn = (id) => `<button class="fav ${favs.ids.has(id) ? "on" : ""}" data-id="${esc(id)}" title="찜" aria-label="찜">♥</button>`;
 
   // ---------- utils ----------
@@ -288,7 +289,7 @@
     else if (state.sort === "kid") list = list.filter((c) => c.kid != null).sort((a, b) => b.kid - a.kid || b.trade_count_1y - a.trade_count_1y);
     else if (state.sort === "budget" && state.budget) {
       const B = state.budget;
-      list = state.complexes.filter((c) => areaMatch(c) && (!B.gu || c.sgg === B.gu) && (!B.station || (c.stn || "").includes(B.station)))
+      list = state.complexes.filter((c) => areaMatch(c) && (!B.gu || c.sgg === B.gu) && (!B.station || (c.stn || "").includes(B.station)) && (!B.gender || !c.mg || c.mg[B.gender === "girl" ? 1 : 0] >= 2))
         .map((c) => { const r = repArea(c, state.area); return r && r.latest <= B.max && r.latest >= B.min ? c : null; }).filter(Boolean)
         .sort((a, b) => (B.kid ? (b.kid || 0) - (a.kid || 0) : (b.edu_score || 0) - (a.edu_score || 0)) || b.trade_count_1y - a.trade_count_1y);
     }
@@ -313,6 +314,7 @@
         ...(c.terrain && c.terrain.station_dh != null && c.terrain.station_dh >= 30 ? [`<span class="tag bad">언덕 +${c.terrain.station_dh}m</span>`] : []),
         ...(c.nz ? [`<span class="tag bad">기피시설 ${c.nz}</span>`] : []),
         ...(c.kid != null && c.kid_pct <= 25 ? [`<span class="tag school">👶 아이 키우기 ${c.kid}점</span>`] : []),
+        ...(c.mg && (c.mg[0] <= 1 || c.mg[1] <= 1) ? [`<span class="tag bad">${c.mg[0] <= 1 ? "아들" : "딸"} 배정 가능 중학교 ${Math.min(...c.mg)}곳</span>`] : []),
         ...(c.risk_n ? [`<span class="tag bad">위험 신호 ${c.risk_n}</span>`] : []),
         ...(c.up_n ? [`<span class="tag good">상승 신호 ${c.up_n}</span>`] : []),
       ].join("");
@@ -427,10 +429,12 @@
             <div><div class="k">1km 내 교과학원</div><div class="v">${c.edu.exam_1km}개<small>${areaShort()} 상위 ${c.edu.exam_top_pct}%</small></div></div>
             <div><div class="k">1km 내 학원 전체</div><div class="v">${c.edu.aca_1km}개<small>예체능 ${c.edu.art_1km}</small></div></div></div>` : ""}
           ${c.school.middle_zone ? `<div class="n" style="margin-top:10px;font-weight:700">중학교 ${esc(c.school.middle_zone)}</div>` : ""}
-          <div class="mids">${(c.school.middle_detail && c.school.middle_detail.length ? c.school.middle_detail.map((m) => `<span class="tag">${esc(m.name)} <span class="muted">${m.dist}m${m.public === "사립" ? " · 사립" : ""}${m.coedu && m.coedu !== "남여공학" ? " · " + esc(m.coedu) : ""}${m.stats ? ` · ${m.stats.students}명 · 학급당 ${m.stats.class_size}` : ""}</span></span>`) : c.school.middle.map((m) => `<span class="tag">${esc(m)}</span>`)).join("")}</div>
+          ${c.school.middle_gender ? `<div class="n">학교군 내 공학 ${c.school.middle_gender["공학"]} · 남중 ${c.school.middle_gender["남"]} · 여중 ${c.school.middle_gender["여"]} → <b>아들 ${c.school.middle_gender["공학"] + c.school.middle_gender["남"]}곳 · 딸 ${c.school.middle_gender["공학"] + c.school.middle_gender["여"]}곳</b> 배정 가능</div>` : ""}
+          <div class="mids">${(c.school.middle_detail && c.school.middle_detail.length ? c.school.middle_detail.map((m) => `<span class="tag">${esc(m.name)} <span class="muted">${m.dist}m${m.public === "사립" ? " · 사립" : ""}${m.stats ? ` · ${m.stats.students}명 · 학급당 ${m.stats.class_size}` : ""}</span> ${gBadge(m.coedu)}</span>`) : c.school.middle.map((m) => `<span class="tag">${esc(m)}</span>`)).join("")}</div>
           <div class="note">${esc(c.school.middle_note)}${c.school.elem_stats ? " · 학생 수·전출입은 학교알리미 " + c.school.elem_stats.year + "년 공시" : ""}</div>
           ${c.school.high ? `<div class="n" style="margin-top:12px;font-weight:700">고등학교 ${esc(c.school.high.zone || "인근")}${c.school.high.zone_total ? ` <span class="muted">· 일반고 ${c.school.high.zone_total}곳 중 가까운 순</span>` : ""}</div>
-          <div class="mids">${c.school.high.general.map((h) => `<span class="tag">${esc(h.name)} <span class="muted">${h.dist}m${h.public === "사립" ? " · 사립" : ""}${h.coedu && h.coedu !== "남여공학" ? " · " + esc(h.coedu) : ""}</span></span>`).join("")}</div>
+          <div class="mids">${c.school.high.general.map((h) => `<span class="tag">${esc(h.name)} <span class="muted">${h.dist}m${h.public === "사립" ? " · 사립" : ""}</span> ${gBadge(h.coedu)}</span>`).join("")}</div>
+          ${c.school.high.gender ? `<div class="n" style="margin-top:4px">학교군 일반고: 공학 ${c.school.high.gender["공학"]} · 남고 ${c.school.high.gender["남"]} · 여고 ${c.school.high.gender["여"]} → 아들 ${c.school.high.gender["공학"] + c.school.high.gender["남"]}곳 · 딸 ${c.school.high.gender["공학"] + c.school.high.gender["여"]}곳 지원 가능</div>` : ""}
           ${c.school.high.special.length ? `<div class="mids" style="margin-top:6px">${c.school.high.special.map((h) => `<span class="tag school">${esc(h.type)} ${esc(h.name)} <span class="muted">${(h.dist / 1000).toFixed(1)}km${h.special ? " · " + esc(h.special) : ""}</span></span>`).join("")}</div>` : ""}
           <div class="note">고교는 학교군 내 선지원·추첨 배정(평준화). 자율고·특목고는 전형별 별도 지원. 학교 상세는 <a href="https://www.schoolinfo.go.kr/ei/ss/Pneiss_f01_l0.do?SEARCH_KEYWORD=${encodeURIComponent(c.school.elem)}&SEARCH_TYPE=1" target="_blank" rel="noopener" style="color:var(--brand)">학교알리미</a>에서 학폭 심의 결과·학업성취 등을 직접 확인할 수 있어요.</div>` : ""}</div>
 
@@ -563,7 +567,7 @@
     const f = e.target;
     const max = Math.round(parseFloat(f.max.value || "0") * 10000), min = Math.round(parseFloat(f.min.value || "0") * 10000);
     if (!max) return toast("최대 예산을 억 단위로 넣어주세요.");
-    state.budget = { max, min, gu: f.gu.value, station: f.station.value.trim(), kid: f.kid.checked };
+    state.budget = { max, min, gu: f.gu.value, station: f.station.value.trim(), kid: f.kid.checked, gender: f.gender.value };
     if (f.area.value) { state.area = f.area.value; $$("[data-area]").forEach((x) => x.classList.toggle("on", x.dataset.area === state.area)); }
     state.sort = "budget"; $$("[data-sort]").forEach((x) => x.classList.toggle("on", x.dataset.sort === "budget"));
     $("#budgetModal").hidden = true; renderMarkers(); renderList(); setSheet("full");

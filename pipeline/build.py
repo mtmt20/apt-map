@@ -611,6 +611,11 @@ def enrich(c, roads, today, stations, schools, zones, middle=None, academies=Non
         mids = [n for _, n, _ in cands[:6]]
         mid_detail = [{"name": n, "dist": round(d), "public": m.get("public", ""), "coedu": m.get("coedu", "")} for d, n, m in cands[:6]]
         mid_note = "{} 소속 중학교 {}곳 중 가까운 순 (학교군 내 추첨 배정, 학구도안내서비스 기준)".format(mid_zone["name"], len(cands))
+        gcount = {"공학": 0, "남": 0, "여": 0}
+        for _, n, m in cands:
+            ce = m.get("coedu") or "남여공학"
+            gcount["남" if ce == "남" else "여" if ce == "여" else "공학"] += 1
+        c["school"]["middle_gender"] = gcount
     elif middle:
         near_mid = sorted(((dist_m(c["lat"], c["lng"], m["lat"], m["lng"]), m) for m in middle), key=lambda x: x[0])[:3]
         mids = [m["name"] for d, m in near_mid]
@@ -637,7 +642,11 @@ def enrich(c, roads, today, stations, schools, zones, middle=None, academies=Non
         spec = [(d, h) for d, h in spec if d <= 3000][:4]
         fmt = lambda d, h: {"name": h["name"], "dist": round(d), "type": h.get("type", ""), "public": h.get("public", ""), "coedu": h.get("coedu", ""),
                             "special": h.get("special", "")}
-        high = {"zone": hz["name"] if hz else None, "zone_total": len(zone_names) if hz else None,
+        hg = {"공학": 0, "남": 0, "여": 0}
+        for _, h in gen:
+            ce = h.get("coedu") or "남여공학"
+            hg["남" if ce == "남" else "여" if ce == "여" else "공학"] += 1
+        high = {"zone": hz["name"] if hz else None, "zone_total": len(zone_names) if hz else None, "gender": hg,
                 "general": [fmt(d, h) for d, h in gen[:5]], "special": [fmt(d, h) for d, h in spec]}
     c["school"] = {
         "high": high,
@@ -1035,6 +1044,8 @@ def main():
         sm["kid"] = c["kid"]["score"] if c.get("kid") else None
         sm["kid_pct"] = c["kid"].get("top_pct") if c.get("kid") else None
         sm["stn"] = c["station"]["name"]
+        mg = c["school"].get("middle_gender") or {}
+        sm["mg"] = [mg.get("공학", 0) + mg.get("남", 0), mg.get("공학", 0) + mg.get("여", 0)]   # [아들 기준, 딸 기준] 지원 가능 중학교 수
         sm["school"] = {k: c["school"][k] for k in ("elem", "elem_walk_min", "chopuma")}
         summary.append(sm)
         json.dump(c, open(os.path.join(cdir, c["id"] + ".json"), "w", encoding="utf-8"), ensure_ascii=False, separators=(",", ":"))

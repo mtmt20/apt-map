@@ -133,7 +133,11 @@ def page_html(c, base, all_by_umd):
         " · <b style='color:#7c3aed'>초품아</b>" if c["school"]["chopuma"] else "",
         " · 공동통학구역: " + " / ".join(esc(x) for x in c["school"]["elem_shared"]) if c["school"].get("elem_shared") else ""))
     if c["school"].get("middle_zone"):
-        parts.append('<p><b>중학교 학군</b>: {}</p>'.format(esc(c["school"]["middle_zone"])))
+        mg = c["school"].get("middle_gender") or {}
+        parts.append('<p><b>중학교 학군</b>: {}{}</p>'.format(esc(c["school"]["middle_zone"]), " · 공학 {} / 남중 {} / 여중 {} (아들 {}곳 · 딸 {}곳 배정 가능)".format(mg.get("공학", 0), mg.get("남", 0), mg.get("여", 0), mg.get("공학", 0) + mg.get("남", 0), mg.get("공학", 0) + mg.get("여", 0)) if mg else ""))
+        mids_ = c["school"].get("middle_detail") or []
+        if mids_:
+            parts.append('<p>' + ", ".join("{} ({}m · {})".format(esc(m["name"]), m["dist"], {"남": "남중", "여": "여중"}.get(m.get("coedu"), "공학")) for m in mids_) + '</p>')
     hi = c["school"].get("high")
     if hi and hi.get("general"):
         parts.append('<p><b>고등학교 {}</b>: {}</p>'.format(esc(hi.get("zone") or "인근 일반고"), ", ".join("{} ({}m)".format(esc(x["name"]), x["dist"]) for x in hi["general"])))
