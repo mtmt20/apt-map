@@ -166,6 +166,22 @@
     공개된 사실만 다룬다. guide.html 과 budget-school.html 에 이 문장을 넣어 뒀음. 사용자 요청("비슷한 이웃")의 대리 지표는 **가격대**로 해결.
 
 
+- 2026-09-14 (23차): **지하철역 레이어 추가 + 학교 강조** (사용자 요청 "지하철이랑 학교 강조해줘").
+  - `build.py` -> `app/data/stations.geojson` 신규 (data/raw/poi.json 의 stations 317개, name/line).
+  - `app.js`: 소스 `stations` + 레이어 `sub-dot`(원, 줌 11~, 반경 4~10px, #0ea5e9) / `sub-label`(볼드 12~19px, 흰 halo 2.2).
+    레이어 토글 `🚇 지하철` 신설, **기본 ON** (state.layers.subway=true). lazySource 로 켤 때 로드.
+  - 학교 마커: 표시 줌 14.3 -> **13.8** 로 낮추고 `.mk.school` CSS 신설 (14px/900, 테두리 2px currentColor, 꼬리 제거).
+    13.2 까지 낮췄다가 DOM 마커 수(615개) 성능 고려해 13.8 로 되돌림.
+  - **버그 발견·수정**: 폴백 스타일 `OSM_RASTER` 에 `glyphs` 가 없어서, 벡터 베이스맵 실패 시
+    text-field 를 쓰는 심볼 레이어(`gu-label` 구 이름, `am-label` 편의시설, 신규 `sub-label`)가 **전부 조용히 사라졌음**.
+    에러: `use of "text-field" requires a style "glyphs" property`. OSM_RASTER 에
+    `glyphs: https://tiles.openfreemap.org/fonts/{fontstack}/{range}.pbf` 추가 (응답 200 확인).
+  - app.js/style.css **v50**.
+  - **검증 한계**: 브라우저 pane 에서 MapLibre 가 렌더 패스를 못 끝내(map.loaded() 계속 false, rAF 미동작)
+    queryRenderedFeatures 가 항상 빈 배열. 레이어 정의는 에러 0으로 추가됨을 확인했고 역 317개 데이터도 확인했으나,
+    **실제 화면 모양은 사용자 확인 필요.**
+
+
 ## 진행 중 / 남은 작업
 0. 활용신청 3건 완료 시: 응급실(소아)·미세먼지(동/측정소)·스쿨존 레이어. 애드센스 승인용 콘텐츠(사이트 소개·지표 설명·구별 랭킹 글) + 쿠팡 파트너스 '이사 준비' 페이지.
 0. 구글 서치콘솔 사이트맵 상태 재확인(며칠 뒤 자동 재시도됨). LOCALDATA 복구 시 유흥주점·단란주점·숙박업 수집 붙이기. 동 단위 인구는 KOSIS 키 받으면 진행.

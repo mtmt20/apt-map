@@ -1135,6 +1135,9 @@ def main():
         dfeats.append({"type": "Feature", "properties": {"name": gu, "n": len(members), "ppy_med": med, "top": top,
                                                           "center": [round(sum(lngs) / len(lngs), 5), round(sum(lats) / len(lats), 5)]},
                        "geometry": {"type": "Polygon", "coordinates": [ring]}})
+    dump("stations.geojson", {"type": "FeatureCollection", "features": [
+        {"type": "Feature", "properties": {"name": s["name"], "line": s.get("line") or ""},
+         "geometry": {"type": "Point", "coordinates": [round(s["lng"], 6), round(s["lat"], 6)]}} for s in stations]})
     dump("districts.geojson", {"type": "FeatureCollection", "features": dfeats})
     dump("auctions.json", [a for a in aucs if "lat" in a])
     dump("meta.json", {

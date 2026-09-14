@@ -15,7 +15,7 @@
 <link rel="apple-touch-icon" href="icon.svg">
 <link rel="manifest" href="manifest.json">
 <link rel="stylesheet" href="vendor/maplibre-gl.css">
-<link rel="stylesheet" href="style.css?v=49">
+<link rel="stylesheet" href="style.css?v=50">
 </head>
 <body>
 <div id="map"></div>
@@ -53,6 +53,9 @@
 <nav class="layers">
   <button class="lyr on" data-layer="school" title="배정 초등학교 통학구역">
     <span class="ico">🏫</span><span>학군</span>
+  </button>
+  <button class="lyr on" data-layer="subway" title="지하철역">
+    <span class="ico">🚇</span><span>지하철</span>
   </button>
   <button class="lyr" data-layer="road" title="큰길/골목/인도">
     <span class="ico">🛣️</span><span>도로</span>
@@ -142,7 +145,7 @@
   </div>
 </div>
 <script src="config.js"></script>
-<script src="app.js?v=49"></script>
+<script src="app.js?v=50"></script>
 <script>if ("serviceWorker" in navigator && location.protocol === "https:") navigator.serviceWorker.register("sw.js").catch(() => {});</script>
 </body>
 </html>

@@ -10,7 +10,7 @@
     complexes: [], auctions: [], schools: null, meta: null,
     area: "all", sort: null, q: "",
     selected: null, markers: {}, aucMarkers: [], schoolMarkers: [], crownMarkers: [],
-    layers: { school: true, road: false, auction: false, terrain: false, nuisance: false, amenity: false },
+    layers: { school: true, subway: true, road: false, auction: false, terrain: false, nuisance: false, amenity: false },
     compare: JSON.parse(localStorage.getItem("compare") || "[]"), budget: null,
   };
 
@@ -53,7 +53,9 @@
 
   // ---------- map ----------
   // 베이스맵: OpenFreeMap (키 불필요, 벡터). 실패 시 OSM 래스터로 폴백
-  const OSM_RASTER = { version: 8, sources: { osm: { type: "raster", tileSize: 256, attribution: "© OpenStreetMap contributors",
+  // glyphs 가 없으면 text-field 를 쓰는 심볼 레이어(구 이름·편의시설·지하철역 라벨)가 전부 죽는다
+  const OSM_RASTER = { version: 8, glyphs: "https://tiles.openfreemap.org/fonts/{fontstack}/{range}.pbf",
+    sources: { osm: { type: "raster", tileSize: 256, attribution: "© OpenStreetMap contributors",
     tiles: ["https://tile.openstreetmap.org/{z}/{x}/{y}.png"] } }, layers: [{ id: "osm", type: "raster", source: "osm" }] };
   const map = new maplibregl.Map({
     container: "map",
@@ -90,6 +92,18 @@
       el.innerHTML = `🏫 ${esc(f.properties.name.replace("등학교", ""))}`;
       state.schoolMarkers.push(new maplibregl.Marker({ element: el, anchor: "center" }).setLngLat(f.geometry.coordinates).addTo(map));
     });
+
+    // 지하철역: 항상 강조해서 보여준다 (요청)
+    map.addSource("stations", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
+    map.addLayer({ id: "sub-dot", type: "circle", source: "stations", minzoom: 11,
+      paint: { "circle-radius": ["interpolate", ["linear"], ["zoom"], 11, 4, 14, 7, 17, 10],
+               "circle-color": "#0ea5e9", "circle-stroke-color": "#fff",
+               "circle-stroke-width": ["interpolate", ["linear"], ["zoom"], 11, 1.5, 17, 3] } });
+    map.addLayer({ id: "sub-label", type: "symbol", source: "stations", minzoom: 12,
+      layout: { "text-field": ["get", "name"], "text-font": ["Noto Sans Bold"],
+                "text-size": ["interpolate", ["linear"], ["zoom"], 12, 12, 14, 15, 17, 19],
+                "text-offset": [0, 1.0], "text-anchor": "top", "text-allow-overlap": false, "text-optional": true },
+      paint: { "text-color": "#0369a1", "text-halo-color": "#fff", "text-halo-width": 2.2 } });
 
     // 도로: 큰길은 서울 전체 파일, 골목/동네길은 화면에 걸친 격자 타일만 로드
     map.addSource("roads", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
@@ -217,7 +231,9 @@
   function applyLayers() {
     const v = (ids, on) => ids.forEach((id) => map.getLayer(id) && map.setLayoutProperty(id, "visibility", on ? "visible" : "none"));
     v(["school-fill", "school-line"], state.layers.school);
-    state.schoolMarkers.forEach((m) => m.getElement().style.display = state.layers.school && map.getZoom() >= 14.3 ? "" : "none");
+    state.schoolMarkers.forEach((m) => m.getElement().style.display = state.layers.school && map.getZoom() >= 13.8 ? "" : "none");
+    v(["sub-dot", "sub-label"], state.layers.subway);
+    if (state.layers.subway) lazySource("stations", "data/stations.geojson");
     v(["road-walk", "road-alley", "road-minor", "road-major", "road-major-far"], state.layers.road);
     v(["hillshade"], state.layers.terrain);
     v(["nz-line", "nz-point"], state.layers.nuisance);
