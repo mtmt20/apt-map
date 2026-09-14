@@ -182,6 +182,18 @@
     **실제 화면 모양은 사용자 확인 필요.**
 
 
+- 2026-09-15 (24차): **지하철 노선 경로·공식 색** (사용자 요청).
+  - 신규 `pipeline/fetch_subway.py`: Overpass route relation -> ref(호선)별 선로 way 합집합(지선·급행 중복 제거), 서울 박스 클립, DP 단순화(~4m).
+    수도권 전철 18개 노선(1~9, 신분당, 경의중앙, 경춘, 공항철도, 서해, 수인분당, GTX-A, 신림, 우이신설). KTX/SRT/ITX 제외.
+    정차 노드 이름으로 역별 노선 목록 -> `data/raw/subway.json`. 역 317개 전부 매칭. `--raw` 로 재수집 없이 가공 가능.
+    overpass-api.de 는 406 을 줘서 private.coffee 미러로 받음. 주간 refresh 에는 넣지 않음(노선은 거의 안 바뀜, 개통 시 수동 재실행).
+  - `build.py`: 역에 `lines/line/color`, 단지 `station.lines`, `app/data/subway_lines.geojson`(176KB), stations.geojson 에 color/transfer.
+    장점 "환승역 X (2호선·5호선) 도보 N분" (800m 이내) -> 1,162개 단지.
+  - `app.js`: 레이어 sub-line-case(흰 테두리) + sub-line(노선색) + sub-dot(일반역 노선색, 환승역 흰 원+검은 테두리 크게) + sub-label(역명 + 작은 노선명).
+    카드·상세에 노선 배지 `.lnb` (LINE_COLORS). v51.
+  - 검증: 실제 app.js 레이어 블록을 빈 스타일에 실행해 4개 레이어 에러 0, matplotlib 으로 노선도 그려 모양 확인. pane 에서 지도 캔버스 렌더는 여전히 불가.
+
+
 ## 진행 중 / 남은 작업
 0. 활용신청 3건 완료 시: 응급실(소아)·미세먼지(동/측정소)·스쿨존 레이어. 애드센스 승인용 콘텐츠(사이트 소개·지표 설명·구별 랭킹 글) + 쿠팡 파트너스 '이사 준비' 페이지.
 0. 구글 서치콘솔 사이트맵 상태 재확인(며칠 뒤 자동 재시도됨). LOCALDATA 복구 시 유흥주점·단란주점·숙박업 수집 붙이기. 동 단위 인구는 KOSIS 키 받으면 진행.

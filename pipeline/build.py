@@ -580,7 +580,7 @@ def enrich(c, roads, today, stations, schools, zones, middle=None, academies=Non
     st = sorted(((dist_m(c["lat"], c["lng"], s["lat"], s["lng"]), s) for s in stations), key=lambda x: x[0])
     near = [(round(d), s["name"], s["line"]) for d, s in st if d <= 600]
     d0, s0 = st[0]
-    c["station"] = {"name": s0["name"], "line": s0["line"], "dist": round(d0), "walk_min": max(1, round(d0 / 70)),
+    c["station"] = {"name": s0["name"], "line": s0["line"], "lines": s0.get("lines") or [], "dist": round(d0), "walk_min": max(1, round(d0 / 70)),
                     "within_600": [{"name": n, "line": l, "dist": d} for d, n, l in near]}
 
     # 초등 배정 (통학구역 폴리곤 포함 여부 -> 없으면 최근접)
@@ -814,6 +814,8 @@ def enrich(c, roads, today, stations, schools, zones, middle=None, academies=Non
         pros.append("준신축 {}년차".format(age))
     elif age >= 20:
         cons.append("구축 {}년차".format(age))
+    if len(c["station"].get("lines") or []) >= 2 and c["station"]["dist"] <= 800:
+        pros.append("환승역 {} ({}) 도보 {}분".format(c["station"]["name"], "·".join(c["station"]["lines"]), c["station"]["walk_min"]))
     if len(c["station"]["within_600"]) >= 2:
         pros.append("더블 역세권")
     elif c["station"]["dist"] <= 500:
@@ -909,6 +911,18 @@ def main():
     if poi:
         stations, schools, zones = poi["stations"], poi["elem_schools"], poi["zones"]
         zone_note = poi.get("zone_note") or "최근접 학교 기준 추정 (공식 학구도 반영 전)"
+    # 지하철 노선 (fetch_subway.py): 역마다 실제 노선 목록과 대표 색을 붙인다
+    subway = None
+    sp = os.path.join(RAW, "subway.json")
+    if poi and os.path.exists(sp):
+        subway = json.load(open(sp, encoding="utf-8"))
+        norm_st = lambda n: (lambda m: m[:-1] if m.endswith("역") and len(m) > 2 else m)(re.sub(r"\(.*?\)", "", n or "").strip())
+        for s in stations:
+            ls = subway["station_lines"].get(norm_st(s["name"]), [])
+            if ls:
+                s["lines"] = ls
+                s["line"] = "·".join(ls)
+                s["color"] = subway["colors"].get(ls[0])
     else:
         stations = [{"name": n, "line": l, "lat": la, "lng": lo} for n, l, la, lo in demo_data.STATIONS]
         schools = [{"name": n, "lat": la, "lng": lo} for n, la, lo, _ in demo_data.ELEM_SCHOOLS]
@@ -1067,7 +1081,7 @@ def main():
         sm["pros"], sm["cons"] = c["pros"][:2], c["cons"][:1]
         ba = sorted(c["by_area"], key=lambda a: -a["count"])[:3]
         sm["by_area"] = [{k: a.get(k) for k in ("area", "latest", "latest_date", "count", "jeonse_ratio")} for a in sorted(ba, key=lambda a: a["area"])]
-        sm["station"] = {k: c["station"][k] for k in ("name", "walk_min", "dist")}
+        sm["station"] = {k: c["station"].get(k) for k in ("name", "walk_min", "dist", "lines")}
         if c.get("terrain"):
             sm["terrain"] = {k: c["terrain"].get(k) for k in ("elev", "station_dh", "slope_pct")}
         sm["nz"] = sum(1 for v in c.get("nuisance", {}).values() if v["within"])
@@ -1135,8 +1149,11 @@ def main():
         dfeats.append({"type": "Feature", "properties": {"name": gu, "n": len(members), "ppy_med": med, "top": top,
                                                           "center": [round(sum(lngs) / len(lngs), 5), round(sum(lats) / len(lats), 5)]},
                        "geometry": {"type": "Polygon", "coordinates": [ring]}})
+    if subway:
+        dump("subway_lines.geojson", subway["lines"])
     dump("stations.geojson", {"type": "FeatureCollection", "features": [
-        {"type": "Feature", "properties": {"name": s["name"], "line": s.get("line") or ""},
+        {"type": "Feature", "properties": {"name": s["name"], "line": s.get("line") or "", "color": s.get("color") or "#0EA5E9",
+                                           "transfer": len(s.get("lines") or []) >= 2},
          "geometry": {"type": "Point", "coordinates": [round(s["lng"], 6), round(s["lat"], 6)]}} for s in stations]})
     dump("districts.geojson", {"type": "FeatureCollection", "features": dfeats})
     dump("auctions.json", [a for a in aucs if "lat" in a])

@@ -93,17 +93,23 @@
       state.schoolMarkers.push(new maplibregl.Marker({ element: el, anchor: "center" }).setLngLat(f.geometry.coordinates).addTo(map));
     });
 
-    // 지하철역: 항상 강조해서 보여준다 (요청)
+    // 지하철: 노선 경로(공식 색) + 역. 항상 강조해서 보여준다 (요청)
+    map.addSource("subway-lines", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
+    map.addLayer({ id: "sub-line-case", type: "line", source: "subway-lines", layout: { "line-cap": "round", "line-join": "round" },
+      paint: { "line-color": "#fff", "line-opacity": 0.85, "line-width": ["interpolate", ["linear"], ["zoom"], 9, 2.5, 13, 5, 17, 10] } });
+    map.addLayer({ id: "sub-line", type: "line", source: "subway-lines", layout: { "line-cap": "round", "line-join": "round" },
+      paint: { "line-color": ["get", "color"], "line-opacity": 0.9, "line-width": ["interpolate", ["linear"], ["zoom"], 9, 1.5, 13, 3, 17, 6] } });
     map.addSource("stations", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
     map.addLayer({ id: "sub-dot", type: "circle", source: "stations", minzoom: 11,
-      paint: { "circle-radius": ["interpolate", ["linear"], ["zoom"], 11, 4, 14, 7, 17, 10],
-               "circle-color": "#0ea5e9", "circle-stroke-color": "#fff",
+      paint: { "circle-radius": ["interpolate", ["linear"], ["zoom"], 11, ["case", ["get", "transfer"], 5, 4], 14, ["case", ["get", "transfer"], 9, 7], 17, ["case", ["get", "transfer"], 13, 10]],
+               "circle-color": ["case", ["get", "transfer"], "#fff", ["get", "color"]],
+               "circle-stroke-color": ["case", ["get", "transfer"], "#1f2937", "#fff"],
                "circle-stroke-width": ["interpolate", ["linear"], ["zoom"], 11, 1.5, 17, 3] } });
     map.addLayer({ id: "sub-label", type: "symbol", source: "stations", minzoom: 12,
-      layout: { "text-field": ["get", "name"], "text-font": ["Noto Sans Bold"],
+      layout: { "text-field": ["format", ["get", "name"], { "font-scale": 1 }, "\n", {}, ["get", "line"], { "font-scale": 0.72 }], "text-font": ["Noto Sans Bold"],
                 "text-size": ["interpolate", ["linear"], ["zoom"], 12, 12, 14, 15, 17, 19],
                 "text-offset": [0, 1.0], "text-anchor": "top", "text-allow-overlap": false, "text-optional": true },
-      paint: { "text-color": "#0369a1", "text-halo-color": "#fff", "text-halo-width": 2.2 } });
+      paint: { "text-color": ["case", ["get", "transfer"], "#111827", ["get", "color"]], "text-halo-color": "#fff", "text-halo-width": 2.2 } });
 
     // 도로: 큰길은 서울 전체 파일, 골목/동네길은 화면에 걸친 격자 타일만 로드
     map.addSource("roads", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
@@ -227,13 +233,17 @@
     lazyLoaded[id] = true;
     fetch(url).then((r) => r.json()).then((gj) => map.getSource(id).setData(gj)).catch(() => { lazyLoaded[id] = false; });
   }
+  const LINE_COLORS = { "1호선": "#004A85", "2호선": "#00A23F", "3호선": "#ED6C00", "4호선": "#009BCE", "5호선": "#794698", "6호선": "#7C4932",
+    "7호선": "#6E7E31", "8호선": "#D11D70", "9호선": "#A49D87", "신분당선": "#B81B30", "경의중앙선": "#6AC2B3", "경춘선": "#007A62",
+    "공항철도": "#0079AC", "서해선": "#5EAC41", "수인분당선": "#ECA300", "GTX-A": "#AB087D", "신림선": "#6789CA", "우이신설선": "#BACC50" };
+  const lineBadges = (ls) => (ls || []).map((l) => `<span class="lnb" style="background:${LINE_COLORS[l] || "#64748b"}">${esc(l.replace("호선", "").replace("선", ""))}</span>`).join("");
   function applyCrowns() { const show = map.getZoom() < 13.3; state.crownMarkers.forEach((m) => m.getElement().style.display = show ? "" : "none"); }
   function applyLayers() {
     const v = (ids, on) => ids.forEach((id) => map.getLayer(id) && map.setLayoutProperty(id, "visibility", on ? "visible" : "none"));
     v(["school-fill", "school-line"], state.layers.school);
     state.schoolMarkers.forEach((m) => m.getElement().style.display = state.layers.school && map.getZoom() >= 13.8 ? "" : "none");
-    v(["sub-dot", "sub-label"], state.layers.subway);
-    if (state.layers.subway) lazySource("stations", "data/stations.geojson");
+    v(["sub-line-case", "sub-line", "sub-dot", "sub-label"], state.layers.subway);
+    if (state.layers.subway) { lazySource("subway-lines", "data/subway_lines.geojson"); lazySource("stations", "data/stations.geojson"); }
     v(["road-walk", "road-alley", "road-minor", "road-major", "road-major-far"], state.layers.road);
     v(["hillshade"], state.layers.terrain);
     v(["nz-line", "nz-point"], state.layers.nuisance);
@@ -348,7 +358,7 @@
         ...(c.up_n ? [`<span class="tag good">상승 신호 ${c.up_n}</span>`] : []),
       ].join("");
       return `<div class="card ${state.selected === c.id ? "sel" : ""}" data-id="${c.id}">
-        <div><h3>${esc(c.name)}</h3><div class="sub">${esc(c.umd)} · ${c.households ? c.households.toLocaleString() + "세대 · " : ""}${c.built}년 · ${esc(c.station.name)} ${c.station.walk_min}분</div></div>
+        <div><h3>${esc(c.name)}</h3><div class="sub">${esc(c.umd)} · ${c.households ? c.households.toLocaleString() + "세대 · " : ""}${c.built}년 · ${lineBadges(c.station.lines)}${esc(c.station.name)} ${c.station.walk_min}분</div></div>
         <div class="price">${rep ? fmtPrice(rep.latest) : "-"}<small>${rep ? "전용 " + rep.area + "㎡ 실거래" : ""} ${fmtChg(c.chg_1y)}</small></div>
         <div class="tags">${tags}</div>${favBtn(c.id)}</div>`;
     }).join("") || `<div class="muted" style="padding:20px 4px">${state.sort === "fav" ? "찜한 단지가 없어요. 카드의 ♥ 를 눌러보세요." : "조건에 맞는 단지가 없어요."}</div>`;
@@ -471,7 +481,7 @@
         <div class="section"><h4>교통 · 도로 환경</h4><div class="kv">
           ${c.terrain ? `<div><div class="k">지형</div><div class="v">해발 ${c.terrain.elev}m<small>${c.terrain.station_dh != null ? (c.terrain.station_dh >= 0 ? "역보다 +" : "역보다 ") + c.terrain.station_dh + "m" : ""}${c.terrain.slope_pct != null ? " · 경사 " + c.terrain.slope_pct + "%" : ""}</small></div></div>` : ""}
           ${c.parking ? `<div><div class="k">주차</div><div class="v">${c.parking.toLocaleString()}대<small>세대당 ${c.parking_per_hh || "-"}</small></div></div>` : ""}
-          <div><div class="k">가까운 역</div><div class="v">${esc(c.station.name)}<small>${esc(c.station.line)} · ${c.station.walk_min}분</small></div></div>
+          <div><div class="k">가까운 역</div><div class="v">${lineBadges(c.station.lines)}${esc(c.station.name)}<small>${esc(c.station.line)} · ${c.station.walk_min}분</small></div></div>
           <div><div class="k">큰길과 거리</div><div class="v">${c.road.major_dist == null ? "-" : c.road.major_dist + "m"}<small>${c.road.roadside ? "대로변" : c.road.major_dist > 150 ? "이면 · 조용" : "인접"}</small></div></div>
           ${c.station.within_600.length > 1 ? `<div style="grid-column:1/-1"><div class="k">600m 내 역</div><div class="v" style="font-size:13.5px">${c.station.within_600.map((s) => esc(s.name) + " " + s.dist + "m").join(" · ")}</div></div>` : ""}
           </div>
