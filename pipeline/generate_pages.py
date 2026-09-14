@@ -132,6 +132,11 @@ def page_html(c, base, all_by_umd):
         "(교육청 공식 학구)" if c["school"].get("elem_official") else "(추정)", esc(c["school"]["elem"]), c["school"]["elem_walk_min"], c["school"]["elem_dist"],
         " · <b style='color:#7c3aed'>초품아</b>" if c["school"]["chopuma"] else "",
         " · 공동통학구역: " + " / ".join(esc(x) for x in c["school"]["elem_shared"]) if c["school"].get("elem_shared") else ""))
+    if c.get("edu_band_pct") is not None:
+        parts.append('<p><b>같은 가격대에서의 학군</b>: {} 구간 {}개 단지 중 <b>상위 {}%</b> (학군 지수 {})</p>'.format(
+            esc(c["budget_band"]), c["edu_band_n"], c["edu_band_pct"], c["edu_score"]))
+    if c.get("sale_type"):
+        parts.append('<p><b>공급 유형</b>: {}</p>'.format(esc(c["sale_type"])))
     if c["school"].get("middle_zone"):
         mg = c["school"].get("middle_gender") or {}
         parts.append('<p><b>중학교 학군</b>: {}{}</p>'.format(esc(c["school"]["middle_zone"]), " · 공학 {} / 남중 {} / 여중 {} (아들 {}곳 · 딸 {}곳 배정 가능)".format(mg.get("공학", 0), mg.get("남", 0), mg.get("여", 0), mg.get("공학", 0) + mg.get("남", 0), mg.get("공학", 0) + mg.get("여", 0)) if mg else ""))

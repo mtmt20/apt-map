@@ -292,6 +292,7 @@
     else if (state.sort === "school") list = list.filter((c) => c.school.chopuma).sort((a, b) => a.school.elem_dist - b.school.elem_dist);
     else if (state.sort === "gap") list = list.filter((c) => c.jeonse_ratio).sort((a, b) => b.jeonse_ratio - a.jeonse_ratio);
     else if (state.sort === "edu") list = list.filter((c) => c.edu_score != null).sort((a, b) => b.edu_score - a.edu_score);
+    else if (state.sort === "eduvalue") list = list.filter((c) => c.edu_band_pct != null).sort((a, b) => a.edu_band_pct - b.edu_band_pct || (b.edu_score || 0) - (a.edu_score || 0));
     else if (state.sort === "fav") { list = state.complexes.filter((c) => favs.ids.has(c.id) && areaMatch(c)); }
     else if (state.sort === "up") list = list.filter((c) => c.up_n).sort((a, b) => (b.up_n - b.risk_n) - (a.up_n - a.risk_n) || b.trade_count_1y - a.trade_count_1y);
     else if (state.sort === "kid") list = list.filter((c) => c.kid != null).sort((a, b) => b.kid - a.kid || b.trade_count_1y - a.trade_count_1y);
@@ -299,7 +300,9 @@
       const B = state.budget;
       list = state.complexes.filter((c) => areaMatch(c) && (!B.gu || c.sgg === B.gu) && (!B.station || (c.stn || "").includes(B.station)) && (!B.gender || !c.mg || c.mg[B.gender === "girl" ? 1 : 0] >= 2))
         .map((c) => { const r = repArea(c, state.area); return r && r.latest <= B.max && r.latest >= B.min ? c : null; }).filter(Boolean)
-        .sort((a, b) => (B.kid ? (b.kid || 0) - (a.kid || 0) : (b.edu_score || 0) - (a.edu_score || 0)) || b.trade_count_1y - a.trade_count_1y);
+        .sort((a, b) => (B.pri === "eduvalue" ? (a.edu_band_pct || 999) - (b.edu_band_pct || 999)
+                       : B.pri === "edu" ? (b.edu_score || 0) - (a.edu_score || 0)
+                       : (b.kid || 0) - (a.kid || 0)) || b.trade_count_1y - a.trade_count_1y);
     }
     else list.sort((a, b) => b.trade_count_1y - a.trade_count_1y);
     return list.slice(0, 150);
@@ -318,6 +321,8 @@
         ...c.cons.slice(0, 1).map((p) => `<span class="tag bad">${esc(p)}</span>`),
         ...(c.jeonse_ratio ? [`<span class="tag ${c.jeonse_ratio >= 90 ? "bad" : ""}">전세가율 ${c.jeonse_ratio}%</span>`] : []),
         ...(c.sale_type === "혼합" ? [`<span class="tag">분양·임대 혼합</span>`] : []),
+        ...(c.sale_type === "임대" ? [`<span class="tag">임대 단지</span>`] : []),
+        ...(c.edu_band_pct != null && c.edu_band_pct <= 20 ? [`<span class="tag school">${esc(c.budget_band)}대 학군 상위 ${c.edu_band_pct}%</span>`] : []),
         ...(c.edu_score != null && c.edu_top_pct <= 30 ? [`<span class="tag school">학군 ${c.edu_score}점 · 상위 ${c.edu_top_pct}%</span>`] : []),
         ...(c.terrain && c.terrain.station_dh != null && c.terrain.station_dh >= 30 ? [`<span class="tag bad">언덕 +${c.terrain.station_dh}m</span>`] : []),
         ...(c.nz ? [`<span class="tag bad">기피시설 ${c.nz}</span>`] : []),
@@ -430,6 +435,7 @@
 
         <div class="section"><h4>배정 학군 <span class="r muted">${esc(state.meta.zone_note || "초등 통학구역 기준")}</span></h4>
           ${c.edu_score != null ? `<div class="jrow" style="margin:0 0 12px"><span>학군 지수 <b>${c.edu_score}</b>/100</span><span>${esc(areaShort())} <b>${c.edu_rank}위</b> · 상위 ${c.edu_top_pct}%</span><span class="muted">학원 밀집 40 · 초등 전입 25 · 초등 증감 15 · 중학교 20</span></div>` : ""}
+          ${c.edu_band_pct != null ? `<div class="jrow" style="margin:0 0 12px"><span>같은 가격대 <b>${esc(c.budget_band)}</b></span><span>이 구간 ${c.edu_band_n}개 단지 중 학군 <b>상위 ${c.edu_band_pct}%</b></span><span class="muted">대표 실거래가로 가격대를 나눠, 비슷한 예산에서 학군이 어느 정도인지 비교합니다</span></div>` : ""}
           <div class="school-hero"><div class="ic">🏫</div><div><b>${esc(c.school.elem)}</b>${c.school.elem_official ? ` <span class="tag school" style="vertical-align:middle">공식 학구</span>` : ""}<div class="n">도보 ${c.school.elem_walk_min}분 (${c.school.elem_dist}m) ${c.school.chopuma ? "· <b style='color:#7c3aed'>초품아</b>" : ""}</div>
             ${c.school.elem_shared && c.school.elem_shared.length ? `<div class="n">공동통학구역: ${c.school.elem_shared.map(esc).join(" / ")} 중 선택 배정</div>` : ""}
             ${c.school.elem_stats ? `<div class="n">학생 ${c.school.elem_stats.students.toLocaleString()}명${c.school.elem_stats.chg_pct != null ? ` (전년 ${fmtChg(c.school.elem_stats.chg_pct)})` : ""} · 학급당 ${c.school.elem_stats.class_size}명${c.school.elem_stats.net_move != null ? ` · 순전입 <b class="${c.school.elem_stats.net_move > 0 ? "up" : c.school.elem_stats.net_move < 0 ? "down" : ""}">${c.school.elem_stats.net_move > 0 ? "+" : ""}${c.school.elem_stats.net_move}명</b>` : ""}${c.school.elem_rank ? ` · 전입 선호 ${c.school.elem_rank[0]}위/${c.school.elem_rank[1]}` : ""}</div>` : ""}</div></div>
@@ -552,6 +558,8 @@
       ["세대수 / 준공", (c) => `${c.households ? c.households.toLocaleString() + "세대" : "-"} / ${c.built}년`],
       ["👶 아이 키우기", (c) => c.kid ? `<b>${c.kid.score}</b> (상위 ${c.kid.top_pct}%)` : "-"],
       ["학군 지수", (c) => c.edu_score != null ? `${c.edu_score} (상위 ${c.edu_top_pct}%)` : "-"],
+      ["같은 가격대 학군", (c) => c.edu_band_pct != null ? `${c.budget_band} 중 상위 ${c.edu_band_pct}%` : "-"],
+      ["분양/임대", (c) => c.sale_type || "-"],
       ["배정 초등", (c) => `${esc(c.school.elem)} ${c.school.elem_walk_min}분${c.school.chopuma ? " · 초품아" : ""}`],
       ["가까운 역", (c) => `${esc(c.station.name)} ${c.station.walk_min}분`],
       ["지형", (c) => c.terrain ? `해발 ${c.terrain.elev}m · 경사 ${c.terrain.slope_pct}%` : "-"],
@@ -582,7 +590,7 @@
     const f = e.target;
     const max = Math.round(parseFloat(f.max.value || "0") * 10000), min = Math.round(parseFloat(f.min.value || "0") * 10000);
     if (!max) return toast("최대 예산을 억 단위로 넣어주세요.");
-    state.budget = { max, min, gu: f.gu.value, station: f.station.value.trim(), kid: f.kid.checked, gender: f.gender.value };
+    state.budget = { max, min, gu: f.gu.value, station: f.station.value.trim(), kid: f.kid.checked, gender: f.gender.value, pri: f.pri ? f.pri.value : "kid" };
     if (f.area.value) { state.area = f.area.value; $$("[data-area]").forEach((x) => x.classList.toggle("on", x.dataset.area === state.area)); }
     state.sort = "budget"; $$("[data-sort]").forEach((x) => x.classList.toggle("on", x.dataset.sort === "budget"));
     $("#budgetModal").hidden = true; renderMarkers(); renderList(); setSheet("full");

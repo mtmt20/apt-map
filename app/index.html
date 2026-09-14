@@ -15,7 +15,7 @@
 <link rel="apple-touch-icon" href="icon.svg">
 <link rel="manifest" href="manifest.json">
 <link rel="stylesheet" href="vendor/maplibre-gl.css">
-<link rel="stylesheet" href="style.css?v=48">
+<link rel="stylesheet" href="style.css?v=49">
 </head>
 <body>
 <div id="map"></div>
@@ -39,6 +39,7 @@
     <button class="chip" data-sort="kid">👶 아이키우기</button>
     <button class="chip" data-sort="budget" id="budgetChip">🔍 예산으로 찾기</button>
     <button class="chip" data-sort="edu">학군순</button>
+    <button class="chip" data-sort="eduvalue">💰 예산 대비 학군</button>
     <button class="chip" data-sort="up">상승신호</button>
     <button class="chip" data-sort="school">초품아</button>
     <button class="chip" data-sort="gap" id="gapChip" hidden>전세가율순</button>
@@ -119,7 +120,8 @@
       <label>지역 <select name="gu" id="budgetGu"><option value="">서울 전체</option></select></label>
       <label>출퇴근 역 (선택) <input name="station" type="text" placeholder="예: 강남, 여의도"></label>
       <label>자녀 성별 (중학교 배정 고려) <select name="gender"><option value="">상관없음</option><option value="boy">아들 (남중·공학 2곳 이상)</option><option value="girl">딸 (여중·공학 2곳 이상)</option></select></label>
-      <label style="display:flex;align-items:center;gap:8px;font-size:14px;color:var(--fg)"><input name="kid" type="checkbox" checked style="width:auto"> 아이 키우기 점수 우선</label>
+      <label>무엇을 우선할까요 <select name="pri"><option value="eduvalue">이 예산에서 학군이 가장 좋은 곳 (추천)</option><option value="edu">학군 지수 절대 순위</option><option value="kid">아이 키우기 점수</option></select></label>
+      <label style="display:flex;align-items:center;gap:8px;font-size:14px;color:var(--fg)"><input name="kid" type="checkbox" checked style="width:auto"> 아이 키우기 점수 우선 (위 선택이 우선)</label>
       <div class="modal-actions"><button type="button" class="btn ghost" id="budgetCancel">취소</button><button type="submit" class="btn">찾기</button></div>
     </form>
   </div>
@@ -140,7 +142,7 @@
   </div>
 </div>
 <script src="config.js"></script>
-<script src="app.js?v=48"></script>
+<script src="app.js?v=49"></script>
 <script>if ("serviceWorker" in navigator && location.protocol === "https:") navigator.serviceWorker.register("sw.js").catch(() => {});</script>
 </body>
 </html>

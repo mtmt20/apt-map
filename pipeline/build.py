@@ -987,6 +987,34 @@ def main():
             if c["edu_top_pct"] <= 10:
                 c["pros"].insert(0, "학군 지수 {} (구 상위 {}%)".format(c["edu_score"], c["edu_top_pct"]))
                 c["pros"] = c["pros"][:5]
+    # 예산 대비 학군: 같은 가격대 안에서의 학군 순위
+    #   "대치동이 좋은 건 누구나 안다. 내 예산으로 갈 수 있는 최고 학군은 어디냐"에 답하는 지표.
+    BANDS = [(0, 50000, "5억 미만"), (50000, 80000, "5~8억"), (80000, 110000, "8~11억"),
+             (110000, 150000, "11~15억"), (150000, 200000, "15~20억"), (200000, 10 ** 9, "20억 이상")]
+
+    def rep_price(c):
+        """대표 실거래가(만원): 84㎡급(70~100㎡) 우선, 없으면 거래 많은 평형."""
+        ba = [a for a in c.get("by_area") or [] if a.get("latest")]
+        if not ba:
+            return None
+        mid = [a for a in ba if 70 <= a["area"] < 100]
+        pick = max(mid or ba, key=lambda a: a["count"])
+        return pick["latest"]
+
+    for c in cs:
+        c["rep_price"] = rep_price(c)
+        c["budget_band"] = next((lbl for lo, hi, lbl in BANDS if c["rep_price"] and lo <= c["rep_price"] < hi), None)
+    for lo, hi, lbl in BANDS:
+        grp = [c for c in cs if c.get("budget_band") == lbl and c.get("edu_score") is not None]
+        if len(grp) < 5:
+            continue
+        vals = sorted((c["edu_score"] for c in grp), reverse=True)
+        for c in grp:
+            r_ = vals.index(c["edu_score"]) + 1
+            c["edu_band_pct"] = max(1, int(round(r_ / len(vals) * 100)))
+            c["edu_band_n"] = len(vals)
+            # 카드 태그(app.js)와 단지 페이지에서 따로 보여주므로 pros 에는 넣지 않는다 (중복 방지)
+
     # 아이 키우기 점수 순위
     ks = sorted((c["kid"]["score"] for c in cs if c.get("kid")), reverse=True)
     for c in cs:
@@ -1026,7 +1054,8 @@ def main():
     dump = lambda name, obj: json.dump(obj, open(os.path.join(OUT, name), "w", encoding="utf-8"), ensure_ascii=False, separators=(",", ":"))
     # 요약(목록/핀용)은 complexes.json, 전체(거래내역 등)는 c/<id>.json 으로 분리 -> 서울 전체에서도 첫 로딩 가볍게
     SUMMARY_KEYS = ("id", "name", "sgg", "umd", "addr", "lat", "lng", "households", "built", "ppy", "chg_1y", "trade_count_1y",
-                    "jeonse_ratio", "sale_type", "edu_score", "edu_top_pct", "edu_rank", "pros", "cons", "notes")
+                    "jeonse_ratio", "sale_type", "edu_score", "edu_top_pct", "edu_rank", "pros", "cons", "notes",
+                    "rep_price", "budget_band", "edu_band_pct", "edu_band_n")
     cdir = os.path.join(OUT, "c")
     os.makedirs(cdir, exist_ok=True)
     for f in os.listdir(cdir):

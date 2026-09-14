@@ -20,6 +20,7 @@ from fetch_trades import load_env  # noqa: E402
 from content_calc import CALC_BODY, CALC_CSS  # noqa: E402
 from calc_js import CALC_JS  # noqa: E402
 from content_fund import FUND_BODY, FUND_JS  # noqa: E402
+import content_school_budget  # noqa: E402
 load_env()
 BASE = (os.environ.get("SITE_BASE") or "https://jipkokmap.kr").rstrip("/")
 CONTACT = os.environ.get("CONTACT_EMAIL", "")
@@ -42,7 +43,7 @@ def shell(title, desc, body, path, extra_head=""):
 <link rel="icon" type="image/svg+xml" href="{root}icon.svg"><link rel="stylesheet" href="{root}apt/page.css">{extra}</head><body><div class="wrap">
 <header class="top"><a class="logo" href="{root}index.html">🏠 집콕맵</a><nav style="display:flex;gap:10px;font-size:13px"><a href="{root}calc.html">계산기</a><a href="{root}rank/index.html">랭킹</a><a href="{root}guide.html">지표 설명</a><a href="{root}about.html">소개</a><a class="btn" href="{root}index.html">지도</a></nav></header>
 {body}
-<footer class="disclaim" style="margin-top:40px;border-top:1px solid var(--line);padding-top:14px">집콕맵 · <a href="{root}about.html">소개</a> · <a href="{root}guide.html">지표 설명</a> · <a href="{root}calc.html">계산기</a> · <a href="{root}fund.html">자금 마련</a> · <a href="{root}privacy.html">개인정보처리방침</a> · <a href="{root}moving.html">이사 준비</a> · <a href="{root}feed.html">제보 피드</a><br>공공데이터(국토교통부·교육부·한국교육시설안전원·나이스·학교알리미·서울시)와 오픈스트리트맵, 카카오 지도 정보를 조합해 자동 생성한 참고 자료입니다. 매매 판단 전 반드시 현장·등기부·교육청 공지를 확인하세요.</footer>
+<footer class="disclaim" style="margin-top:40px;border-top:1px solid var(--line);padding-top:14px">집콕맵 · <a href="{root}about.html">소개</a> · <a href="{root}guide.html">지표 설명</a> · <a href="{root}calc.html">계산기</a> · <a href="{root}fund.html">자금 마련</a> · <a href="{root}rank/budget-school.html">예산별 학군지</a> · <a href="{root}privacy.html">개인정보처리방침</a> · <a href="{root}moving.html">이사 준비</a> · <a href="{root}feed.html">제보 피드</a><br>공공데이터(국토교통부·교육부·한국교육시설안전원·나이스·학교알리미·서울시)와 오픈스트리트맵, 카카오 지도 정보를 조합해 자동 생성한 참고 자료입니다. 매매 판단 전 반드시 현장·등기부·교육청 공지를 확인하세요.</footer>
 </div></body></html>""".format(t=esc(title), d=esc(desc), base=BASE, path=path, root="../" if "/" in path else "", body=body, extra=extra_head)
 
 
@@ -93,7 +94,17 @@ GUIDE = """
 <p class="note">점수가 높다고 좋은 집이라는 뜻은 아닙니다. 부모가 자주 보는 조건을 같은 기준으로 줄 세운 것이고, 가족마다 우선순위가 다르니 축별 점수를 함께 보세요.</p></div>
 
 <h2>🎓 학군 지수 (0~100)</h2>
-<div class="card"><p>교과학원 밀집(반경 1km 입시·보습 학원 수) 40%, 배정 초등의 전입 순유입 25%, 초등 학생 수 증감 15%, 중학교 규모·학급당 인원 20%를 서울 전체 백분위로 환산해 합칩니다. 특목고 진학률이나 학업성취도는 학교알리미가 더 이상 공시하지 않거나 자동 수집이 막혀 있어 넣지 않았습니다. 그래서 이 지수는 "학구열이 높은 동네인가"를 보는 대리 지표입니다.</p></div>
+<div class="card"><p>교과학원 밀집(반경 1km 입시·보습 학원 수) 40%, 배정 초등의 전입 순유입 25%, 초등 학생 수 증감 15%, 중학교 규모·학급당 인원 20%를 서울 전체 백분위로 환산해 합칩니다. 특목고 진학률이나 학업성취도는 학교알리미가 더 이상 공시하지 않거나 자동 수집이 막혀 있어 넣지 않았습니다.</p>
+<p>그래서 이 지수가 재는 것은 학교의 성적이 아니라 <b>또래 환경</b>입니다. 학군지를 찾는 이유를 "공부 잘하는 학교"로만 설명하면 절반만 맞습니다. 내 아이만 관리해도 반 친구들이 다르게 움직이면 소용이 없고, 반대로 주변이 공부하는 분위기면 아이도 끌려갑니다. 학원이 몰려 있고 학부모가 굳이 이사 와서 들어오는 동네라면 교실 분위기도 그쪽으로 형성됩니다. 이 지수는 그 <b>학부모들의 실제 행동</b>을 대리 지표로 씁니다.</p>
+<p class="note">학군 지수가 높다고 좋은 동네라는 뜻은 아닙니다. 학원이 많다는 건 사교육비가 많이 든다는 뜻이기도 하고, 아이 성향에 따라 오히려 힘든 환경일 수 있습니다.</p></div>
+
+<h2>💰 예산 대비 학군</h2>
+<div class="card"><p>학군 지수만 보면 결국 늘 같은 동네가 위로 옵니다. 정작 필요한 답은 "<b>내 예산으로 갈 수 있는 최고 학군은 어디냐</b>"입니다. 그래서 대표 실거래가(84㎡급 우선)로 단지를 5억 미만 · 5~8억 · 8~11억 · 11~15억 · 15~20억 · 20억 이상 여섯 구간으로 나눈 뒤, <b>같은 구간 안에서만</b> 학군 지수를 줄 세웁니다.</p>
+<p>단지 화면에 "같은 가격대 8~11억, 이 구간 1,092개 단지 중 학군 상위 12%" 처럼 표시되고, 지도 위 <b>💰 예산 대비 학군</b> 칩으로 그 순서대로 볼 수 있습니다. 20억대와 비교하면 밀리는 단지도 자기 가격대에서는 1등일 수 있고, 그 자리를 찾는 것이 목적입니다. 구간별 상위 단지는 <a href="rank/budget-school.html">예산별 학군지 가이드</a>에 정리했습니다.</p>
+<p class="note">평형에 따라 같은 단지도 구간이 달라집니다. 대표 실거래가는 84㎡급 기준이라 59㎡를 보신다면 한 구간 아래에서 다시 찾아보세요.</p></div>
+
+<h2>🏢 공급 유형 (분양 · 임대 · 혼합)</h2>
+<div class="card"><p>K-apt 공동주택관리정보와 서울시 자료에 등록된 구분을 그대로 표시합니다. 분양, 임대, 분양·임대 혼합, 기타로 나뉘고 단지 화면과 단지 페이지에 적습니다. 세대수·동수·세대당 주차 대수도 같은 자료입니다. 확인 가능한 사실이라 그대로 옮기며, 집콕맵은 <b>사람을 분류하는 지표는 만들지 않습니다</b>.</p></div>
 
 <h2>📈 위험·상승 신호와 국면</h2>
 <div class="card"><p>최근 24개월 실거래로 자동 계산합니다.</p>
@@ -241,6 +252,7 @@ def rank_pages(cs):
     # 서울 전체 index
     active = [c for c in cs if c["trade_count_1y"] >= 5]
     body = ["<h1>서울 아파트 랭킹</h1><p class=\"sub\">구별 랭킹과 서울 전체 상위 단지 · {} 기준</p>".format(dt.date.today().isoformat())]
+    body.append('<div class="card"><p style="margin:0"><b>💰 <a href="budget-school.html">예산별 학군지 가이드</a></b> — 내 예산으로 갈 수 있는 최고 학군을 가격 구간별로 정리했습니다.</p></div>')
     body.append("<h2>구별 랭킹 보기</h2><div class=\"card\"><div class=\"tags\">" + "".join('<a class="tag" href="{}.html" style="font-size:14px;padding:8px 12px">{}</a>'.format(esc(g), esc(g)) for g in sorted(by_gu)) + "</div></div>")
     body.append("<h2>👶 서울 아이 키우기 점수 상위 30</h2><div class=\"card\">" + rank_table(sorted([c for c in active if c.get("kid")], key=lambda c: -c["kid"]["score"])[:30],
                 [("단지", link), ("구", lambda c: esc(c["sgg"])), ("점수", lambda c: "<b>{}</b>".format(c["kid"]["score"])), ("대표 실거래", rep_price)]) + "</div>")
@@ -274,6 +286,10 @@ def main():
     links = json.load(open(lp, encoding="utf-8")) if os.path.exists(lp) else {}
     pages["moving.html"] = shell("이사 준비 체크리스트 · 아이 있는 집 기준 | 집콕맵", "계약 전부터 이사 후 2주까지, 아이 있는 가정이 놓치기 쉬운 이사 준비 항목", moving_page(links), "moving.html")
     pages.update(rank_pages(cs))
+    pages["rank/budget-school.html"] = shell(
+        "예산별 학군지 아파트 가이드 · 내 예산으로 갈 수 있는 최고 학군 | 집콕맵",
+        "5억 미만부터 20억 이상까지, 같은 가격대 안에서 학군 지수가 높은 서울 아파트를 구간별로 정리했습니다.",
+        content_school_budget.page_body(cs, rank_table), "rank/budget-school.html")
     for path, htm in pages.items():
         open(os.path.join(APP, path), "w", encoding="utf-8").write(htm)
     # sitemap 에 추가
