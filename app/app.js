@@ -304,6 +304,17 @@
         : `<small>${esc(c.name.length > 9 ? c.name.slice(0, 9) + "…" : c.name)}</small><b>${fmtPrice(rep.latest)}</b><small>${rep.area}㎡ ${fmtChg(c.chg_1y)}</small>`;
     });
   }
+  // ---------- 익명 집계 (세션당 방문 1회, 기능별 1회) ----------
+  function hit(t) {
+    try {
+      const k = "jk_" + (t === "visit" ? "v" : t);
+      if (sessionStorage.getItem(k)) return;
+      sessionStorage.setItem(k, "1");
+      if (API && navigator.sendBeacon) navigator.sendBeacon(API + "/hit", JSON.stringify({ t, p: "app", r: document.referrer }));
+    } catch (e) { /* 집계 실패는 무시 */ }
+  }
+  hit("visit");
+
   // ---------- 출퇴근 시간 ----------
   // 역 그래프(subway_graph.json)에서 회사 역 기준 최단시간(환승 4분 가산)을 구하고,
   // 단지마다 1.5km 안의 역 최대 3곳 중 (도보 + 대기 3분 + 탑승) 최소값을 쓴다.
@@ -384,6 +395,7 @@
   }
   async function shareCommute() {
     const C = state.commute; if (!C) return;
+    hit("share");
     const url = location.href, text = `${C.a.name}${C.b ? "·" + C.b.name : ""} 출퇴근 ${C.max}분 이내 서울 아파트 | 집콕맵`;
     try { if (navigator.share) return await navigator.share({ title: text, url }); } catch (e) { return; }
     try { await navigator.clipboard.writeText(url); toast("링크를 복사했어요. 배우자에게 보내보세요."); } catch (e) { prompt("이 링크를 복사하세요", url); }
@@ -724,7 +736,7 @@
     if (ia < 0) return toast(`'${f.a.value}' 역을 찾지 못했어요.`);
     if (ib != null && ib < 0) return toast(`'${f.b.value}' 역을 찾지 못했어요.`);
     state.commute = { a: { idx: ia, name: graph.nodes[ia][0] }, b: ib != null ? { idx: ib, name: graph.nodes[ib][0] } : null, max: +f.max.value };
-    applyCommute(); syncCommuteUrl();
+    applyCommute(); syncCommuteUrl(); hit("commute");
     $("#commuteModal").hidden = true; updateCommuteChip(); renderMarkers(); renderList(); setSheet("full");
     const first = visibleComplexes()[0];
     if (first) map.flyTo({ center: [first.lng, first.lat], zoom: 12.5 }); else toast("조건에 맞는 단지가 없어요. 시간을 늘려보세요.");
@@ -739,6 +751,7 @@
     if (!max) return toast("최대 예산을 억 단위로 넣어주세요.");
     state.budget = { max, min, gu: f.gu.value, kid: f.kid.checked, gender: f.gender.value, fam: f.area.value === "fam", pri: f.pri ? f.pri.value : "kid" };
     if (f.area.value && f.area.value !== "fam") { state.area = f.area.value; $$("[data-area]").forEach((x) => x.classList.toggle("on", x.dataset.area === state.area)); }
+    hit("budget");
     state.sort = "budget"; $$("[data-sort]").forEach((x) => x.classList.toggle("on", x.dataset.sort === "budget"));
     $("#budgetModal").hidden = true; renderMarkers(); renderList(); setSheet("full");
     const first = visibleComplexes()[0]; if (first) map.flyTo({ center: [first.lng, first.lat], zoom: 13 });

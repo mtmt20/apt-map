@@ -7,6 +7,8 @@
  *  POST /alerts           {email, ids}  찜 단지 실거래 알림 등록  / GET /alerts/unsub?email=&t=
  *  GET  /admin/reports?key=   전체 제보(신고 수 포함)  / POST /admin/delete {key, id, ts}
  *  GET  /admin/alerts?key=    알림 등록 목록 (refresh.py 가 읽어 메일 발송)
+ *  POST /hit              {t, p, r}  익명 방문/기능 사용 집계 (IP·쿠키 저장 안 함, 날짜별 합계만)
+ *  GET  /admin/stats?key=&days=   최근 날짜별 집계
  *  GET  /health
  * KV 바인딩: APT, 시크릿: ADMIN_KEY
  */
@@ -31,6 +33,9 @@ async function sha(s) {
   const b = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s));
   return [...new Uint8Array(b)].map((x) => x.toString(16).padStart(2, "0")).join("").slice(0, 24);
 }
+const kstDay = (ms) => new Date((ms || Date.now()) + 9 * 3600000).toISOString().slice(0, 10);
+const HIT_TYPES = ["visit", "commute", "budget", "share", "compare", "fav", "report"];
+
 async function readJson(req) { try { return await req.json(); } catch (e) { return null; } }
 
 export default {
@@ -43,6 +48,38 @@ export default {
     const isAdmin = async (key) => !!env.ADMIN_KEY && key === env.ADMIN_KEY;
     try {
       if (path === "/health") return json({ ok: true, t: Date.now() }, 200, h);
+
+      // ---- 익명 집계 ----
+      // sendBeacon(text/plain) 로 받는다 (CORS preflight 없음). KV 무료 쓰기 한도(하루 1,000회)를 고려해
+      // 클라이언트가 세션당 방문 1회, 기능별 1회만 보낸다. 동시 쓰기로 약간 덜 셀 수 있음.
+      if (path === "/hit" && req.method === "POST") {
+        let body = null;
+        try { body = JSON.parse(await req.text()); } catch (e) { body = null; }
+        const t = body && HIT_TYPES.includes(body.t) ? body.t : null;
+        if (!t) return new Response(null, { status: 204, headers: h });
+        const ua = req.headers.get("User-Agent") || "";
+        if (/bot|crawl|spider|slurp|preview|headless|lighthouse/i.test(ua)) return new Response(null, { status: 204, headers: h });
+        const key = "stats:" + kstDay();
+        const st = (await env.APT.get(key, "json")) || { visit: 0, mobile: 0, pages: {}, ev: {}, ref: {} };
+        if (t === "visit") {
+          st.visit++;
+          if (/Mobi|Android|iPhone/i.test(ua)) st.mobile++;
+          const pg = ["app", "apt", "rank", "guide", "calc", "fund", "moving", "other"].includes(body.p) ? body.p : "other";
+          st.pages[pg] = (st.pages[pg] || 0) + 1;
+          let host = "";
+          try { host = body.r ? new URL(body.r).hostname.replace(/^www\./, "") : ""; } catch (e) { host = ""; }
+          if (host.endsWith("jipkokmap.kr")) host = "";
+          const rk = clean(host || "직접/북마크", 60);
+          st.ref[rk] = (st.ref[rk] || 0) + 1;
+          if (Object.keys(st.ref).length > 60) {   // 참조 도메인이 너무 많아지면 상위만 남김
+            st.ref = Object.fromEntries(Object.entries(st.ref).sort((a, b) => b[1] - a[1]).slice(0, 40));
+          }
+        } else {
+          st.ev[t] = (st.ev[t] || 0) + 1;
+        }
+        await env.APT.put(key, JSON.stringify(st), { expirationTtl: 60 * 60 * 24 * 400 });
+        return new Response(null, { status: 204, headers: h });
+      }
 
       // ---- 제보 ----
       if (path === "/reports" && req.method === "GET") {
@@ -140,6 +177,15 @@ export default {
       if (path.startsWith("/admin/")) {
         const key = url.searchParams.get("key") || ((await readJson(req.clone())) || {}).key;
         if (!(await isAdmin(key))) return json({ error: "unauthorized" }, 401, h);
+        if (path === "/admin/stats") {
+          const days = Math.min(90, Math.max(1, parseInt(url.searchParams.get("days") || "14", 10)));
+          const out = [];
+          for (let i = 0; i < days; i++) {
+            const d = kstDay(Date.now() - i * 86400000);
+            out.push(Object.assign({ date: d }, (await env.APT.get("stats:" + d, "json")) || { visit: 0, mobile: 0, pages: {}, ev: {}, ref: {} }));
+          }
+          return json({ days: out }, 200, h);
+        }
         if (path === "/admin/reports") {
           return json({ recent: (await env.APT.get("recent", "json")) || [] }, 200, h);
         }

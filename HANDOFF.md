@@ -221,6 +221,19 @@
   - **앞으로 다크모드 다시 넣지 말 것** (사용자 선호).
 
 
+- 2026-09-15 (27차): **익명 방문 통계** (사용자: "사람 오나 안 오나").
+  - Worker `POST /hit` (sendBeacon text/plain, preflight 없음): 타입 visit/commute/budget/share/compare/fav/report.
+    KV `stats:YYYY-MM-DD`(KST) 에 {visit, mobile, pages{app,apt,rank,...}, ev{...}, ref{도메인}} 합계만. IP·쿠키 저장 안 함, 봇 UA 제외, 400일 TTL.
+    `GET /admin/stats?key=&days=` (최대 90).
+  - 클라이언트는 sessionStorage 로 **세션당 방문 1회, 기능별 1회**만 전송 -> KV 무료 쓰기 한도(하루 1,000) 대비.
+    방문이 하루 700~800 을 넘기 시작하면 Workers Analytics Engine 으로 옮길 것. 동시 쓰기 시 약간 덜 셀 수 있음.
+  - 앱: app.js `hit()` (visit, 출퇴근·예산 찾기, 공유). 정적 페이지: generate_pages/generate_content 의 </body> 앞 인라인 비콘.
+    **주의**: 두 생성기의 해당 문자열은 .format() 안이라 중괄호를 {{ }} 로 이스케이프해야 함 (한 번 깨져서 app/apt 가 비었다가 재생성으로 복구).
+  - `app/admin.html` 상단에 방문 통계(오늘/7일/30일, 30일 막대, 들어온 곳, 처음 연 페이지, 기능 사용). 관리자 키 필요.
+  - privacy.html 에 익명 이용 통계 항목 추가.
+  - **deploy_worker.py 주의**: 실행하면 app/config.js 를 API_BASE 한 줄로 덮어써 COURT_LINK 설정이 사라짐 -> 실행 전 백업/복원했음. 스크립트 자체 수정은 아직 안 함.
+
+
 ## 진행 중 / 남은 작업
 0. 활용신청 3건 완료 시: 응급실(소아)·미세먼지(동/측정소)·스쿨존 레이어. 애드센스 승인용 콘텐츠(사이트 소개·지표 설명·구별 랭킹 글) + 쿠팡 파트너스 '이사 준비' 페이지.
 0. 구글 서치콘솔 사이트맵 상태 재확인(며칠 뒤 자동 재시도됨). LOCALDATA 복구 시 유흥주점·단란주점·숙박업 수집 붙이기. 동 단위 인구는 KOSIS 키 받으면 진행.

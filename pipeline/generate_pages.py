@@ -231,7 +231,7 @@ def page_html(c, base, all_by_umd):
                      '<p class="note">대한민국 법원이 운영하는 법원경매정보 사이트로 연결됩니다. 집콕맵과 제휴하거나 추천하는 관계가 아니며, 물건 정보와 권리관계는 해당 사이트와 법원 공고가 기준입니다.</p>'
                      '</div>'.format(addr=esc(c["addr"])))
     parts.append('<p style="margin-top:20px"><a class="btn" href="../index.html?id={}">지도에서 이 단지 보기</a> &nbsp; <a href="index.html">전체 단지 목록</a> &nbsp; <a href="../calc.html">계산기</a></p>'.format(esc(c["id"])))
-    parts.append('<div class="disclaim">집콕맵은 공공데이터(국토교통부 실거래가, K-apt, 나이스, 학교알리미)와 오픈스트리트맵, 카카오 지도 정보를 조합해 자동 생성한 참고 자료입니다. 매매 판단 전 반드시 현장과 등기부등본, 교육청 배정 공지를 확인하세요. 생성 {}</div></div></body></html>'.format(dt.date.today().isoformat()))
+    parts.append('<div class="disclaim">집콕맵은 공공데이터(국토교통부 실거래가, K-apt, 나이스, 학교알리미)와 오픈스트리트맵, 카카오 지도 정보를 조합해 자동 생성한 참고 자료입니다. 매매 판단 전 반드시 현장과 등기부등본, 교육청 배정 공지를 확인하세요. 생성 {}</div></div><script>(function(){{try{{var P=location.pathname,p=/\\/apt\\//.test(P)?"apt":/\\/rank\\//.test(P)?"rank":/guide/.test(P)?"guide":/calc/.test(P)?"calc":/fund/.test(P)?"fund":/moving/.test(P)?"moving":"other";if(sessionStorage.getItem("jk_v"))return;sessionStorage.setItem("jk_v","1");navigator.sendBeacon&&navigator.sendBeacon("https://aptmap-api.jipkokmap.workers.dev/hit",JSON.stringify({{t:"visit",p:p,r:document.referrer}}))}}catch(e){{}}}})();</script></body></html>'.format(dt.date.today().isoformat()))
     return slug, "".join(parts)
 
 
@@ -254,7 +254,7 @@ def index_html(cs, base):
                                                                                            " · 초품아" if c["school"]["chopuma"] else "", " · 전세가율 {}%".format(c["jeonse_ratio"]) if c.get("jeonse_ratio") else "",
                                                                                            " · 아이키우기 {}".format(c["kid"]["score"]) if c.get("kid") else ""))
             parts.append("</div>")
-    parts.append('<div class="disclaim">공공데이터 기반 자동 생성 자료입니다. 생성 {}</div></div></body></html>'.format(dt.date.today().isoformat()))
+    parts.append('<div class="disclaim">공공데이터 기반 자동 생성 자료입니다. 생성 {}</div></div><script>(function(){{try{{var P=location.pathname,p=/\\/apt\\//.test(P)?"apt":/\\/rank\\//.test(P)?"rank":/guide/.test(P)?"guide":/calc/.test(P)?"calc":/fund/.test(P)?"fund":/moving/.test(P)?"moving":"other";if(sessionStorage.getItem("jk_v"))return;sessionStorage.setItem("jk_v","1");navigator.sendBeacon&&navigator.sendBeacon("https://aptmap-api.jipkokmap.workers.dev/hit",JSON.stringify({{t:"visit",p:p,r:document.referrer}}))}}catch(e){{}}}})();</script></body></html>'.format(dt.date.today().isoformat()))
     return "".join(parts)
 
 
