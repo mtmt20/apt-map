@@ -4,7 +4,7 @@
   const $ = (s, el) => (el || document).querySelector(s);
   const $$ = (s, el) => Array.from((el || document).querySelectorAll(s));
   const PY = 3.3058;
-  const dark = matchMedia("(prefers-color-scheme: dark)").matches;
+  const dark = false;   // 항상 밝은 화면 (사용자 요청: 너무 어둡다)
 
   const state = {
     complexes: [], auctions: [], schools: null, meta: null,

@@ -1,26 +1,21 @@
 :root {
+  color-scheme: light only;
   --bg: #ffffff;
-  --bg2: #f4f6fa;
+  --bg2: #f7f9fc;
   --fg: #0f172a;
   --muted: #64748b;
   --line: #e2e8f0;
-  --brand: #2563eb;
-  --brand2: #1d4ed8;
+  --brand: #3b82f6;
+  --brand2: #2563eb;
   --up: #ef4444;
   --down: #2563eb;
   --good: #16a34a;
   --bad: #dc2626;
   --warn: #f59e0b;
-  --shadow: 0 8px 30px rgba(15, 23, 42, .14);
+  --shadow: 0 8px 28px rgba(59, 130, 246, .12);
   --radius: 18px;
   --sheet-peek: 156px;
   --sheet-half: 52vh;
-}
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #0f172a; --bg2: #1e293b; --fg: #f1f5f9; --muted: #94a3b8; --line: #334155;
-    --shadow: 0 8px 30px rgba(0, 0, 0, .5);
-  }
 }
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
@@ -59,7 +54,7 @@ button { font: inherit; color: inherit; cursor: pointer; border: 0; background: 
   flex: 0 0 auto; padding: 7px 12px; border-radius: 999px; background: var(--bg); box-shadow: var(--shadow);
   font-size: 13px; font-weight: 600; color: var(--fg);
 }
-.chip.on { background: var(--fg); color: var(--bg); }
+.chip.on { background: var(--brand); color: #fff; box-shadow: 0 3px 10px rgba(59, 130, 246, .35); }
 .sep { flex: 0 0 1px; background: var(--line); margin: 6px 2px; }
 
 /* ---------- layers ---------- */
@@ -73,7 +68,7 @@ button { font: inherit; color: inherit; cursor: pointer; border: 0; background: 
   font-size: 10px; font-weight: 700; color: var(--muted);
 }
 .lyr .ico { font-size: 18px; line-height: 1; }
-.lyr.on { color: var(--brand); outline: 2px solid var(--brand); }
+.lyr.on { color: var(--brand); outline: 2px solid var(--brand); background: #eff6ff; }
 .legend {
   position: fixed; left: 12px; top: calc(112px + env(safe-area-inset-top)); z-index: 19;
   background: var(--bg); border-radius: 12px; padding: 8px 10px; box-shadow: var(--shadow);
@@ -240,7 +235,7 @@ button { font: inherit; color: inherit; cursor: pointer; border: 0; background: 
 .mk.crown { background: #fff7ed; border-color: #f59e0b; }
 .mk.crown b { color: #b45309; }
 .mk.crown::after { background: #fff7ed; }
-@media (prefers-color-scheme: dark) { .mk.crown { background: #3b2f1a; } .mk.crown::after { background: #3b2f1a; } .mk.crown b { color: #fbbf24; } }
+
 
 .tbl.cmp th { white-space: nowrap; font-size: 12px; }
 .tbl.cmp td { font-size: 13px; vertical-align: top; min-width: 120px; }

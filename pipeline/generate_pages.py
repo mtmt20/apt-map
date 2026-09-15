@@ -44,7 +44,7 @@ def chg(v):
 
 CSS = """
 :root{--fg:#0f172a;--muted:#64748b;--line:#e2e8f0;--bg:#fff;--bg2:#f4f6fa;--brand:#2563eb;--good:#16a34a;--bad:#dc2626}
-@media(prefers-color-scheme:dark){:root{--fg:#f1f5f9;--muted:#94a3b8;--line:#334155;--bg:#0f172a;--bg2:#1e293b}}
+:root{color-scheme:light only}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font-family:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Noto Sans KR","Malgun Gothic",system-ui,sans-serif;line-height:1.5}
 .wrap{max-width:760px;margin:0 auto;padding:16px 16px 60px}a{color:var(--brand);text-decoration:none}
 header.top{display:flex;justify-content:space-between;align-items:center;padding:8px 0 16px;border-bottom:1px solid var(--line);margin-bottom:16px}
@@ -85,7 +85,7 @@ def page_html(c, base, all_by_umd):
         "numberOfAccommodationUnits": c.get("households") or None, "yearBuilt": c["built"],
     }
     parts = []
-    parts.append("""<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+    parts.append("""<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="color-scheme" content="light only"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{t}</title><meta name="description" content="{d}"><link rel="canonical" href="{base}/apt/{slugq}.html">
 <meta property="og:title" content="{t}"><meta property="og:description" content="{d}"><meta property="og:type" content="article"><meta property="og:url" content="{base}/apt/{slugq}.html">
 <script type="application/ld+json">{ld}</script><link rel="stylesheet" href="page.css"></head><body><div class="wrap">
@@ -239,7 +239,7 @@ def index_html(cs, base):
     by_gu = {}
     for c in cs:
         by_gu.setdefault(c["sgg"], {}).setdefault(c["umd"], []).append(c)
-    parts = ["""<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+    parts = ["""<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="color-scheme" content="light only"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>서울 아파트 단지별 실거래가·전세가율·학군 목록 | 집콕맵</title><meta name="description" content="서울 {n}개 아파트 단지의 최근 실거래가, 전세가율, 배정 초등학교, 학원 밀집도, 장단점 요약을 단지별 페이지로 정리했습니다.">
 <link rel="canonical" href="{base}/apt/index.html"><link rel="stylesheet" href="page.css"></head><body><div class="wrap">
 <header class="top"><a class="logo" href="../index.html">🏠 집콕맵</a><a class="btn" href="../index.html">지도로 보기</a></header>

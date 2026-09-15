@@ -37,7 +37,7 @@ def price(v):
 
 
 def shell(title, desc, body, path, extra_head=""):
-    return """<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+    return """<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="color-scheme" content="light only"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{t}</title><meta name="description" content="{d}"><link rel="canonical" href="{base}/{path}">
 <meta property="og:title" content="{t}"><meta property="og:description" content="{d}"><meta property="og:url" content="{base}/{path}">
 <link rel="icon" type="image/svg+xml" href="{root}icon.svg"><link rel="stylesheet" href="{root}apt/page.css">{extra}</head><body><div class="wrap">
