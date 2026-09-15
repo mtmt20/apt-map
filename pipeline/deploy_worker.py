@@ -8,6 +8,7 @@
 import argparse
 import json
 import os
+import re
 import sys
 
 import requests
@@ -80,7 +81,12 @@ def main():
     print("API:", base)
 
     cfg = os.path.join(ROOT, "app", "config.js")
-    open(cfg, "w", encoding="utf-8").write('window.APT_CONFIG = { API_BASE: "%s" };\n' % base)
+    cur = open(cfg, encoding="utf-8").read() if os.path.exists(cfg) else ""
+    if "API_BASE" in cur:   # 다른 설정(COURT_LINK 등)은 보존하고 API_BASE 값만 교체
+        cur = re.sub(r'API_BASE:\s*"[^"]*"', 'API_BASE: "%s"' % base, cur)
+    else:
+        cur = 'window.APT_CONFIG = { API_BASE: "%s" };\n' % base
+    open(cfg, "w", encoding="utf-8").write(cur)
     print("app/config.js 갱신 -> 재배포(deploy_github_pages.py) 필요")
     r = requests.get(base + "/health", timeout=20)
     print("health:", r.status_code, r.text[:80])
