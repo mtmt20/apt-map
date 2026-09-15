@@ -27,6 +27,8 @@ KEEP = (37.42, 126.76, 37.71, 127.19)          # 이 박스에 걸친 선로만 
 LABEL = {"1": "1호선", "2": "2호선", "3": "3호선", "4": "4호선", "5": "5호선", "6": "6호선", "7": "7호선", "8": "8호선",
          "9": "9호선", "신분당": "신분당선", "경의·중앙": "경의중앙선", "경춘": "경춘선", "공항철도": "공항철도",
          "서해": "서해선", "수인·분당": "수인분당선", "GTX-A": "GTX-A", "Silim": "신림선", "W": "우이신설선"}
+# 표정속도(km/분)가 일반 지하철(0.6)보다 확실히 빠른 노선
+FAST = {"신분당선": 1.1, "GTX-A": 1.7, "공항철도": 0.9, "경춘선": 0.8}
 QUERY = """[out:json][timeout:300];
 relation["route"~"^(subway|light_rail|train)$"]["colour"]["ref"~"^({refs})$"]({s},{w},{n},{e})->.r;
 .r out body;
@@ -109,7 +111,61 @@ def build(data):
                              "geometry": {"type": "MultiLineString", "coordinates": segs}})
     return {"lines": {"type": "FeatureCollection", "features": features},
             "station_lines": {k: sorted(v) for k, v in st_lines.items()},
-            "colors": {L["name"]: L["color"] for L in lines.values()}}
+            "colors": {L["name"]: L["color"] for L in lines.values()},
+            "graph": build_graph(rels, nodes)}
+
+
+def hav_km(a, b):
+    la1, lo1, la2, lo2 = map(math.radians, (a[0], a[1], b[0], b[1]))
+    h = math.sin((la2 - la1) / 2) ** 2 + math.cos(la1) * math.cos(la2) * math.sin((lo2 - lo1) / 2) ** 2
+    return 6371 * 2 * math.asin(math.sqrt(h))
+
+
+def build_graph(rels, nodes):
+    """출퇴근 시간 계산용 역 그래프.
+
+    역 사이 소요 = 직선거리 x1.15(곡선) / 0.6km/분(표정속도 약 36km/h) + 정차 0.4분.
+    급행·특급 계통은 제외해 보수적으로 잡는다 (완행 기준). 환승 가산은 앱에서 붙인다.
+    반환: {"nodes": [[이름, lat, lng], ...], "lines": [노선명...], "edges": [[i, j, 분x10, 노선idx], ...]}
+    """
+    pos, names, line_names, edges = {}, [], [], {}
+
+    def nid(name, lat, lng):
+        if name not in pos:
+            pos[name] = len(names)
+            names.append([name, round(lat, 5), round(lng, 5)])
+        return pos[name]
+
+    for r in rels:
+        t = r["tags"]
+        ref = t.get("ref")
+        if ref not in LABEL or re.search("급행|특급", t.get("name", "")):
+            continue
+        ln = LABEL[ref]
+        if ln not in line_names:
+            line_names.append(ln)
+        li = line_names.index(ln)
+        seq = []
+        for m in r.get("members", []):
+            if m["type"] != "node" or not (m.get("role") or "").startswith("stop") or m["ref"] not in nodes:
+                continue
+            nd = nodes[m["ref"]]
+            nm = norm(nd.get("tags", {}).get("name"))
+            if nm and "lat" in nd and (not seq or seq[-1] != nm):
+                seq.append(nm)
+                nid(nm, nd["lat"], nd["lon"])
+        if "순환" in t.get("name", "") and len(seq) > 2 and seq[0] != seq[-1]:
+            seq.append(seq[0])
+        for a, b in zip(seq, seq[1:]):
+            i, j = pos[a], pos[b]
+            d = hav_km(names[i][1:], names[j][1:])
+            if d > 12:        # 이름 충돌 등으로 말이 안 되는 구간은 버림
+                continue
+            mins = max(1.0, d * 1.15 / FAST.get(ln, 0.6) + 0.4)
+            key = (min(i, j), max(i, j), li)
+            edges[key] = min(edges.get(key, 1e9), mins)
+    return {"nodes": names, "lines": line_names,
+            "edges": [[i, j, int(round(m * 10)), li] for (i, j, li), m in sorted(edges.items())]}
 
 
 def main():

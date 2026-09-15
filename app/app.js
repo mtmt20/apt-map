@@ -304,12 +304,103 @@
         : `<small>${esc(c.name.length > 9 ? c.name.slice(0, 9) + "…" : c.name)}</small><b>${fmtPrice(rep.latest)}</b><small>${rep.area}㎡ ${fmtChg(c.chg_1y)}</small>`;
     });
   }
+  // ---------- 출퇴근 시간 ----------
+  // 역 그래프(subway_graph.json)에서 회사 역 기준 최단시간(환승 4분 가산)을 구하고,
+  // 단지마다 1.5km 안의 역 최대 3곳 중 (도보 + 대기 3분 + 탑승) 최소값을 쓴다.
+  let graph = null, cmNear = null;
+  async function loadGraph() {
+    if (graph) return graph;
+    graph = await fetch("data/subway_graph.json").then((r) => r.json());
+    const dl = $("#stationList"); if (dl) dl.innerHTML = graph.nodes.map((n) => `<option value="${esc(n[0])}">`).join("");
+    return graph;
+  }
+  const normSt = (s) => (s || "").trim().replace(/\(.*?\)/g, "").replace(/역$/, "");
+  function findNode(name) {
+    const q = normSt(name); if (!q) return -1;
+    let i = graph.nodes.findIndex((n) => n[0] === q);
+    if (i < 0) i = graph.nodes.findIndex((n) => n[0].startsWith(q));
+    if (i < 0) i = graph.nodes.findIndex((n) => n[0].includes(q));
+    return i;
+  }
+  function commuteTimes(src) {
+    const N = graph.nodes.length, L = graph.lines.length, INF = 1e9;
+    const adj = new Map();   // key = node*L+line -> [[node, line, min]]
+    const linesAt = Array.from({ length: N }, () => new Set());
+    for (const [i, j, m, li] of graph.edges) {
+      const t = m / 10;
+      (adj.get(i * L + li) || adj.set(i * L + li, []).get(i * L + li)).push([j, li, t]);
+      (adj.get(j * L + li) || adj.set(j * L + li, []).get(j * L + li)).push([i, li, t]);
+      linesAt[i].add(li); linesAt[j].add(li);
+    }
+    const dist = new Float64Array(N * L).fill(INF), done = new Uint8Array(N * L), best = new Float64Array(N).fill(INF);
+    const pq = [];   // 작은 그래프라 정렬 배열 기반 우선순위 큐로 충분
+    const push = (d, k) => { let lo = 0, hi = pq.length; while (lo < hi) { const mid = (lo + hi) >> 1; if (pq[mid][0] > d) lo = mid + 1; else hi = mid; } pq.splice(lo, 0, [d, k]); };
+    linesAt[src].forEach((li) => { dist[src * L + li] = 0; push(0, src * L + li); });
+    while (pq.length) {
+      const [d, k] = pq.pop();
+      if (done[k]) continue; done[k] = 1;
+      const i = Math.floor(k / L), li = k % L;
+      if (d < best[i]) best[i] = d;
+      for (const [j, l2, t] of adj.get(k) || []) { const nk = j * L + l2; if (!done[nk] && d + t < dist[nk]) { dist[nk] = d + t; push(d + t, nk); } }
+      linesAt[i].forEach((l2) => { const nk = i * L + l2; if (l2 !== li && !done[nk] && d + 4 < dist[nk]) { dist[nk] = d + 4; push(d + 4, nk); } });
+    }
+    return best;
+  }
+  function nearStations() {
+    if (cmNear) return cmNear;
+    cmNear = new Map();
+    const R = 1500, rad = Math.PI / 180;
+    for (const c of state.complexes) {
+      const cos = Math.cos(c.lat * rad), cand = [];
+      graph.nodes.forEach((n, i) => {
+        const dy = (n[1] - c.lat) * 111320, dx = (n[2] - c.lng) * 111320 * cos;
+        const d = Math.sqrt(dx * dx + dy * dy);
+        if (d <= R) cand.push([i, Math.max(1, Math.round(d / 70))]);
+      });
+      cand.sort((x, y) => x[1] - y[1]);
+      cmNear.set(c.id, cand.slice(0, 3));
+    }
+    return cmNear;
+  }
+  function applyCommute() {
+    const C = state.commute; if (!C) return;
+    const near = nearStations();
+    const ta = commuteTimes(C.a.idx), tb = C.b ? commuteTimes(C.b.idx) : null;
+    for (const c of state.complexes) {
+      const cand = near.get(c.id) || [];
+      const pick = (t) => cand.reduce((m, [i, w]) => Math.min(m, w + 3 + t[i]), 1e9);
+      c._cmA = cand.length ? Math.round(pick(ta)) : null;
+      c._cmB = tb && cand.length ? Math.round(pick(tb)) : null;
+      c._cm = c._cmA == null ? null : Math.max(c._cmA, c._cmB == null ? 0 : c._cmB);
+    }
+  }
+  const commuteOk = (c) => !state.commute || (c._cm != null && c._cm <= state.commute.max);
+  const commuteTag = (c) => !state.commute || c._cmA == null ? "" :
+    `<span class="tag cm">🚉 ${esc(state.commute.a.name)} ${c._cmA}분${state.commute.b && c._cmB != null ? ` · ${esc(state.commute.b.name)} ${c._cmB}분` : ""}</span>`;
+  function syncCommuteUrl() {
+    const u = new URL(location.href), C = state.commute;
+    if (C) u.searchParams.set("cm", [C.a.name, C.b ? C.b.name : "", C.max].join(",")); else u.searchParams.delete("cm");
+    history.replaceState(null, "", u);
+  }
+  async function shareCommute() {
+    const C = state.commute; if (!C) return;
+    const url = location.href, text = `${C.a.name}${C.b ? "·" + C.b.name : ""} 출퇴근 ${C.max}분 이내 서울 아파트 | 집콕맵`;
+    try { if (navigator.share) return await navigator.share({ title: text, url }); } catch (e) { return; }
+    try { await navigator.clipboard.writeText(url); toast("링크를 복사했어요. 배우자에게 보내보세요."); } catch (e) { prompt("이 링크를 복사하세요", url); }
+  }
+  function updateCommuteChip() {
+    const ch = $("#commuteChip"), C = state.commute;
+    ch.classList.toggle("on", !!C);
+    ch.textContent = C ? `🚉 ${C.a.name}${C.b ? "·" + C.b.name : ""} ${C.max}분 ✕` : "🚉 출퇴근 시간";
+    $("#commuteShare").hidden = !C;
+  }
+
   const matchQ = (c) => !state.q || (c.name + c.umd + (c.addr || "") + (c.sgg || "")).toLowerCase().includes(state.q.toLowerCase());
 
   // ---------- list ----------
   function visibleComplexes() {
     let list = state.complexes.filter((c) => areaMatch(c) && matchQ(c));
-    if (!state.q && map.getZoom() >= 12 && state.sort !== "fav" && state.sort !== "budget") {   // 검색어 없으면 지도 화면 안 단지만
+    if (!state.q && map.getZoom() >= 12 && state.sort !== "fav" && state.sort !== "budget" && !state.commute) {   // 검색어 없으면 지도 화면 안 단지만
       const bb = map.getBounds();
       list = list.filter((c) => c.lat > bb.getSouth() && c.lat < bb.getNorth() && c.lng > bb.getWest() && c.lng < bb.getEast());
     }
@@ -324,24 +415,33 @@
     else if (state.sort === "kid") list = list.filter((c) => c.kid != null).sort((a, b) => b.kid - a.kid || b.trade_count_1y - a.trade_count_1y);
     else if (state.sort === "budget" && state.budget) {
       const B = state.budget;
-      list = state.complexes.filter((c) => areaMatch(c) && (!B.gu || c.sgg === B.gu) && (!B.station || (c.stn || "").includes(B.station)) && (!B.gender || !c.mg || c.mg[B.gender === "girl" ? 1 : 0] >= 2))
-        .map((c) => { const r = repArea(c, state.area); return r && r.latest <= B.max && r.latest >= B.min ? c : null; }).filter(Boolean)
+      list = state.complexes.filter((c) => areaMatch(c) && (!B.gu || c.sgg === B.gu) && (!B.gender || !c.mg || c.mg[B.gender === "girl" ? 1 : 0] >= 2))
+        .map((c) => {
+          // 가족형: 50㎡ 이상 평형 중 예산 안에 드는 것, 100세대 이상 단지만
+          const r = B.fam ? (c.households || 0) >= 100 && (c.by_area || []).filter((x) => x.area >= 50 && x.latest && x.latest <= B.max && x.latest >= B.min).sort((x, y) => y.count - x.count)[0]
+                          : repArea(c, state.area);
+          c._bRep = B.fam ? r || null : null;
+          return r && r.latest <= B.max && r.latest >= B.min ? c : null;
+        }).filter(Boolean)
         .sort((a, b) => (B.pri === "eduvalue" ? (a.edu_band_pct || 999) - (b.edu_band_pct || 999)
                        : B.pri === "edu" ? (b.edu_score || 0) - (a.edu_score || 0)
                        : (b.kid || 0) - (a.kid || 0)) || b.trade_count_1y - a.trade_count_1y);
     }
+    else if (state.commute) list.sort((a, b) => (a._cm ?? 999) - (b._cm ?? 999) || b.trade_count_1y - a.trade_count_1y);
     else list.sort((a, b) => b.trade_count_1y - a.trade_count_1y);
+    if (state.commute) list = list.filter(commuteOk);
     return list.slice(0, 150);
   }
   function renderList() {
     const list = visibleComplexes();
     $("#compareBar").hidden = !state.compare.length;
     $("#compareBar").querySelector("span").textContent = `비교 ${state.compare.length}/3`;
-    $("#listCount").textContent = state.sort === "budget" ? `예산 조건 ${list.length}개` : state.sort === "fav" ? `찜한 단지 ${list.length}개` : (map.getZoom() >= 12 && !state.q ? `화면 안 단지 ${list.length}개` : `단지 ${list.length}개`);
+    $("#listCount").textContent = state.commute && state.sort !== "fav" ? `출퇴근 ${state.commute.max}분 이내${state.sort === "budget" ? " + 예산" : ""} ${list.length >= 150 ? "150개+" : list.length + "개"}` : state.sort === "budget" ? `예산 조건 ${list.length}개` : state.sort === "fav" ? `찜한 단지 ${list.length}개` : (map.getZoom() >= 12 && !state.q ? `화면 안 단지 ${list.length}개` : `단지 ${list.length}개`);
     $("#alertBar").hidden = !(state.sort === "fav" && list.length && API);
     $("#list").innerHTML = list.map((c) => {
-      const rep = repArea(c, state.area);
+      const rep = (state.sort === "budget" && c._bRep) || repArea(c, state.area);
       const tags = [
+        ...(commuteTag(c) ? [commuteTag(c)] : []),
         ...(c.school.chopuma ? [`<span class="tag school">초품아 ${esc(c.school.elem.replace("등학교", ""))}</span>`] : [`<span class="tag">${esc(c.school.elem.replace("등학교", ""))} ${c.school.elem_walk_min}분</span>`]),
         ...c.pros.slice(0, 2).filter((p) => !p.startsWith("초품아")).map((p) => `<span class="tag good">${esc(p)}</span>`),
         ...c.cons.slice(0, 1).map((p) => `<span class="tag bad">${esc(p)}</span>`),
@@ -481,6 +581,7 @@
         <div class="section"><h4>교통 · 도로 환경</h4><div class="kv">
           ${c.terrain ? `<div><div class="k">지형</div><div class="v">해발 ${c.terrain.elev}m<small>${c.terrain.station_dh != null ? (c.terrain.station_dh >= 0 ? "역보다 +" : "역보다 ") + c.terrain.station_dh + "m" : ""}${c.terrain.slope_pct != null ? " · 경사 " + c.terrain.slope_pct + "%" : ""}</small></div></div>` : ""}
           ${c.parking ? `<div><div class="k">주차</div><div class="v">${c.parking.toLocaleString()}대<small>세대당 ${c.parking_per_hh || "-"}</small></div></div>` : ""}
+          ${state.commute && c._cmA != null ? `<div style="grid-column:1/-1"><div class="k">출퇴근 (추정)</div><div class="v">${esc(state.commute.a.name)}까지 ${c._cmA}분${state.commute.b && c._cmB != null ? ` · ${esc(state.commute.b.name)}까지 ${c._cmB}분` : ""}<small>도보+대기 3분+지하철, 환승 1회당 4분</small></div></div>` : ""}
           <div><div class="k">가까운 역</div><div class="v">${lineBadges(c.station.lines)}${esc(c.station.name)}<small>${esc(c.station.line)} · ${c.station.walk_min}분</small></div></div>
           <div><div class="k">큰길과 거리</div><div class="v">${c.road.major_dist == null ? "-" : c.road.major_dist + "m"}<small>${c.road.roadside ? "대로변" : c.road.major_dist > 150 ? "이면 · 조용" : "인접"}</small></div></div>
           ${c.station.within_600.length > 1 ? `<div style="grid-column:1/-1"><div class="k">600m 내 역</div><div class="v" style="font-size:13.5px">${c.station.within_600.map((s) => esc(s.name) + " " + s.dist + "m").join(" · ")}</div></div>` : ""}
@@ -608,6 +709,26 @@
   $("#compareModal").addEventListener("click", (e) => { if (e.target === $("#compareModal")) $("#compareModal").hidden = true; });
 
   // ---------- 예산으로 찾기 ----------
+  $("#commuteChip").addEventListener("click", async () => {
+    if (state.commute) { state.commute = null; syncCommuteUrl(); updateCommuteChip(); renderMarkers(); renderList(); return; }
+    $("#commuteModal").hidden = false;
+    try { await loadGraph(); } catch (e) { toast("노선 정보를 불러오지 못했어요."); }
+  });
+  $("#commuteModal").addEventListener("click", (e) => { if (e.target === $("#commuteModal")) $("#commuteModal").hidden = true; });
+  $("#commuteShare").addEventListener("click", shareCommute);
+  $("#commuteClear").addEventListener("click", () => { state.commute = null; syncCommuteUrl(); $("#commuteModal").hidden = true; updateCommuteChip(); renderMarkers(); renderList(); });
+  $("#commuteForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    await loadGraph();
+    const f = e.target, ia = findNode(f.a.value), ib = f.b.value.trim() ? findNode(f.b.value) : null;
+    if (ia < 0) return toast(`'${f.a.value}' 역을 찾지 못했어요.`);
+    if (ib != null && ib < 0) return toast(`'${f.b.value}' 역을 찾지 못했어요.`);
+    state.commute = { a: { idx: ia, name: graph.nodes[ia][0] }, b: ib != null ? { idx: ib, name: graph.nodes[ib][0] } : null, max: +f.max.value };
+    applyCommute(); syncCommuteUrl();
+    $("#commuteModal").hidden = true; updateCommuteChip(); renderMarkers(); renderList(); setSheet("full");
+    const first = visibleComplexes()[0];
+    if (first) map.flyTo({ center: [first.lng, first.lat], zoom: 12.5 }); else toast("조건에 맞는 단지가 없어요. 시간을 늘려보세요.");
+  });
   $("#budgetChip").addEventListener("click", () => { $("#budgetModal").hidden = false; });
   $("#budgetCancel").addEventListener("click", () => { $("#budgetModal").hidden = true; });
   $("#budgetModal").addEventListener("click", (e) => { if (e.target === $("#budgetModal")) $("#budgetModal").hidden = true; });
@@ -616,8 +737,8 @@
     const f = e.target;
     const max = Math.round(parseFloat(f.max.value || "0") * 10000), min = Math.round(parseFloat(f.min.value || "0") * 10000);
     if (!max) return toast("최대 예산을 억 단위로 넣어주세요.");
-    state.budget = { max, min, gu: f.gu.value, station: f.station.value.trim(), kid: f.kid.checked, gender: f.gender.value, pri: f.pri ? f.pri.value : "kid" };
-    if (f.area.value) { state.area = f.area.value; $$("[data-area]").forEach((x) => x.classList.toggle("on", x.dataset.area === state.area)); }
+    state.budget = { max, min, gu: f.gu.value, kid: f.kid.checked, gender: f.gender.value, fam: f.area.value === "fam", pri: f.pri ? f.pri.value : "kid" };
+    if (f.area.value && f.area.value !== "fam") { state.area = f.area.value; $$("[data-area]").forEach((x) => x.classList.toggle("on", x.dataset.area === state.area)); }
     state.sort = "budget"; $$("[data-sort]").forEach((x) => x.classList.toggle("on", x.dataset.sort === "budget"));
     $("#budgetModal").hidden = true; renderMarkers(); renderList(); setSheet("full");
     const first = visibleComplexes()[0]; if (first) map.flyTo({ center: [first.lng, first.lat], zoom: 13 });
@@ -716,6 +837,13 @@
       if (meta.center) map.jumpTo({ center: meta.center, zoom: meta.mode === "real" ? 13.6 : 14.6 });
       const deep = new URLSearchParams(location.search).get("id");   // 정적 페이지 -> 앱 딥링크
       if (deep && complexes.some((c) => c.id === deep)) setTimeout(() => openDetail(deep, "half"), 400);
+      const cmq = new URLSearchParams(location.search).get("cm");   // 공유 링크: ?cm=강남,여의도,40
+      if (cmq) loadGraph().then(() => {
+        const [pa, pb, pm] = cmq.split(","), ia = findNode(pa), ib = pb ? findNode(pb) : null;
+        if (ia < 0) return;
+        state.commute = { a: { idx: ia, name: graph.nodes[ia][0] }, b: ib != null && ib >= 0 ? { idx: ib, name: graph.nodes[ib][0] } : null, max: +pm || 40 };
+        applyCommute(); updateCommuteChip(); renderMarkers(); renderList(); setSheet("full");
+      }).catch(() => {});
       // 리스트/마커는 지도 로드와 무관하게 바로, 레이어는 스타일 준비 후
       renderMarkers(); renderList(); setSheet(innerWidth < 900 ? "half" : "full");
       var tryAdd = () => { if (!state.schools || map.getSource("schools")) return; if (map.isStyleLoaded()) addLayers(); else setTimeout(tryAdd, 300); };

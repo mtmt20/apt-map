@@ -1151,6 +1151,8 @@ def main():
                        "geometry": {"type": "Polygon", "coordinates": [ring]}})
     if subway:
         dump("subway_lines.geojson", subway["lines"])
+        if subway.get("graph"):
+            dump("subway_graph.json", subway["graph"])
     dump("stations.geojson", {"type": "FeatureCollection", "features": [
         {"type": "Feature", "properties": {"name": s["name"], "line": s.get("line") or "", "color": s.get("color") or "#0EA5E9",
                                            "transfer": len(s.get("lines") or []) >= 2},
