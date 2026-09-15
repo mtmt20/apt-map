@@ -269,3 +269,6 @@ button { font: inherit; color: inherit; cursor: pointer; border: 0; background: 
 .tag.cm { background: #e0f2fe; color: #075985; font-weight: 700; }
 .chip.hot { border-color: #0ea5e9; color: #0369a1; font-weight: 700; }
 .chip.hot.on { background: #0ea5e9; color: #fff; }
+
+/* 공사 중 노선 예정역 */
+.tag.fut { background: #fef3c7; color: #92400e; font-weight: 700; }

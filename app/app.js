@@ -99,6 +99,22 @@
       paint: { "line-color": "#fff", "line-opacity": 0.85, "line-width": ["interpolate", ["linear"], ["zoom"], 9, 2.5, 13, 5, 17, 10] } });
     map.addLayer({ id: "sub-line", type: "line", source: "subway-lines", layout: { "line-cap": "round", "line-join": "round" },
       paint: { "line-color": ["get", "color"], "line-opacity": 0.9, "line-width": ["interpolate", ["linear"], ["zoom"], 9, 1.5, 13, 3, 17, 6] } });
+    // 공사 중 노선: 점선 + 예정역 (OSM 기준, 개통 시기·역 위치 변동 가능)
+    map.addSource("future-rail", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
+    map.addLayer({ id: "fut-line", type: "line", source: "future-rail", filter: ["==", ["geometry-type"], "MultiLineString"],
+      layout: { "line-cap": "butt", "line-join": "round" },
+      paint: { "line-color": ["get", "color"], "line-opacity": 0.85, "line-dasharray": [2, 1.6],
+               "line-width": ["interpolate", ["linear"], ["zoom"], 9, 1.5, 13, 3, 17, 5] } });
+    map.addLayer({ id: "fut-line-label", type: "symbol", source: "future-rail", filter: ["==", ["geometry-type"], "MultiLineString"], minzoom: 11.5,
+      layout: { "symbol-placement": "line", "text-field": ["concat", ["get", "name"], " (공사 중)"], "text-font": ["Noto Sans Bold"], "text-size": 12, "symbol-spacing": 400 },
+      paint: { "text-color": ["get", "color"], "text-halo-color": "#fff", "text-halo-width": 2 } });
+    map.addLayer({ id: "fut-dot", type: "circle", source: "future-rail", filter: ["==", ["get", "kind"], "station"], minzoom: 11,
+      paint: { "circle-radius": ["interpolate", ["linear"], ["zoom"], 11, 4, 14, 7, 17, 10], "circle-color": "#fff",
+               "circle-stroke-color": "#f59e0b", "circle-stroke-width": ["interpolate", ["linear"], ["zoom"], 11, 2, 17, 3.5] } });
+    map.addLayer({ id: "fut-label", type: "symbol", source: "future-rail", filter: ["==", ["get", "kind"], "station"], minzoom: 12.5,
+      layout: { "text-field": ["concat", ["get", "name"], " 예정"], "text-font": ["Noto Sans Bold"], "text-size": ["interpolate", ["linear"], ["zoom"], 12.5, 11, 17, 16],
+                "text-offset": [0, 1.0], "text-anchor": "top", "text-optional": true },
+      paint: { "text-color": "#b45309", "text-halo-color": "#fff", "text-halo-width": 2 } });
     map.addSource("stations", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
     map.addLayer({ id: "sub-dot", type: "circle", source: "stations", minzoom: 11,
       paint: { "circle-radius": ["interpolate", ["linear"], ["zoom"], 11, ["case", ["get", "transfer"], 5, 4], 14, ["case", ["get", "transfer"], 9, 7], 17, ["case", ["get", "transfer"], 13, 10]],
@@ -242,8 +258,8 @@
     const v = (ids, on) => ids.forEach((id) => map.getLayer(id) && map.setLayoutProperty(id, "visibility", on ? "visible" : "none"));
     v(["school-fill", "school-line"], state.layers.school);
     state.schoolMarkers.forEach((m) => m.getElement().style.display = state.layers.school && map.getZoom() >= 13.8 ? "" : "none");
-    v(["sub-line-case", "sub-line", "sub-dot", "sub-label"], state.layers.subway);
-    if (state.layers.subway) { lazySource("subway-lines", "data/subway_lines.geojson"); lazySource("stations", "data/stations.geojson"); }
+    v(["sub-line-case", "sub-line", "sub-dot", "sub-label", "fut-line", "fut-line-label", "fut-dot", "fut-label"], state.layers.subway);
+    if (state.layers.subway) { lazySource("subway-lines", "data/subway_lines.geojson"); lazySource("stations", "data/stations.geojson"); lazySource("future-rail", "data/future_rail.geojson"); }
     v(["road-walk", "road-alley", "road-minor", "road-major", "road-major-far"], state.layers.road);
     v(["hillshade"], state.layers.terrain);
     v(["nz-line", "nz-point"], state.layers.nuisance);
@@ -307,6 +323,7 @@
   // ---------- 익명 집계 (세션당 방문 1회, 기능별 1회) ----------
   function hit(t) {
     try {
+      if (/^(localhost|127\.|192\.168\.)/.test(location.hostname)) return;   // 로컬 테스트는 집계 안 함
       const k = "jk_" + (t === "visit" ? "v" : t);
       if (sessionStorage.getItem(k)) return;
       sessionStorage.setItem(k, "1");
@@ -454,6 +471,7 @@
       const rep = (state.sort === "budget" && c._bRep) || repArea(c, state.area);
       const tags = [
         ...(commuteTag(c) ? [commuteTag(c)] : []),
+        ...(c.fut && c.fut.dist <= 800 ? [`<span class="tag fut">🚧 ${esc(c.fut.line)} ${esc(c.fut.name)} 예정 ${c.fut.walk_min}분</span>`] : []),
         ...(c.school.chopuma ? [`<span class="tag school">초품아 ${esc(c.school.elem.replace("등학교", ""))}</span>`] : [`<span class="tag">${esc(c.school.elem.replace("등학교", ""))} ${c.school.elem_walk_min}분</span>`]),
         ...c.pros.slice(0, 2).filter((p) => !p.startsWith("초품아")).map((p) => `<span class="tag good">${esc(p)}</span>`),
         ...c.cons.slice(0, 1).map((p) => `<span class="tag bad">${esc(p)}</span>`),
@@ -594,6 +612,7 @@
           ${c.terrain ? `<div><div class="k">지형</div><div class="v">해발 ${c.terrain.elev}m<small>${c.terrain.station_dh != null ? (c.terrain.station_dh >= 0 ? "역보다 +" : "역보다 ") + c.terrain.station_dh + "m" : ""}${c.terrain.slope_pct != null ? " · 경사 " + c.terrain.slope_pct + "%" : ""}</small></div></div>` : ""}
           ${c.parking ? `<div><div class="k">주차</div><div class="v">${c.parking.toLocaleString()}대<small>세대당 ${c.parking_per_hh || "-"}</small></div></div>` : ""}
           ${state.commute && c._cmA != null ? `<div style="grid-column:1/-1"><div class="k">출퇴근 (추정)</div><div class="v">${esc(state.commute.a.name)}까지 ${c._cmA}분${state.commute.b && c._cmB != null ? ` · ${esc(state.commute.b.name)}까지 ${c._cmB}분` : ""}<small>도보+대기 3분+지하철, 환승 1회당 4분</small></div></div>` : ""}
+          ${c.fut ? `<div style="grid-column:1/-1"><div class="k">공사 중 노선 예정역</div><div class="v">🚧 ${esc(c.fut.line)} ${esc(c.fut.name)}역 도보 ${c.fut.walk_min}분 (${c.fut.dist}m)<small>OpenStreetMap 기준 · 개통 시기와 역 위치는 바뀔 수 있어요</small></div></div>` : ""}
           <div><div class="k">가까운 역</div><div class="v">${lineBadges(c.station.lines)}${esc(c.station.name)}<small>${esc(c.station.line)} · ${c.station.walk_min}분</small></div></div>
           <div><div class="k">큰길과 거리</div><div class="v">${c.road.major_dist == null ? "-" : c.road.major_dist + "m"}<small>${c.road.roadside ? "대로변" : c.road.major_dist > 150 ? "이면 · 조용" : "인접"}</small></div></div>
           ${c.station.within_600.length > 1 ? `<div style="grid-column:1/-1"><div class="k">600m 내 역</div><div class="v" style="font-size:13.5px">${c.station.within_600.map((s) => esc(s.name) + " " + s.dist + "m").join(" · ")}</div></div>` : ""}

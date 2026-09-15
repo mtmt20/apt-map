@@ -234,6 +234,20 @@
   - **deploy_worker.py 주의**: 실행하면 app/config.js 를 API_BASE 한 줄로 덮어써 COURT_LINK 설정이 사라짐 -> 실행 전 백업/복원했음. 스크립트 자체 수정은 아직 안 함.
 
 
+- 2026-09-16 (28차): **공사 중 지하철 노선 + 예정역** (차별화, 검색 유입용 "동북선 역세권" 수요).
+  - 신규 `pipeline/fetch_future_rail.py`: OSM `railway=construction` 선로만(계획 단계 proposed 는 제외) + 공사 태그 있고 이름이 숫자 아닌 예정역만.
+    원본 `data/raw/future_rail_overpass.json`, 결과 `data/raw/future_rail.json`. `--raw` 로 재가공.
+    노선 9개(GTX-A·B·C, 신안산선, 동북선, 9호선 4단계, 7호선 도봉산옥정선, 월곶판교선, 동탄인덕원선), 이름 확인된 예정역 20곳
+    (동북선 11, 월곶판교선 6, GTX-A 삼성, 도봉산옥정선 탑석, 동탄인덕원선 원천). 신안산선·GTX-B/C 서울 구간 역은 OSM 에 없어 미표시.
+    overpass-api.de 는 User-Agent 없으면 406.
+  - `build.py`: 전역 FUTURE_RAIL, 단지별 1km 내 최근접 예정역 `c.future` (요약 `fut`), 800m 이내면 장점 "동북선 상계역 예정(공사 중) 도보 N분".
+    340개 단지(800m 이내 227). `app/data/future_rail.geojson`(선로+예정역 포인트).
+  - `app.js`: 지하철 레이어에 fut-line(노선색 점선)·fut-line-label("(공사 중)")·fut-dot(흰 원 주황 테두리)·fut-label("OO 예정").
+    카드 태그 `.tag.fut`, 상세 "공사 중 노선 예정역" + "OSM 기준, 개통 시기·역 위치 변동 가능". v56.
+  - 단지 페이지 문구, 신규 `rank/future-rail.html`(content_future_rail.py, 노선·역별 도보권 단지 표, 공식 발표 확인 안내), 랭킹 인덱스 링크.
+  - 통계: localhost/127./192.168. 에서 연 경우 집계 안 함(app.js, 두 생성기 비콘). 9/16 방문 1은 로컬 테스트 흔적.
+
+
 ## 진행 중 / 남은 작업
 0. 활용신청 3건 완료 시: 응급실(소아)·미세먼지(동/측정소)·스쿨존 레이어. 애드센스 승인용 콘텐츠(사이트 소개·지표 설명·구별 랭킹 글) + 쿠팡 파트너스 '이사 준비' 페이지.
 0. 구글 서치콘솔 사이트맵 상태 재확인(며칠 뒤 자동 재시도됨). LOCALDATA 복구 시 유흥주점·단란주점·숙박업 수집 붙이기. 동 단위 인구는 KOSIS 키 받으면 진행.

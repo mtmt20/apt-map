@@ -21,6 +21,7 @@ from content_calc import CALC_BODY, CALC_CSS  # noqa: E402
 from calc_js import CALC_JS  # noqa: E402
 from content_fund import FUND_BODY, FUND_JS  # noqa: E402
 import content_school_budget  # noqa: E402
+import content_future_rail  # noqa: E402
 load_env()
 BASE = (os.environ.get("SITE_BASE") or "https://jipkokmap.kr").rstrip("/")
 CONTACT = os.environ.get("CONTACT_EMAIL", "")
@@ -44,7 +45,7 @@ def shell(title, desc, body, path, extra_head=""):
 <header class="top"><a class="logo" href="{root}index.html">🏠 집콕맵</a><nav style="display:flex;gap:10px;font-size:13px"><a href="{root}calc.html">계산기</a><a href="{root}rank/index.html">랭킹</a><a href="{root}guide.html">지표 설명</a><a href="{root}about.html">소개</a><a class="btn" href="{root}index.html">지도</a></nav></header>
 {body}
 <footer class="disclaim" style="margin-top:40px;border-top:1px solid var(--line);padding-top:14px">집콕맵 · <a href="{root}about.html">소개</a> · <a href="{root}guide.html">지표 설명</a> · <a href="{root}calc.html">계산기</a> · <a href="{root}fund.html">자금 마련</a> · <a href="{root}rank/budget-school.html">예산별 학군지</a> · <a href="{root}privacy.html">개인정보처리방침</a> · <a href="{root}moving.html">이사 준비</a> · <a href="{root}feed.html">제보 피드</a><br>공공데이터(국토교통부·교육부·한국교육시설안전원·나이스·학교알리미·서울시)와 오픈스트리트맵, 카카오 지도 정보를 조합해 자동 생성한 참고 자료입니다. 매매 판단 전 반드시 현장·등기부·교육청 공지를 확인하세요.</footer>
-</div><script>(function(){{try{{var P=location.pathname,p=/\\/apt\\//.test(P)?"apt":/\\/rank\\//.test(P)?"rank":/guide/.test(P)?"guide":/calc/.test(P)?"calc":/fund/.test(P)?"fund":/moving/.test(P)?"moving":"other";if(sessionStorage.getItem("jk_v"))return;sessionStorage.setItem("jk_v","1");navigator.sendBeacon&&navigator.sendBeacon("https://aptmap-api.jipkokmap.workers.dev/hit",JSON.stringify({{t:"visit",p:p,r:document.referrer}}))}}catch(e){{}}}})();</script></body></html>""".format(t=esc(title), d=esc(desc), base=BASE, path=path, root="../" if "/" in path else "", body=body, extra=extra_head)
+</div><script>(function(){{try{{var P=location.pathname,p=/\\/apt\\//.test(P)?"apt":/\\/rank\\//.test(P)?"rank":/guide/.test(P)?"guide":/calc/.test(P)?"calc":/fund/.test(P)?"fund":/moving/.test(P)?"moving":"other";if(/^(localhost|127\.)/.test(location.hostname)||sessionStorage.getItem("jk_v"))return;sessionStorage.setItem("jk_v","1");navigator.sendBeacon&&navigator.sendBeacon("https://aptmap-api.jipkokmap.workers.dev/hit",JSON.stringify({{t:"visit",p:p,r:document.referrer}}))}}catch(e){{}}}})();</script></body></html>""".format(t=esc(title), d=esc(desc), base=BASE, path=path, root="../" if "/" in path else "", body=body, extra=extra_head)
 
 
 # ---------------------------------------------------------------- about
@@ -257,6 +258,7 @@ def rank_pages(cs):
     # 서울 전체 index
     active = [c for c in cs if c["trade_count_1y"] >= 5]
     body = ["<h1>서울 아파트 랭킹</h1><p class=\"sub\">구별 랭킹과 서울 전체 상위 단지 · {} 기준</p>".format(dt.date.today().isoformat())]
+    body.append('<div class="card"><p style="margin:0"><b>🚧 <a href="future-rail.html">공사 중 지하철 예정역 도보권 아파트</a></b> — 동북선·월곶판교선 예정역 근처 단지를 역별로 정리했습니다.</p></div>')
     body.append('<div class="card"><p style="margin:0"><b>💰 <a href="budget-school.html">예산별 학군지 가이드</a></b> — 내 예산으로 갈 수 있는 최고 학군을 가격 구간별로 정리했습니다.</p></div>')
     body.append("<h2>구별 랭킹 보기</h2><div class=\"card\"><div class=\"tags\">" + "".join('<a class="tag" href="{}.html" style="font-size:14px;padding:8px 12px">{}</a>'.format(esc(g), esc(g)) for g in sorted(by_gu)) + "</div></div>")
     body.append("<h2>👶 서울 아이 키우기 점수 상위 30</h2><div class=\"card\">" + rank_table(sorted([c for c in active if c.get("kid")], key=lambda c: -c["kid"]["score"])[:30],
@@ -295,6 +297,10 @@ def main():
         "예산별 학군지 아파트 가이드 · 내 예산으로 갈 수 있는 최고 학군 | 집콕맵",
         "5억 미만부터 20억 이상까지, 같은 가격대 안에서 학군 지수가 높은 서울 아파트를 구간별로 정리했습니다.",
         content_school_budget.page_body(cs, rank_table), "rank/budget-school.html")
+    pages["rank/future-rail.html"] = shell(
+        "공사 중 지하철 예정역 도보권 아파트 · 동북선·월곶판교선 | 집콕맵",
+        "동북선, 월곶판교선 등 공사 중인 노선의 예정역에서 걸어서 갈 수 있는 서울 아파트를 역별로 정리했습니다. 실거래가와 학군 지수 함께.",
+        content_future_rail.page_body(cs, rank_table), "rank/future-rail.html")
     for path, htm in pages.items():
         open(os.path.join(APP, path), "w", encoding="utf-8").write(htm)
     # sitemap 에 추가

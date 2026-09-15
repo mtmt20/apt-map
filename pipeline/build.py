@@ -527,6 +527,9 @@ def months_ago(d, n):
     return dt.date(y, m, 1)
 
 
+FUTURE_RAIL = {"lines": None, "stations": []}   # fetch_future_rail.py 결과 (main 에서 채움)
+
+
 def enrich(c, roads, today, stations, schools, zones, middle=None, academies=None):
     tr = c["trades"]
     recent = [t for t in tr if dt.date.fromisoformat(t["date"]) >= months_ago(today, 3)]
@@ -582,6 +585,11 @@ def enrich(c, roads, today, stations, schools, zones, middle=None, academies=Non
     d0, s0 = st[0]
     c["station"] = {"name": s0["name"], "line": s0["line"], "lines": s0.get("lines") or [], "dist": round(d0), "walk_min": max(1, round(d0 / 70)),
                     "within_600": [{"name": n, "line": l, "dist": d} for d, n, l in near]}
+    # 공사 중 노선 예정역 (1km 이내 가장 가까운 곳)
+    fut = sorted(((dist_m(c["lat"], c["lng"], s["lat"], s["lng"]), s) for s in FUTURE_RAIL["stations"]), key=lambda x: x[0])
+    if fut and fut[0][0] <= 1000:
+        fd, fs = fut[0]
+        c["future"] = {"name": fs["name"], "line": fs["line"], "dist": round(fd), "walk_min": max(1, round(fd / 70))}
 
     # 초등 배정 (통학구역 폴리곤 포함 여부 -> 없으면 최근접)
     by_name = {sc["name"]: sc for sc in schools}
@@ -814,6 +822,8 @@ def enrich(c, roads, today, stations, schools, zones, middle=None, academies=Non
         pros.append("준신축 {}년차".format(age))
     elif age >= 20:
         cons.append("구축 {}년차".format(age))
+    if c.get("future") and c["future"]["dist"] <= 800:
+        pros.append("{} {}역 예정(공사 중) 도보 {}분".format(c["future"]["line"], c["future"]["name"], c["future"]["walk_min"]))
     if len(c["station"].get("lines") or []) >= 2 and c["station"]["dist"] <= 800:
         pros.append("환승역 {} ({}) 도보 {}분".format(c["station"]["name"], "·".join(c["station"]["lines"]), c["station"]["walk_min"]))
     if len(c["station"]["within_600"]) >= 2:
@@ -946,6 +956,10 @@ def main():
         el.sort(key=lambda x: -(x[1]["net_move_pct"] or 0))
         for i, (n, v) in enumerate(el):
             elem_rank[n] = (i + 1, len(el))
+    fp = os.path.join(RAW, "future_rail.json")
+    if poi and os.path.exists(fp):
+        fr = json.load(open(fp, encoding="utf-8"))
+        FUTURE_RAIL["lines"], FUTURE_RAIL["stations"] = fr["lines"], fr["stations"]
     cs = [enrich(c, roads, today, stations, schools, zones, middle, academies) for c in cs]
     cs = [c for c in cs if c["by_area"]]
     for c in cs:
@@ -1089,6 +1103,8 @@ def main():
         sm["kid"] = c["kid"]["score"] if c.get("kid") else None
         sm["kid_pct"] = c["kid"].get("top_pct") if c.get("kid") else None
         sm["stn"] = c["station"]["name"]
+        if c.get("future"):
+            sm["fut"] = c["future"]
         mg = c["school"].get("middle_gender") or {}
         sm["mg"] = [mg.get("공학", 0) + mg.get("남", 0), mg.get("공학", 0) + mg.get("여", 0)]   # [아들 기준, 딸 기준] 지원 가능 중학교 수
         sm["school"] = {k: c["school"][k] for k in ("elem", "elem_walk_min", "chopuma")}
@@ -1149,6 +1165,12 @@ def main():
         dfeats.append({"type": "Feature", "properties": {"name": gu, "n": len(members), "ppy_med": med, "top": top,
                                                           "center": [round(sum(lngs) / len(lngs), 5), round(sum(lats) / len(lats), 5)]},
                        "geometry": {"type": "Polygon", "coordinates": [ring]}})
+    if FUTURE_RAIL["lines"]:
+        fl = FUTURE_RAIL["lines"]
+        fl = {"type": "FeatureCollection", "features": fl["features"] + [
+            {"type": "Feature", "properties": {"name": s["name"], "line": s["line"], "kind": "station"},
+             "geometry": {"type": "Point", "coordinates": [s["lng"], s["lat"]]}} for s in FUTURE_RAIL["stations"]]}
+        dump("future_rail.geojson", fl)
     if subway:
         dump("subway_lines.geojson", subway["lines"])
         if subway.get("graph"):
