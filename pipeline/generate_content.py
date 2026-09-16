@@ -39,6 +39,14 @@ def price(v):
     return "{:.1f}억".format(v / 10000).replace(".0억", "억") if v >= 10000 else "{:,}만".format(v)
 
 
+def og_head(img):
+    """페이지별 공유 미리보기 이미지 (make_og.py 로 생성). 카톡·커뮤니티에 링크 붙일 때 카드로 뜬다."""
+    return ('<meta property="og:image" content="{b}/{i}">'
+            '<meta property="og:image:width" content="1200"><meta property="og:image:height" content="630">'
+            '<meta name="twitter:card" content="summary_large_image">'
+            '<meta name="twitter:image" content="{b}/{i}">').format(b=BASE, i=img)
+
+
 def shell(title, desc, body, path, extra_head=""):
     return """<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="color-scheme" content="light only"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{t}</title><meta name="description" content="{d}"><link rel="canonical" href="{base}/{path}">
@@ -307,15 +315,15 @@ def main():
     pages["rank/budget-school.html"] = shell(
         "예산별 학군지 아파트 가이드 · 내 예산으로 갈 수 있는 최고 학군 | 집콕맵",
         "5억 미만부터 20억 이상까지, 같은 가격대 안에서 학군 지수가 높은 서울 아파트를 구간별로 정리했습니다.",
-        content_school_budget.page_body(cs, rank_table), "rank/budget-school.html")
+        content_school_budget.page_body(cs, rank_table), "rank/budget-school.html", og_head("og-budget-school.png"))
     pages["rank/future-rail.html"] = shell(
         "공사 중 지하철 예정역 도보권 아파트 · 동북선·월곶판교선 | 집콕맵",
         "동북선, 월곶판교선 등 공사 중인 노선의 예정역에서 걸어서 갈 수 있는 서울 아파트를 역별로 정리했습니다. 실거래가와 학군 지수 함께.",
-        content_future_rail.page_body(cs, rank_table), "rank/future-rail.html")
+        content_future_rail.page_body(cs, rank_table), "rank/future-rail.html", og_head("og-future-rail.png"))
     pages["rank/academy-fee.html"] = shell(
         "서울 동네별 학원비 · 학군 대비 학원비 싼 아파트 | 집콕맵",
         "교육청 공시 교습비로 계산한 서울 구별·단지별 월 학원비. 학군은 좋으면서 학원비가 싼 아파트 30곳을 정리했습니다.",
-        content_academy_fee.page_body(cs, rank_table), "rank/academy-fee.html")
+        content_academy_fee.page_body(cs, rank_table), "rank/academy-fee.html", og_head("og-academy-fee.png"))
     for path, htm in pages.items():
         open(os.path.join(APP, path), "w", encoding="utf-8").write(htm)
     # 허브/콘텐츠 페이지를 sitemap-core.xml 과 RSS(네이버 서치어드바이저용)에 등록

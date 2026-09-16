@@ -42,6 +42,27 @@ OUTRO = """
 """
 
 
+def fee_chart(rows):
+    """구별 학원비 가로 막대 (인라인 SVG, 외부 라이브러리 없음)."""
+    top = rows[:25]
+    hi = max(r[1] for r in top) or 1
+    bar_h, gap, left, w = 22, 7, 74, 560
+    h = len(top) * (bar_h + gap) + 34
+    out = ['<svg viewBox="0 0 {} {}" width="100%" role="img" aria-label="서울 구별 월 학원비 비교" '
+           'style="max-width:660px;font-family:inherit">'.format(left + w + 70, h)]
+    for i, (gu, med, _n) in enumerate(top):
+        y = i * (bar_h + gap) + 10
+        bw = max(6, int(med / hi * w))
+        # 상위 3개는 진하게, 하위 3개는 초록으로 대비를 준다
+        color = "#dc2626" if i < 3 else ("#16a34a" if i >= len(top) - 3 else "#3b82f6")
+        out.append('<text x="{}" y="{}" font-size="13" fill="#334155" text-anchor="end">{}</text>'.format(left - 8, y + 16, esc(gu)))
+        out.append('<rect x="{}" y="{}" width="{}" height="{}" rx="4" fill="{}" opacity="0.9"/>'.format(left, y, bw, bar_h, color))
+        out.append('<text x="{}" y="{}" font-size="12.5" font-weight="700" fill="#334155">{}</text>'.format(left + bw + 7, y + 16, man(med)))
+    out.append('<text x="{}" y="{}" font-size="11.5" fill="#94a3b8">과목당 월 교습비 중앙값 · 교육청 공시 자료</text>'.format(left, h - 6))
+    out.append("</svg>")
+    return "".join(out)
+
+
 def page_body(cs, rank_table):
     have = [c for c in cs if (c.get("edu") or {}).get("fee_med")]
     if not have:
@@ -52,7 +73,9 @@ def page_body(cs, rank_table):
     for c in have:
         by_gu.setdefault(c["sgg"], []).append(c["edu"]["fee_med"])
     rows = sorted(((g, statistics.median(v), len(v)) for g, v in by_gu.items()), key=lambda x: -x[1])
-    parts.append('<h2>구별 학원비 (1km 내 교과학원 월 교습비 중앙값)</h2><div class="card"><table class="rank"><thead><tr><th>순위</th><th>구</th><th>월 교습비 중앙값</th><th>단지 수</th></tr></thead><tbody>')
+    parts.append('<h2>구별 학원비 (1km 내 교과학원 월 교습비 중앙값)</h2>')
+    parts.append('<div class="card">' + fee_chart(rows) + '</div>')
+    parts.append('<div class="card"><table class="rank"><thead><tr><th>순위</th><th>구</th><th>월 교습비 중앙값</th><th>단지 수</th></tr></thead><tbody>')
     for i, (g, med, n) in enumerate(rows, 1):
         parts.append("<tr><td>{}</td><td><b>{}</b></td><td>{}</td><td>{}</td></tr>".format(i, esc(g), man(med), n))
     parts.append("</tbody></table></div>")
