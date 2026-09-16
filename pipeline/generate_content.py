@@ -10,6 +10,7 @@ import datetime as dt
 import html
 import json
 import os
+import re
 import statistics
 import sys
 
@@ -303,15 +304,26 @@ def main():
         content_future_rail.page_body(cs, rank_table), "rank/future-rail.html")
     for path, htm in pages.items():
         open(os.path.join(APP, path), "w", encoding="utf-8").write(htm)
-    # sitemap 에 추가
-    sm_path = os.path.join(APP, "sitemap.xml")
-    if os.path.exists(sm_path):
-        sm = open(sm_path, encoding="utf-8").read()
-        today = dt.date.today().isoformat()
-        add = "".join("<url><loc>{}/{}</loc><lastmod>{}</lastmod><changefreq>weekly</changefreq></url>".format(BASE, __import__("urllib.parse").parse.quote(p), today) for p in pages)
-        sm = sm.replace("</urlset>", add + "</urlset>")
-        open(sm_path, "w", encoding="utf-8").write(sm)
-    print("콘텐츠 페이지 {}개 생성 (about/guide/privacy/moving/calc/fund + 랭킹 {})".format(len(pages), len(pages) - 6))
+    # 허브/콘텐츠 페이지를 sitemap-core.xml 과 RSS(네이버 서치어드바이저용)에 등록
+    today = dt.date.today().isoformat()
+    core = os.path.join(APP, "sitemap-core.xml")
+    urls = [BASE + "/", BASE + "/apt/index.html"] + [BASE + "/" + p for p in sorted(pages)]
+    sm = ['<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">']
+    for u in urls:
+        sm.append("<url><loc>{}</loc><lastmod>{}</lastmod><changefreq>weekly</changefreq></url>".format(u, today))
+    sm.append("</urlset>")
+    open(core, "w", encoding="utf-8").write("".join(sm))
+    rss = ['<?xml version="1.0" encoding="UTF-8"?><rss version="2.0"><channel>',
+           "<title>집콕맵 · 서울 아파트 실거래·학군·출퇴근</title><link>{}/</link>".format(BASE),
+           "<description>서울 아파트 실거래가와 배정 학군, 지하철 출퇴근 시간, 예산 대비 학군 정보</description><language>ko</language>"]
+    for p in sorted(pages):
+        t = re.search(r"<title>(.*?)</title>", pages[p])
+        rss.append("<item><title>{}</title><link>{}/{}</link><guid>{}/{}</guid></item>".format(
+            (t.group(1) if t else p).replace("&", "&amp;"), BASE, p, BASE, p))
+    rss.append("</channel></rss>")
+    open(os.path.join(APP, "rss.xml"), "w", encoding="utf-8").write("".join(rss))
+    print("콘텐츠 페이지 {}개 생성 (about/guide/privacy/moving/calc/fund + 랭킹 {}), sitemap-core {}개 + rss".format(
+        len(pages), len(pages) - 6, len(urls)))
 
 
 if __name__ == "__main__":

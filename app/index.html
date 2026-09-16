@@ -5,6 +5,7 @@
 <meta name="color-scheme" content="light only">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>집콕맵 · 실거래·학군·도로 한눈에</title>
+<link rel="canonical" href="https://jipkokmap.kr/">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="집콕맵">
 <meta property="og:title" content="집콕맵 · 출퇴근 40분, 내 예산, 학군으로 서울 아파트 찾기">
@@ -24,6 +25,7 @@
 <link rel="manifest" href="manifest.json">
 <link rel="stylesheet" href="vendor/maplibre-gl.css">
 <link rel="stylesheet" href="style.css?v=57">
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"WebSite","name":"집콕맵","url":"https://jipkokmap.kr/","description":"서울 아파트 실거래가, 배정 초등학교와 학군, 지하철 출퇴근 시간, 예산 대비 학군을 지도 한 장에서 확인하는 서비스","inLanguage":"ko"}</script>
 </head>
 <body>
 <div id="map"></div>
@@ -110,7 +112,10 @@
       <div id="compareBar" class="alert-bar" hidden><span>비교 0/3</span><button class="btn" id="compareOpen" style="width:auto;padding:8px 12px;font-size:13px">⚖ 나란히 비교</button></div>
       <div id="alertBar" class="alert-bar" hidden><span>찜한 단지에 새 실거래가 뜨면 메일로 알려드려요</span><button class="btn" id="alertBtn" style="width:auto;padding:8px 12px;font-size:13px">📧 알림 받기</button></div>
       <div id="list" class="cards"></div>
-      <div class="note" style="margin-top:14px;text-align:center"><a href="rank/index.html">📊 구별 랭킹</a> · <a href="guide.html">지표 설명</a> · <a href="moving.html">이사 준비</a> · <a href="about.html">소개</a> · <a href="privacy.html">개인정보</a></div>
+      <div class="note" style="margin-top:14px;text-align:center;line-height:2">
+        <a href="apt/index.html">🏢 서울 아파트 6,809개 단지 목록</a> · <a href="rank/budget-school.html">💰 예산별 학군지 가이드</a> · <a href="rank/future-rail.html">🚧 공사 중 예정역 도보권</a><br>
+        <a href="calc.html">🧮 계산기</a> · <a href="fund.html">💰 자금 마련</a> · <a href="rank/index.html">📊 구별 랭킹</a> · <a href="guide.html">지표 설명</a> · <a href="moving.html">이사 준비</a> · <a href="about.html">소개</a> · <a href="privacy.html">개인정보</a>
+      </div>
     </div>
     <div id="detailView" hidden></div>
   </div>

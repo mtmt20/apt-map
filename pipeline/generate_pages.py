@@ -284,12 +284,22 @@ def main():
         urls.append("{}/apt/{}.html".format(base, __import__("urllib.parse").parse.quote(slug)))
     open(os.path.join(out, "index.html"), "w", encoding="utf-8").write(index_html(cs, base))
     today = dt.date.today().isoformat()
-    sm = ['<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">',
-          "<url><loc>{}/index.html</loc><lastmod>{}</lastmod><changefreq>daily</changefreq></url>".format(base, today),
-          "<url><loc>{}/apt/index.html</loc><lastmod>{}</lastmod><changefreq>daily</changefreq></url>".format(base, today)]
-    sm += ["<url><loc>{}</loc><lastmod>{}</lastmod><changefreq>weekly</changefreq></url>".format(html.escape(u), today) for u in urls]
-    sm.append("</urlset>")
-    open(os.path.join(APP, "sitemap.xml"), "w", encoding="utf-8").write("".join(sm))
+    # 사이트맵 분할: 허브/콘텐츠(core)를 단지(apt) 와 나눠 크롤링 우선순위를 준다
+    def urlset(items):
+        out = ['<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">']
+        for loc, freq in items:
+            out.append("<url><loc>{}</loc><lastmod>{}</lastmod><changefreq>{}</changefreq></url>".format(html.escape(loc), today, freq))
+        out.append("</urlset>")
+        return "".join(out)
+
+    core = [(base + "/", "daily"), (base + "/apt/index.html", "daily")]
+    open(os.path.join(APP, "sitemap-core.xml"), "w", encoding="utf-8").write(urlset(core))
+    open(os.path.join(APP, "sitemap-apt.xml"), "w", encoding="utf-8").write(urlset([(u, "weekly") for u in urls]))
+    idx = ['<?xml version="1.0" encoding="UTF-8"?><sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">']
+    for nm in ("sitemap-core.xml", "sitemap-apt.xml"):
+        idx.append("<sitemap><loc>{}/{}</loc><lastmod>{}</lastmod></sitemap>".format(base, nm, today))
+    idx.append("</sitemapindex>")
+    open(os.path.join(APP, "sitemap.xml"), "w", encoding="utf-8").write("".join(idx))
     open(os.path.join(APP, "robots.txt"), "w", encoding="utf-8").write("User-agent: *\nAllow: /\nSitemap: {}/sitemap.xml\n".format(base))
     print("단지 페이지 {}개 + index + sitemap -> {}".format(len(urls), out))
 
