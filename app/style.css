@@ -320,3 +320,16 @@ body:not(.more-lyr) .layers [data-more="1"] { display: none; }
   .chips [data-more="1"], .layers [data-more="1"] { display: inline-flex !important; }
   #moreChip, #moreLyr { display: none !important; }
 }
+
+/* 학원비 페이지로 보내는 강조 버튼 (기존 앱에 없는 지표라 눈에 띄게) */
+.cta { display: flex; align-items: center; gap: 10px; margin: 8px 0 2px; padding: 12px 13px;
+  border-radius: 14px; text-decoration: none;
+  background: linear-gradient(135deg, #7c3aed 0%, #4f46e5 100%);
+  box-shadow: 0 4px 16px rgba(79, 70, 229, .32); }
+.cta:active { transform: scale(.99); }
+.cta-ico { font-size: 22px; flex: 0 0 auto; }
+.cta-txt { flex: 1 1 auto; min-width: 0; color: #fff; }
+.cta-txt b { display: block; font-size: 14.5px; font-weight: 800; letter-spacing: -.3px; }
+.cta-txt small { display: block; font-size: 11.5px; opacity: .88; margin-top: 2px; }
+.cta-go { flex: 0 0 auto; background: rgba(255, 255, 255, .22); color: #fff; font-size: 12px; font-weight: 800;
+  padding: 6px 10px; border-radius: 999px; white-space: nowrap; }

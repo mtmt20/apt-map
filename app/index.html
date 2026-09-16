@@ -30,7 +30,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="집콕맵">
 <link rel="stylesheet" href="vendor/maplibre-gl.css">
-<link rel="stylesheet" href="style.css?v=69">
+<link rel="stylesheet" href="style.css?v=70">
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"WebSite","name":"집콕맵","url":"https://jipkokmap.kr/","description":"서울 아파트 실거래가, 배정 초등학교와 학군, 지하철 출퇴근 시간, 예산 대비 학군을 지도 한 장에서 확인하는 서비스","inLanguage":"ko"}</script>
 </head>
 <body>
@@ -134,7 +134,12 @@
           <span class="qlabel">이 예산에서 학군 좋은 곳</span>
           <button type="submit" class="qbtn">찾기</button>
         </form>
-        <button class="demo wide" data-demo="fee">📚 학군 좋은데 <b>학원비 싼 동네</b> 보기</button>
+        <button class="demo wide" data-demo="fee">📚 학군 좋은데 <b>학원비 싼 동네</b> 지도에서 보기</button>
+        <a class="cta" href="rank/academy-fee.html">
+          <span class="cta-ico">📚</span>
+          <span class="cta-txt"><b>우리 동네 학원비, 얼마일까?</b><small>강남 36만원 · 강북 19.8만원 — 서울 25개 구 비교</small></span>
+          <span class="cta-go">보기 →</span>
+        </a>
       </div>
       <div id="compareBar" class="alert-bar" hidden><span>비교 0/3</span><button class="btn" id="compareOpen" style="width:auto;padding:8px 12px;font-size:13px">⚖ 나란히 비교</button></div>
       <div id="alertBar" class="alert-bar" hidden><span>찜한 단지에 새 실거래가 뜨면 메일로 알려드려요</span><button class="btn" id="alertBtn" style="width:auto;padding:8px 12px;font-size:13px">📧 알림 받기</button></div>
@@ -208,7 +213,7 @@
   </div>
 </div>
 <script src="config.js"></script>
-<script src="app.js?v=69"></script>
+<script src="app.js?v=70"></script>
 <script>if ("serviceWorker" in navigator && location.protocol === "https:") navigator.serviceWorker.register("sw.js").catch(() => {});</script>
 </body>
 </html>
