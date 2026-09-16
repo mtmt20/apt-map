@@ -308,6 +308,17 @@
   - v63. 모바일 375x812 에뮬레이션에서 확인: state=peek, 지도 bottom 203px(25%), 배너 노출.
 
 
+- 2026-09-16 (34차): 검색 색인 점검 + 소유 확인 태그 재등록.
+  진단: 기술 문제 없음 — Googlebot/Yeti 모두 200, noindex 없음, http/www 리디렉션 정상, 사이트맵·RSS 200.
+  원인은 **서치콘솔/서치어드바이저에 사이트가 등록돼 있지 않아 발견 경로가 없었던 것**.
+  - `app/index.html` 에 새 소유 확인 태그 2개 추가(기존 것은 유지):
+    google `Jzk1x5wcuZz3o5Tzk5_3YNQgCJBWujVCXqPUpbUgGfg`, naver `509a823e2833877d63575ea1fb283a38b00f9e61`. 둘 다 라이브 확인.
+  - GitHub README 라이브 주소를 github.io -> **jipkokmap.kr** 로 교체하고 주요 페이지 링크 추가(저장소 페이지는 이미 구글에 색인돼 있어 크롤 경로가 됨).
+    repo About homepage/description 도 설정. 로컬 repo 에 origin 이 없어 push 는 토큰 URL 로 직접 (`git push https://x-access-token:$GITHUB_TOKEN@github.com/mtmt88087044-pixel/apt-map.git master:master`).
+  - IndexNow 재제출(200). v65.
+  - **사용자 작업 대기**: 구글(확인 -> sitemap.xml 제출 -> 색인 요청), 네이버(소유확인 -> 사이트맵/RSS 제출 -> 웹페이지 수집 -> 수집 설정 허용 확인).
+
+
 ## 진행 중 / 남은 작업
 0. 활용신청 3건 완료 시: 응급실(소아)·미세먼지(동/측정소)·스쿨존 레이어. 애드센스 승인용 콘텐츠(사이트 소개·지표 설명·구별 랭킹 글) + 쿠팡 파트너스 '이사 준비' 페이지.
 0. 구글 서치콘솔 사이트맵 상태 재확인(며칠 뒤 자동 재시도됨). LOCALDATA 복구 시 유흥주점·단란주점·숙박업 수집 붙이기. 동 단위 인구는 KOSIS 키 받으면 진행.
