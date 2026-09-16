@@ -297,6 +297,17 @@
     크기 변화는 확인 불가. data-state 순환과 스크립트 동작(문법·핸들러)은 확인함. **실제 모양은 폰에서 확인 필요.**
 
 
+- 2026-09-16 (33차): 폰 첫 화면 비율 + 주소창 안내 (사용자가 인스타 인앱 브라우저 스크린샷 보냄).
+  - 리스트 기본값을 **25%** 로: `--sheet-peek: 156px -> 25vh`, 모바일 초기 상태 half -> **peek**, syncMapSize 도 0.25 로 맞춤.
+    처음 열면 지도 75% / 리스트 25%.
+  - **주소창은 사이트가 숨길 수 없음**(인앱 브라우저는 특히). 대신 `#browserHint` 배너(.hintbar) 추가:
+    인앱 브라우저(Instagram/KAKAOTALK/NAVER/Line/FBAN/DaumApps UA)면 "⋮ -> 다른 브라우저로 열기",
+    아니면 "홈 화면에 추가" 안내(iOS 는 공유 버튼 문구). standalone 으로 실행 중이면 안 뜨고, ✕ 로 닫으면 localStorage 에 기억.
+  - PWA 보강: manifest background/theme_color 를 #0f172a -> #ffffff(밝은 테마와 일치),
+    apple-mobile-web-app-capable / mobile-web-app-capable / apple-mobile-web-app-title 메타 추가.
+  - v63. 모바일 375x812 에뮬레이션에서 확인: state=peek, 지도 bottom 203px(25%), 배너 노출.
+
+
 ## 진행 중 / 남은 작업
 0. 활용신청 3건 완료 시: 응급실(소아)·미세먼지(동/측정소)·스쿨존 레이어. 애드센스 승인용 콘텐츠(사이트 소개·지표 설명·구별 랭킹 글) + 쿠팡 파트너스 '이사 준비' 페이지.
 0. 구글 서치콘솔 사이트맵 상태 재확인(며칠 뒤 자동 재시도됨). LOCALDATA 복구 시 유흥주점·단란주점·숙박업 수집 붙이기. 동 단위 인구는 KOSIS 키 받으면 진행.

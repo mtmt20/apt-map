@@ -841,7 +841,7 @@
     if (innerWidth >= 900) { el.style.bottom = "0px"; return; }
     // 전환 중에는 실제 높이가 중간값이라, 상태에서 목표 높이를 바로 계산한다 (full 이어도 지도 38% 는 남긴다)
     const st = sheet.dataset.state;
-    const h = st === "full" ? innerHeight * 0.62 : st === "half" ? innerHeight * 0.52 : 156;
+    const h = innerHeight * (st === "full" ? 0.62 : st === "half" ? 0.52 : 0.25);   /* peek 은 CSS --sheet-peek: 25vh 와 맞춘다 */
     el.style.bottom = Math.round(h) + "px";
     clearTimeout(mapSizeTimer);
     mapSizeTimer = setTimeout(() => map.resize(), 300);   // 시트 전환(0.28s) 끝난 뒤 한 번 더
@@ -872,6 +872,30 @@
     else { state.sort = state.sort === b.dataset.sort ? null : b.dataset.sort; $$("[data-sort]").forEach((x) => x.classList.toggle("on", x.dataset.sort === state.sort)); }
     renderMarkers(); renderList();
   }));
+  // 인앱 브라우저(인스타·카톡 등)는 주소창을 숨길 수 없다 -> 브라우저로 열거나 홈 화면에 추가하도록 안내
+  (function browserHint() {
+    const bar = $("#browserHint"), txt = $("#hintText");
+    if (!bar || innerWidth >= 900) return;
+    const standalone = matchMedia("(display-mode: standalone)").matches || navigator.standalone;
+    if (standalone) return;
+    let dismissed = false;
+    try { dismissed = localStorage.getItem("jk_hint") === "1"; } catch (e) { /* 사생활 보호 모드 */ }
+    if (dismissed) return;
+    const ua = navigator.userAgent || "";
+    const inApp = /Instagram|KAKAOTALK|NAVER|Line\/|FBAN|FBAV|DaumApps/i.test(ua);
+    const ios = /iPhone|iPad/i.test(ua);
+    txt.textContent = inApp
+      ? "위 주소창을 없애려면 오른쪽 위 ⋮ 를 눌러 '다른 브라우저로 열기'를 선택하세요."
+      : ios
+        ? "공유 버튼 → '홈 화면에 추가'를 하면 주소창 없이 앱처럼 열려요."
+        : "메뉴 ⋮ → '홈 화면에 추가'를 하면 주소창 없이 앱처럼 열려요.";
+    bar.hidden = false;
+    $("#hintClose").addEventListener("click", () => {
+      bar.hidden = true;
+      try { localStorage.setItem("jk_hint", "1"); } catch (e) { /* 무시 */ }
+    });
+  })();
+
   // 뒤로가기: 한 번에 앱이 꺼지지 않게 단계를 둔다 (1번 열린 것 닫기 -> 2번 홈 화면 -> 3번 종료)
   let backStage = 0;
   function goHome() {
@@ -882,7 +906,7 @@
     $$("[data-sort]").forEach((x) => x.classList.remove("on"));
     $$(".modal").forEach((m) => { m.hidden = true; });
     map.flyTo({ center: HOME.center, zoom: HOME.zoom });
-    setSheet(innerWidth < 900 ? "half" : "full");
+    setSheet(innerWidth < 900 ? "peek" : "full");
     renderMarkers(); renderList();
     toast("처음 화면으로 돌아왔어요. 한 번 더 누르면 닫혀요.");
   }
@@ -941,7 +965,7 @@
         applyCommute(); updateCommuteChip(); renderMarkers(); renderList(); setSheet("full");
       }).catch(() => {});
       // 리스트/마커는 지도 로드와 무관하게 바로, 레이어는 스타일 준비 후
-      renderMarkers(); renderList(); setSheet(innerWidth < 900 ? "half" : "full");
+      renderMarkers(); renderList(); setSheet(innerWidth < 900 ? "peek" : "full");
       var tryAdd = () => { if (!state.schools || map.getSource("schools")) return; if (map.isStyleLoaded()) addLayers(); else setTimeout(tryAdd, 300); };
     })
     .catch((e) => { console.error(e); toast("데이터를 불러오지 못했어요. pipeline/build.py 를 먼저 실행하세요."); });
