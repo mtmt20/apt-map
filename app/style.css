@@ -286,3 +286,16 @@ button { font: inherit; color: inherit; cursor: pointer; border: 0; background: 
   border-radius: 12px; padding: 9px 10px; font-size: 12.5px; font-weight: 600; margin: 0 0 10px; line-height: 1.4; }
 .hintbar span { flex: 1; }
 .hintbar button { color: #1e40af; font-size: 15px; padding: 0 2px; opacity: .7; }
+
+/* 첫 방문자용 예시 + 만든 사람 */
+.demo-row { margin: 2px 0 12px; }
+.demo-title { font-size: 12px; font-weight: 700; color: var(--muted); margin-bottom: 6px; }
+.demo-chips { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.demo { text-align: left; background: var(--bg2); border: 1.5px solid var(--line); border-radius: 12px;
+  padding: 8px 9px; font-size: 11px; color: var(--muted); line-height: 1.45; }
+.demo b { display: block; font-size: 12.5px; color: var(--fg); font-weight: 800; margin-top: 2px; }
+.demo:active { border-color: var(--brand); }
+.maker { margin-top: 16px; padding: 12px 14px; background: var(--bg2); border-radius: 12px;
+  font-size: 12.5px; color: var(--muted); line-height: 1.6; text-align: center; }
+.maker a { color: var(--brand); font-weight: 700; white-space: nowrap; }
+.stamp { margin-top: 6px; font-size: 11.5px; color: #94a3b8; }

@@ -471,6 +471,7 @@
   }
   function renderList() {
     const list = visibleComplexes();
+    updateDemoRow();
     $("#compareBar").hidden = !state.compare.length;
     $("#compareBar").querySelector("span").textContent = `비교 ${state.compare.length}/3`;
     $("#listCount").textContent = state.commute && state.sort !== "fav" ? `출퇴근 ${state.commute.max}분 이내${state.sort === "budget" ? " + 예산" : ""} ${list.length >= 150 ? "150개+" : list.length + "개"}` : state.sort === "budget" ? `예산 조건 ${list.length}개` : state.sort === "fav" ? `찜한 단지 ${list.length}개` : (map.getZoom() >= 12 && !state.q ? `화면 안 단지 ${list.length}개` : `단지 ${list.length}개`);
@@ -896,6 +897,33 @@
     });
   })();
 
+  // 첫 방문자용 예시: 한 번 누르면 조건이 걸린 결과를 바로 보여준다
+  async function runDemo(kind) {
+    if (kind === "commute") {
+      await loadGraph();
+      const ia = findNode("강남"), ib = findNode("여의도");
+      if (ia < 0 || ib < 0) return toast("노선 정보를 불러오지 못했어요.");
+      state.commute = { a: { idx: ia, name: graph.nodes[ia][0] }, b: { idx: ib, name: graph.nodes[ib][0] }, max: 40, mode: "max" };
+      applyCommute(); syncCommuteUrl(); updateCommuteChip(); hit("commute");
+    } else if (kind === "budget") {
+      state.budget = { max: 80000, min: 0, gu: "", kid: true, gender: "", fam: true, pri: "eduvalue" };
+      state.sort = "budget";
+      $$("[data-sort]").forEach((x) => x.classList.toggle("on", x.dataset.sort === "budget"));
+      hit("budget");
+    } else {
+      state.sort = "feelow";
+      $$("[data-sort]").forEach((x) => x.classList.toggle("on", x.dataset.sort === "feelow"));
+    }
+    renderMarkers(); renderList(); setSheet("half");
+    const first = visibleComplexes()[0];
+    if (first) map.flyTo({ center: [first.lng, first.lat], zoom: 12.5 });
+  }
+  $$(".demo").forEach((b) => b.addEventListener("click", () => runDemo(b.dataset.demo)));
+  function updateDemoRow() {
+    const row = $("#demoRow");
+    if (row) row.hidden = !!(state.commute || state.budget || state.sort || state.q);
+  }
+
   // 뒤로가기: 한 번에 앱이 꺼지지 않게 단계를 둔다 (1번 열린 것 닫기 -> 2번 홈 화면 -> 3번 종료)
   let backStage = 0;
   function goHome() {
@@ -951,6 +979,9 @@
       fetch("data/schools.geojson").then((r) => r.json()).then((schools) => { state.schools = schools; tryAdd(); }).catch(() => {});
       if (meta.mode === "demo") { $("#modeBadge").hidden = false; $("#modeBadge").textContent = "데모 데이터"; }
       $("#areaLabel").textContent = meta.area;
+      if ($("#dataStamp") && meta.built_at) {
+        $("#dataStamp").textContent = "데이터 기준 " + meta.built_at.slice(0, 10) + " · 단지 " + (meta.complexes || 0).toLocaleString() + "개 · " + (meta.zone_note || "");
+      }
       $("#gapChip").hidden = !complexes.some((c) => c.jeonse_ratio);
       const gus = [...new Set(complexes.map((c) => c.sgg).filter(Boolean))].sort();
       $("#budgetGu").innerHTML = `<option value="">서울 전체</option>` + gus.map((g) => `<option value="${esc(g)}">${esc(g)}</option>`).join("");
