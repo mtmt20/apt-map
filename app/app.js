@@ -424,6 +424,10 @@
     $("#commuteShare").hidden = !C;
   }
 
+  // 동네 학원비 (1km 내 교과학원 월 교습비 중앙값, 교육청 공시)
+  const feeMan = (c) => Math.round(c.fee / 10000);
+  const feeTag = (c) => c.fee ? `<span class="tag fee${c.fee_pct <= 20 ? " hi" : c.fee_pct >= 70 ? " lo" : ""}">📚 학원비 월 ${feeMan(c)}만</span>` : "";
+
   const matchQ = (c) => !state.q || (c.name + c.umd + (c.addr || "") + (c.sgg || "")).toLowerCase().includes(state.q.toLowerCase());
 
   // ---------- list ----------
@@ -438,6 +442,7 @@
     else if (state.sort === "school") list = list.filter((c) => c.school.chopuma).sort((a, b) => a.school.elem_dist - b.school.elem_dist);
     else if (state.sort === "gap") list = list.filter((c) => c.jeonse_ratio).sort((a, b) => b.jeonse_ratio - a.jeonse_ratio);
     else if (state.sort === "edu") list = list.filter((c) => c.edu_score != null).sort((a, b) => b.edu_score - a.edu_score);
+    else if (state.sort === "feelow") list = list.filter((c) => c.fee && (c.edu_score || 0) >= 50).sort((a, b) => a.fee - b.fee || (b.edu_score || 0) - (a.edu_score || 0));
     else if (state.sort === "eduvalue") list = list.filter((c) => c.edu_band_pct != null).sort((a, b) => a.edu_band_pct - b.edu_band_pct || (b.edu_score || 0) - (a.edu_score || 0));
     else if (state.sort === "fav") { list = state.complexes.filter((c) => favs.ids.has(c.id) && areaMatch(c)); }
     else if (state.sort === "up") list = list.filter((c) => c.up_n).sort((a, b) => (b.up_n - b.risk_n) - (a.up_n - a.risk_n) || b.trade_count_1y - a.trade_count_1y);
@@ -456,7 +461,9 @@
                        : B.pri === "edu" ? (b.edu_score || 0) - (a.edu_score || 0)
                        : (b.kid || 0) - (a.kid || 0)) || b.trade_count_1y - a.trade_count_1y);
     }
-    else if (state.commute) list.sort((a, b) => (a._cm ?? 999) - (b._cm ?? 999) || b.trade_count_1y - a.trade_count_1y);
+    else if (state.commute) list.sort((a, b) => state.commute.mode === "sum"
+      ? ((a._cmA ?? 999) + (a._cmB ?? 0)) - ((b._cmA ?? 999) + (b._cmB ?? 0))
+      : (a._cm ?? 999) - (b._cm ?? 999) || b.trade_count_1y - a.trade_count_1y);
     else list.sort((a, b) => b.trade_count_1y - a.trade_count_1y);
     if (state.commute) list = list.filter(commuteOk);
     return list.slice(0, 150);
@@ -471,6 +478,8 @@
       const rep = (state.sort === "budget" && c._bRep) || repArea(c, state.area);
       const tags = [
         ...(commuteTag(c) ? [commuteTag(c)] : []),
+        ...(feeTag(c) ? [feeTag(c)] : []),
+        ...(c.mg && (c.mg[0] < 2 || c.mg[1] < 2) ? [`<span class="tag warn2">중학교 ${c.mg[0] < 2 ? "아들" : "딸"} 기준 ${Math.min(c.mg[0], c.mg[1])}곳</span>`] : []),
         ...(c.fut && c.fut.dist <= 800 ? [`<span class="tag fut">🚧 ${esc(c.fut.line)} ${esc(c.fut.name)} 예정 ${c.fut.walk_min}분</span>`] : []),
         ...(c.school.chopuma ? [`<span class="tag school">초품아 ${esc(c.school.elem.replace("등학교", ""))}</span>`] : [`<span class="tag">${esc(c.school.elem.replace("등학교", ""))} ${c.school.elem_walk_min}분</span>`]),
         ...c.pros.slice(0, 2).filter((p) => !p.startsWith("초품아")).map((p) => `<span class="tag good">${esc(p)}</span>`),
@@ -612,6 +621,7 @@
           ${c.terrain ? `<div><div class="k">지형</div><div class="v">해발 ${c.terrain.elev}m<small>${c.terrain.station_dh != null ? (c.terrain.station_dh >= 0 ? "역보다 +" : "역보다 ") + c.terrain.station_dh + "m" : ""}${c.terrain.slope_pct != null ? " · 경사 " + c.terrain.slope_pct + "%" : ""}</small></div></div>` : ""}
           ${c.parking ? `<div><div class="k">주차</div><div class="v">${c.parking.toLocaleString()}대<small>세대당 ${c.parking_per_hh || "-"}</small></div></div>` : ""}
           ${state.commute && c._cmA != null ? `<div style="grid-column:1/-1"><div class="k">출퇴근 (추정)</div><div class="v">${esc(state.commute.a.name)}까지 ${c._cmA}분${state.commute.b && c._cmB != null ? ` · ${esc(state.commute.b.name)}까지 ${c._cmB}분` : ""}<small>도보+대기 3분+지하철, 환승 1회당 4분</small></div></div>` : ""}
+          ${c.fee ? `<div style="grid-column:1/-1"><div class="k">동네 학원비</div><div class="v">월 ${feeMan(c)}만원 <small>1km 내 교과학원 ${c.fee_n}곳 중앙값 · 서울 상위 ${c.fee_pct}%${c.school.class_size ? " · 배정 초등 학급당 " + c.school.class_size + "명" : ""}</small></div></div>` : ""}
           ${c.fut ? `<div style="grid-column:1/-1"><div class="k">공사 중 노선 예정역</div><div class="v">🚧 ${esc(c.fut.line)} ${esc(c.fut.name)}역 도보 ${c.fut.walk_min}분 (${c.fut.dist}m)<small>OpenStreetMap 기준 · 개통 시기와 역 위치는 바뀔 수 있어요</small></div></div>` : ""}
           <div><div class="k">가까운 역</div><div class="v">${lineBadges(c.station.lines)}${esc(c.station.name)}<small>${esc(c.station.line)} · ${c.station.walk_min}분</small></div></div>
           <div><div class="k">큰길과 거리</div><div class="v">${c.road.major_dist == null ? "-" : c.road.major_dist + "m"}<small>${c.road.roadside ? "대로변" : c.road.major_dist > 150 ? "이면 · 조용" : "인접"}</small></div></div>
@@ -716,6 +726,8 @@
       ["세대수 / 준공", (c) => `${c.households ? c.households.toLocaleString() + "세대" : "-"} / ${c.built}년`],
       ["👶 아이 키우기", (c) => c.kid ? `<b>${c.kid.score}</b> (상위 ${c.kid.top_pct}%)` : "-"],
       ["학군 지수", (c) => c.edu_score != null ? `${c.edu_score} (상위 ${c.edu_top_pct}%)` : "-"],
+      ["동네 학원비(월)", (c) => c.fee ? `${feeMan(c)}만원 (상위 ${c.fee_pct}%)` : "-"],
+      ["배정 초등 학급당", (c) => c.school.class_size ? `${c.school.class_size}명` : "-"],
       ["같은 가격대 학군", (c) => c.edu_band_pct != null ? `${c.budget_band} 중 상위 ${c.edu_band_pct}%` : "-"],
       ["분양/임대", (c) => c.sale_type || "-"],
       ["배정 초등", (c) => `${esc(c.school.elem)} ${c.school.elem_walk_min}분${c.school.chopuma ? " · 초품아" : ""}`],
@@ -754,7 +766,8 @@
     const f = e.target, ia = findNode(f.a.value), ib = f.b.value.trim() ? findNode(f.b.value) : null;
     if (ia < 0) return toast(`'${f.a.value}' 역을 찾지 못했어요.`);
     if (ib != null && ib < 0) return toast(`'${f.b.value}' 역을 찾지 못했어요.`);
-    state.commute = { a: { idx: ia, name: graph.nodes[ia][0] }, b: ib != null ? { idx: ib, name: graph.nodes[ib][0] } : null, max: +f.max.value };
+    state.commute = { a: { idx: ia, name: graph.nodes[ia][0] }, b: ib != null ? { idx: ib, name: graph.nodes[ib][0] } : null,
+                      max: +f.max.value, mode: f.mode && f.mode.value === "sum" ? "sum" : "max" };
     applyCommute(); syncCommuteUrl(); hit("commute");
     $("#commuteModal").hidden = true; updateCommuteChip(); renderMarkers(); renderList(); setSheet("full");
     const first = visibleComplexes()[0];

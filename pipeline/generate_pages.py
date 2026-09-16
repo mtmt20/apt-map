@@ -132,6 +132,9 @@ def page_html(c, base, all_by_umd):
         "(교육청 공식 학구)" if c["school"].get("elem_official") else "(추정)", esc(c["school"]["elem"]), c["school"]["elem_walk_min"], c["school"]["elem_dist"],
         " · <b style='color:#7c3aed'>초품아</b>" if c["school"]["chopuma"] else "",
         " · 공동통학구역: " + " / ".join(esc(x) for x in c["school"]["elem_shared"]) if c["school"].get("elem_shared") else ""))
+    if (c.get("edu") or {}).get("fee_med"):
+        parts.append('<p><b>동네 학원비</b>: 반경 1km 입시·보습 학원 {}곳의 과목당 월 교습비 중앙값 <b>{}만원</b> (서울 상위 {}%). 교육청 공시 교습비 기준이며 공개한 학원만 집계됩니다.</p>'.format(
+            c["edu"]["fee_n"], round(c["edu"]["fee_med"] / 10000), c.get("fee_top_pct")))
     if c.get("future"):
         parts.append('<p><b>공사 중 노선</b>: {} {}역 예정지까지 약 {}m (도보 {}분). OpenStreetMap 기준이며 개통 시기와 역 위치는 바뀔 수 있습니다.</p>'.format(
             esc(c["future"]["line"]), esc(c["future"]["name"]), c["future"]["dist"], c["future"]["walk_min"]))

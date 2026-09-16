@@ -23,6 +23,7 @@ from calc_js import CALC_JS  # noqa: E402
 from content_fund import FUND_BODY, FUND_JS  # noqa: E402
 import content_school_budget  # noqa: E402
 import content_future_rail  # noqa: E402
+import content_academy_fee  # noqa: E402
 load_env()
 BASE = (os.environ.get("SITE_BASE") or "https://jipkokmap.kr").rstrip("/")
 CONTACT = os.environ.get("CONTACT_EMAIL", "")
@@ -108,6 +109,14 @@ GUIDE = """
 <h2>🚉 출퇴근 시간</h2>
 <div class="card"><p>회사 근처 역(맞벌이라면 두 곳)과 최대 편도 시간을 넣으면, 단지마다 <b>집에서 역까지 도보 + 대기 3분 + 지하철 탑승</b> 시간을 계산해 조건 안에 드는 단지만 보여줍니다. 단지 반경 1.5km 안의 역 최대 3곳 중 가장 빠른 경로를 씁니다.</p>
 <p>지하철 구간 시간은 OpenStreetMap 노선 데이터의 역 순서와 거리로 추정합니다. 일반 노선은 표정속도 약 36km/h, 신분당선·GTX-A·공항철도는 더 빠르게 잡고, 환승 한 번마다 4분을 더합니다. <b>완행 기준</b>이라 급행을 타면 더 짧고, 버스 경로는 아직 반영하지 않습니다. 예산으로 찾기와 함께 걸면 "두 사람 출근 40분 이내 + 예산 8억 + 같은 가격대 학군 순" 같은 조건을 한 번에 볼 수 있고, 조건이 담긴 링크를 그대로 공유할 수 있습니다.</p></div>
+
+<h2>📚 동네 학원비</h2>
+<div class="card"><p>단지 반경 1km 안 입시·보습 학원들의 <b>과목당 월 교습비 중앙값</b>입니다. 교육청(나이스)이 공시하는 학원별 교습비를 그대로 씁니다. 학원을 개수로만 세는 것과 달리, 이 동네에서 아이를 가르치면 매달 얼마가 드는지를 봅니다.</p>
+<p>교습비를 공개한 학원만 집계되어 서울 학원의 약 4분의 1이 표본이고, 주변 표본이 5곳 미만인 단지는 계산하지 않습니다. 과목 수와 수업 시간이 학원마다 달라 단순 비교에는 한계가 있으니 동네 사이 수준 차이를 가늠하는 용도로 보세요. 구별·단지별 정리는 <a href="rank/academy-fee.html">동네별 학원비</a>에 있습니다.</p></div>
+
+<h2>👧 배정 초등 학급당 인원 · 중학교 성별</h2>
+<div class="card"><p>배정 초등학교의 <b>학급당 인원</b>을 학교알리미에서 가져와 표시합니다. 서울 중앙값은 18명이고, 24명 이상이면 카드에 표시합니다. 학군이 좋다고 간 동네가 과밀인 경우를 거르기 위한 것입니다.</p>
+<p>중학교는 학교군 안에서 추첨 배정이라 학교를 특정할 수 없습니다. 대신 <b>아들·딸 기준으로 지원 가능한 학교가 몇 곳인지</b>(남중·여중·공학 구성)를 세어, 두 곳 미만이면 카드에 표시합니다. 딸을 키우는 집에서 여중·공학이 한 곳뿐인 동네는 선택지가 사실상 없다는 뜻입니다.</p></div>
 
 <h2>🏢 공급 유형 (분양 · 임대 · 혼합)</h2>
 <div class="card"><p>K-apt 공동주택관리정보와 서울시 자료에 등록된 구분을 그대로 표시합니다. 분양, 임대, 분양·임대 혼합, 기타로 나뉘고 단지 화면과 단지 페이지에 적습니다. 세대수·동수·세대당 주차 대수도 같은 자료입니다. 확인 가능한 사실이라 그대로 옮기며, 집콕맵은 <b>사람을 분류하는 지표는 만들지 않습니다</b>.</p></div>
@@ -259,6 +268,7 @@ def rank_pages(cs):
     # 서울 전체 index
     active = [c for c in cs if c["trade_count_1y"] >= 5]
     body = ["<h1>서울 아파트 랭킹</h1><p class=\"sub\">구별 랭킹과 서울 전체 상위 단지 · {} 기준</p>".format(dt.date.today().isoformat())]
+    body.append('<div class="card"><p style="margin:0"><b>📚 <a href="academy-fee.html">서울 동네별 학원비</a></b> — 학군은 좋으면서 학원비가 싼 단지를 정리했습니다. 기존 앱에 없는 지표입니다.</p></div>')
     body.append('<div class="card"><p style="margin:0"><b>🚧 <a href="future-rail.html">공사 중 지하철 예정역 도보권 아파트</a></b> — 동북선·월곶판교선 예정역 근처 단지를 역별로 정리했습니다.</p></div>')
     body.append('<div class="card"><p style="margin:0"><b>💰 <a href="budget-school.html">예산별 학군지 가이드</a></b> — 내 예산으로 갈 수 있는 최고 학군을 가격 구간별로 정리했습니다.</p></div>')
     body.append("<h2>구별 랭킹 보기</h2><div class=\"card\"><div class=\"tags\">" + "".join('<a class="tag" href="{}.html" style="font-size:14px;padding:8px 12px">{}</a>'.format(esc(g), esc(g)) for g in sorted(by_gu)) + "</div></div>")
@@ -302,6 +312,10 @@ def main():
         "공사 중 지하철 예정역 도보권 아파트 · 동북선·월곶판교선 | 집콕맵",
         "동북선, 월곶판교선 등 공사 중인 노선의 예정역에서 걸어서 갈 수 있는 서울 아파트를 역별로 정리했습니다. 실거래가와 학군 지수 함께.",
         content_future_rail.page_body(cs, rank_table), "rank/future-rail.html")
+    pages["rank/academy-fee.html"] = shell(
+        "서울 동네별 학원비 · 학군 대비 학원비 싼 아파트 | 집콕맵",
+        "교육청 공시 교습비로 계산한 서울 구별·단지별 월 학원비. 학군은 좋으면서 학원비가 싼 아파트 30곳을 정리했습니다.",
+        content_academy_fee.page_body(cs, rank_table), "rank/academy-fee.html")
     for path, htm in pages.items():
         open(os.path.join(APP, path), "w", encoding="utf-8").write(htm)
     # 허브/콘텐츠 페이지를 sitemap-core.xml 과 RSS(네이버 서치어드바이저용)에 등록

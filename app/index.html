@@ -24,7 +24,7 @@
 <link rel="apple-touch-icon" href="icon.svg">
 <link rel="manifest" href="manifest.json">
 <link rel="stylesheet" href="vendor/maplibre-gl.css">
-<link rel="stylesheet" href="style.css?v=57">
+<link rel="stylesheet" href="style.css?v=59">
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"WebSite","name":"집콕맵","url":"https://jipkokmap.kr/","description":"서울 아파트 실거래가, 배정 초등학교와 학군, 지하철 출퇴근 시간, 예산 대비 학군을 지도 한 장에서 확인하는 서비스","inLanguage":"ko"}</script>
 </head>
 <body>
@@ -52,6 +52,7 @@
     <button class="chip" data-sort="budget" id="budgetChip">🔍 예산으로 찾기</button>
     <button class="chip" data-sort="edu">학군순</button>
     <button class="chip" data-sort="eduvalue">💰 예산 대비 학군</button>
+    <button class="chip" data-sort="feelow">📚 학원비 싼 학군</button>
     <button class="chip" data-sort="up">상승신호</button>
     <button class="chip" data-sort="school">초품아</button>
     <button class="chip" data-sort="gap" id="gapChip" hidden>전세가율순</button>
@@ -152,6 +153,7 @@
     <form id="commuteForm" autocomplete="off">
       <label>회사 역 1 <input name="a" list="stationList" placeholder="예: 강남, 여의도, 판교" required></label>
       <label>회사 역 2 (배우자, 선택) <input name="b" list="stationList" placeholder="예: 시청"></label>
+      <label>정렬 기준 <select name="mode"><option value="max">두 사람 다 가까운 곳 (긴 쪽 기준)</option><option value="sum">두 사람 합계가 가장 짧은 곳 (중간지점)</option></select></label>
       <label>최대 편도 시간 <select name="max"><option value="30">30분 이내</option><option value="40" selected>40분 이내</option><option value="50">50분 이내</option><option value="60">60분 이내</option></select></label>
       <datalist id="stationList"></datalist>
       <div class="muted" style="font-size:12px">완행 기준 추정치입니다. 급행을 타면 더 짧고, 출근 시간대 배차 간격에 따라 달라질 수 있어요.</div>
@@ -175,7 +177,7 @@
   </div>
 </div>
 <script src="config.js"></script>
-<script src="app.js?v=57"></script>
+<script src="app.js?v=59"></script>
 <script>if ("serviceWorker" in navigator && location.protocol === "https:") navigator.serviceWorker.register("sw.js").catch(() => {});</script>
 </body>
 </html>

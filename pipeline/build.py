@@ -672,8 +672,11 @@ def enrich(c, roads, today, stations, schools, zones, middle=None, academies=Non
             _ACA_IDX.clear()
             _ACA_IDX[id(academies)] = grid_index(academies, lambda x: [(x["lng"], x["lat"])])
         near = [x for x in grid_near(_ACA_IDX[id(academies)], c["lng"], c["lat"]) if dist_m(c["lat"], c["lng"], x["lat"], x["lng"]) <= 1000]
+        fees = [x["fee"] for x in near if x.get("fee") and "입시" in (x.get("realm") or "")]
         c["edu"] = {"aca_1km": len(near), "exam_1km": sum(1 for x in near if "입시" in (x.get("realm") or "")),
-                    "art_1km": sum(1 for x in near if "예능" in (x.get("realm") or ""))}
+                    "art_1km": sum(1 for x in near if "예능" in (x.get("realm") or "")),
+                    # 교습비는 공개한 학원만 집계돼 표본이 적으면 흔들린다 -> 5곳 미만이면 쓰지 않는다
+                    "fee_med": int(statistics.median(fees)) if len(fees) >= 5 else None, "fee_n": len(fees)}
     else:
         c["edu"] = None
 
@@ -971,8 +974,8 @@ def main():
                 c["pros"].append("배정 초등 학생 수 증가 (전년 대비 +{}%)".format(st["chg_pct"]))
             elif st.get("chg_pct") is not None and st["chg_pct"] <= -8:
                 c["cons"].append("배정 초등 학생 수 감소 (전년 대비 {}%)".format(st["chg_pct"]))
-            if st.get("class_size") and st["class_size"] >= 28:
-                c["cons"].append("배정 초등 과밀 (학급당 {}명)".format(st["class_size"]))
+            if st.get("class_size") and st["class_size"] >= 24:
+                c["cons"].append("배정 초등 학급당 {}명 (서울 중앙값 18명)".format(st["class_size"]))
             if rk and rk[0] <= max(3, rk[1] // 5):
                 c["pros"].append("배정 초등 전입 선호도 상위 (권역 {}위/{})".format(rk[0], rk[1]))
             c["pros"], c["cons"] = c["pros"][:5], c["cons"][:5]
@@ -1043,6 +1046,20 @@ def main():
             c["edu_band_n"] = len(vals)
             # 카드 태그(app.js)와 단지 페이지에서 따로 보여주므로 pros 에는 넣지 않는다 (중복 방지)
 
+    # 동네 학원비: 비싼 순 백분위 (상위 10% = 서울에서 가장 비싼 축)
+    fee_vals = sorted((c["edu"]["fee_med"] for c in cs if c.get("edu") and c["edu"].get("fee_med")), reverse=True)
+    for c in cs:
+        fm = c["edu"].get("fee_med") if c.get("edu") else None
+        if not fm:
+            continue
+        c["fee_top_pct"] = max(1, int(round((fee_vals.index(fm) + 1) / len(fee_vals) * 100)))
+        man = round(fm / 10000)
+        if c["fee_top_pct"] <= 10:
+            c["cons"].append("학원비 비싼 편 (1km 내 교과학원 월 중앙값 {}만원, 서울 상위 {}%)".format(man, c["fee_top_pct"]))
+        elif c["fee_top_pct"] >= 60 and (c.get("edu_score") or 0) >= 55:
+            c["pros"].append("학군 대비 학원비 저렴 (월 중앙값 {}만원)".format(man))
+            c["pros"] = c["pros"][:5]
+
     # 아이 키우기 점수 순위
     ks = sorted((c["kid"]["score"] for c in cs if c.get("kid")), reverse=True)
     for c in cs:
@@ -1108,6 +1125,10 @@ def main():
         mg = c["school"].get("middle_gender") or {}
         sm["mg"] = [mg.get("공학", 0) + mg.get("남", 0), mg.get("공학", 0) + mg.get("여", 0)]   # [아들 기준, 딸 기준] 지원 가능 중학교 수
         sm["school"] = {k: c["school"][k] for k in ("elem", "elem_walk_min", "chopuma")}
+        st_ = c["school"].get("elem_stats") or {}
+        sm["school"]["class_size"] = st_.get("class_size")
+        if c.get("edu") and c["edu"].get("fee_med"):
+            sm["fee"], sm["fee_pct"], sm["fee_n"] = c["edu"]["fee_med"], c.get("fee_top_pct"), c["edu"]["fee_n"]
         summary.append(sm)
         json.dump(c, open(os.path.join(cdir, c["id"] + ".json"), "w", encoding="utf-8"), ensure_ascii=False, separators=(",", ":"))
     dump("complexes.json", summary)

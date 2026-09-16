@@ -11,6 +11,7 @@ NEIS_KEY (open.neis.go.kr), KAKAO_REST_API_KEY (주소 -> 좌표) 필요. 좌표
 import argparse
 import json
 import os
+import re
 import sys
 import time
 
@@ -81,6 +82,17 @@ class Geocoder:
         json.dump(self.cache, open(CACHE, "w", encoding="utf-8"), ensure_ascii=False)
 
 
+def fee_median(txt):
+    """PSNBY_THCC_CNTNT("문법 영어:268000, 리딩:268000") -> 과목별 월 교습비 중앙값(원).
+
+    교육청 공시값이라 과목 수·시간이 제각각이므로 중앙값만 쓴다. 비정상값(3만 미만/300만 초과)은 버린다.
+    """
+    import statistics as _st
+    vals = [int(m) for m in re.findall(r":\s*(\d{4,7})", txt or "")]
+    vals = [v for v in vals if 30000 <= v <= 3000000]
+    return int(_st.median(vals)) if vals else None
+
+
 def main():
     load_env()
     ap = argparse.ArgumentParser()
@@ -111,7 +123,7 @@ def main():
         acas.append({
             "name": r["ACA_NM"], "kind": r.get("ACA_INSTI_SC_NM", ""), "realm": r.get("REALM_SC_NM", ""),
             "course": r.get("LE_CRSE_NM", ""), "subjects": r.get("LE_CRSE_LIST_NM", ""), "addr": addr,
-            "capacity": r.get("TOFOR_SMTOT") or 0, "lat": g["lat"], "lng": g["lng"],
+            "capacity": r.get("TOFOR_SMTOT") or 0, "fee": fee_median(r.get("PSNBY_THCC_CNTNT")), "lat": g["lat"], "lng": g["lng"],
         })
         if (i + 1) % 200 == 0:
             print("  학원 좌표 {}/{}".format(i + 1, len(rows)))
