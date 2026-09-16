@@ -30,7 +30,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="집콕맵">
 <link rel="stylesheet" href="vendor/maplibre-gl.css">
-<link rel="stylesheet" href="style.css?v=67">
+<link rel="stylesheet" href="style.css?v=69">
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"WebSite","name":"집콕맵","url":"https://jipkokmap.kr/","description":"서울 아파트 실거래가, 배정 초등학교와 학군, 지하철 출퇴근 시간, 예산 대비 학군을 지도 한 장에서 확인하는 서비스","inLanguage":"ko"}</script>
 </head>
 <body>
@@ -49,19 +49,20 @@
     <button class="chip" data-area="84">84㎡ · 30평대</button>
     <button class="chip" data-area="114">100㎡+</button>
     <span class="sep"></span>
-    <button class="chip" data-sort="ppy">평당가순</button>
-    <button class="chip" data-sort="chg">상승률순</button>
+    <button class="chip" id="moreChip">⋯ 더보기</button>
+    <button class="chip" data-more="1" data-sort="ppy">평당가순</button>
+    <button class="chip" data-more="1" data-sort="chg">상승률순</button>
     <button class="chip" data-sort="fav" id="favChip">♥ 내 찜</button>
     <button class="chip" data-sort="kid">👶 아이키우기</button>
     <button class="chip hot" id="commuteChip">🚉 출퇴근 시간</button>
     <button class="chip" id="commuteShare" hidden>🔗 공유</button>
     <button class="chip" data-sort="budget" id="budgetChip">🔍 예산으로 찾기</button>
-    <button class="chip" data-sort="edu">학군순</button>
+    <button class="chip" data-more="1" data-sort="edu">학군순</button>
     <button class="chip" data-sort="eduvalue">💰 예산 대비 학군</button>
     <button class="chip" data-sort="feelow">📚 학원비 싼 학군</button>
-    <button class="chip" data-sort="up">상승신호</button>
-    <button class="chip" data-sort="school">초품아</button>
-    <button class="chip" data-sort="gap" id="gapChip" hidden>전세가율순</button>
+    <button class="chip" data-more="1" data-sort="up">상승신호</button>
+    <button class="chip" data-more="1" data-sort="school">초품아</button>
+    <button class="chip" data-more="1" data-sort="gap" id="gapChip" hidden>전세가율순</button>
     <span class="sep"></span>
     <a class="chip" href="calc.html" style="text-decoration:none">🧮 계산기</a>
     <a class="chip" href="fund.html" style="text-decoration:none">💰 자금 마련</a>
@@ -69,29 +70,30 @@
 </header>
 
 <!-- 우측: 레이어 토글 -->
-<nav class="layers">
+<nav class="layers" id="layers">
   <button class="lyr on" data-layer="school" title="배정 초등학교 통학구역">
     <span class="ico">🏫</span><span>학군</span>
   </button>
   <button class="lyr on" data-layer="subway" title="지하철역">
     <span class="ico">🚇</span><span>지하철</span>
   </button>
-  <button class="lyr" data-layer="road" title="큰길/골목/인도">
+  <button class="lyr" data-more="1" data-layer="road" title="큰길/골목/인도">
     <span class="ico">🛣️</span><span>도로</span>
   </button>
   <button class="lyr" data-layer="amenity" title="주요시설 (병원·마트·어린이집·공원)">
     <span class="ico">🏥</span><span>편의</span>
   </button>
-  <button class="lyr" data-layer="nuisance" title="기피·주의 시설">
+  <button class="lyr" data-more="1" data-layer="nuisance" title="기피·주의 시설">
     <span class="ico">🚧</span><span>기피</span>
   </button>
-  <button class="lyr" data-layer="terrain" title="지형 음영 (언덕·산)">
+  <button class="lyr" data-more="1" data-layer="terrain" title="지형 음영 (언덕·산)">
     <span class="ico">⛰️</span><span>지형</span>
   </button>
-  <button class="lyr" data-layer="auction" title="경매 물건">
+  <button class="lyr" data-more="1" data-layer="auction" title="경매 물건">
     <span class="ico">⚖️</span><span>경매</span>
   </button>
   <button class="lyr" id="locateBtn" title="내 위치"><span class="ico">📍</span><span>내위치</span></button>
+  <button class="lyr" id="moreLyr" title="레이어 더보기"><span class="ico">⋯</span><span>더보기</span></button>
 </nav>
 
 <div class="legend" id="terrainLegend" hidden style="top:auto;bottom:calc(var(--sheet-peek) + 12px)"><div>⛰️ 음영이 진할수록 경사·언덕</div><button class="btn" id="tiltBtn" style="margin-top:6px;padding:7px 10px;font-size:12px;width:100%">↗ 3D 기울이기</button></div>
@@ -118,12 +120,21 @@
         <span id="areaLabel" class="muted">서울 마포구</span>
       </div>
       <div id="demoRow" class="demo-row">
-        <div class="demo-title">이럴 때 써보세요</div>
-        <div class="demo-chips">
-          <button class="demo" data-demo="commute">🚉 맞벌이 강남·여의도<br><b>둘 다 40분 이내</b></button>
-          <button class="demo" data-demo="budget">💰 8억으로<br><b>학군 가장 좋은 곳</b></button>
-          <button class="demo" data-demo="fee">📚 학군 좋은데<br><b>학원비 싼 동네</b></button>
-        </div>
+        <div class="demo-title">내 조건으로 바로 찾기</div>
+        <form id="quickCommute" class="quick" autocomplete="off">
+          <span class="qi">🚉</span>
+          <input name="a" list="stationList" placeholder="회사 역 (예: 종로3가)" required>
+          <input name="b" list="stationList" placeholder="배우자 회사 역 (선택)">
+          <select name="max"><option value="30">30분</option><option value="40" selected>40분</option><option value="50">50분</option><option value="60">60분</option></select>
+          <button type="submit" class="qbtn">찾기</button>
+        </form>
+        <form id="quickBudget" class="quick" autocomplete="off">
+          <span class="qi">💰</span>
+          <input name="max" type="number" step="0.5" min="1" placeholder="예산 (억)" required>
+          <span class="qlabel">이 예산에서 학군 좋은 곳</span>
+          <button type="submit" class="qbtn">찾기</button>
+        </form>
+        <button class="demo wide" data-demo="fee">📚 학군 좋은데 <b>학원비 싼 동네</b> 보기</button>
       </div>
       <div id="compareBar" class="alert-bar" hidden><span>비교 0/3</span><button class="btn" id="compareOpen" style="width:auto;padding:8px 12px;font-size:13px">⚖ 나란히 비교</button></div>
       <div id="alertBar" class="alert-bar" hidden><span>찜한 단지에 새 실거래가 뜨면 메일로 알려드려요</span><button class="btn" id="alertBtn" style="width:auto;padding:8px 12px;font-size:13px">📧 알림 받기</button></div>
@@ -134,7 +145,7 @@
         <div id="dataStamp" class="stamp"></div>
       </div>
       <div class="note" style="margin-top:14px;text-align:center;line-height:2">
-        <a href="apt/index.html">🏢 서울 아파트 6,809개 단지 목록</a> · <a href="rank/budget-school.html">💰 예산별 학군지 가이드</a> · <a href="rank/future-rail.html">🚧 공사 중 예정역 도보권</a><br>
+        <a href="apt/index.html">🏢 서울 아파트 6,809개 단지 목록</a> · <a href="rank/academy-fee.html">📚 동네별 학원비</a> · <a href="rank/budget-school.html">💰 예산별 학군지</a> · <a href="rank/future-rail.html">🚧 공사 중 예정역 도보권</a><br>
         <a href="calc.html">🧮 계산기</a> · <a href="fund.html">💰 자금 마련</a> · <a href="rank/index.html">📊 구별 랭킹</a> · <a href="guide.html">지표 설명</a> · <a href="moving.html">이사 준비</a> · <a href="about.html">소개</a> · <a href="privacy.html">개인정보</a>
       </div>
     </div>
@@ -197,7 +208,7 @@
   </div>
 </div>
 <script src="config.js"></script>
-<script src="app.js?v=67"></script>
+<script src="app.js?v=69"></script>
 <script>if ("serviceWorker" in navigator && location.protocol === "https:") navigator.serviceWorker.register("sw.js").catch(() => {});</script>
 </body>
 </html>

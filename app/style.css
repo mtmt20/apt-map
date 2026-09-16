@@ -291,11 +291,32 @@ button { font: inherit; color: inherit; cursor: pointer; border: 0; background: 
 .demo-row { margin: 2px 0 12px; }
 .demo-title { font-size: 12px; font-weight: 700; color: var(--muted); margin-bottom: 6px; }
 .demo-chips { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.quick { display: flex; align-items: center; gap: 5px; margin-bottom: 6px; flex-wrap: wrap; }
+.quick .qi { font-size: 15px; flex: 0 0 auto; }
+.quick input { flex: 1 1 96px; min-width: 0; padding: 8px 9px; border: 1.5px solid var(--line); border-radius: 10px;
+  background: var(--bg); color: var(--fg); font-size: 13px; }
+.quick input:focus { outline: none; border-color: var(--brand); }
+.quick select { flex: 0 0 auto; padding: 8px 6px; border: 1.5px solid var(--line); border-radius: 10px;
+  background: var(--bg); color: var(--fg); font-size: 13px; }
+.quick .qlabel { flex: 1 1 auto; font-size: 12.5px; color: var(--muted); }
+.qbtn { flex: 0 0 auto; background: var(--brand); color: #fff; font-size: 13px; font-weight: 800;
+  padding: 8px 14px; border-radius: 10px; }
 .demo { text-align: left; background: var(--bg2); border: 1.5px solid var(--line); border-radius: 12px;
   padding: 8px 9px; font-size: 11px; color: var(--muted); line-height: 1.45; }
-.demo b { display: block; font-size: 12.5px; color: var(--fg); font-weight: 800; margin-top: 2px; }
+.demo.wide { width: 100%; text-align: center; font-size: 12.5px; padding: 9px; }
+.demo b { font-size: 12.5px; color: var(--fg); font-weight: 800; }
 .demo:active { border-color: var(--brand); }
 .maker { margin-top: 16px; padding: 12px 14px; background: var(--bg2); border-radius: 12px;
   font-size: 12.5px; color: var(--muted); line-height: 1.6; text-align: center; }
 .maker a { color: var(--brand); font-weight: 700; white-space: nowrap; }
 .stamp { margin-top: 6px; font-size: 11.5px; color: #94a3b8; }
+
+/* 조작을 단순하게: 자주 안 쓰는 칩·레이어는 '더보기' 를 누를 때만 보인다 */
+body:not(.more-chips) .chips [data-more="1"] { display: none; }
+body:not(.more-lyr) .layers [data-more="1"] { display: none; }
+#moreChip.on, #moreLyr.on { color: var(--brand); border-color: var(--brand); }
+@media (min-width: 900px) {
+  /* 넓은 화면에서는 전부 보여준다 */
+  .chips [data-more="1"], .layers [data-more="1"] { display: inline-flex !important; }
+  #moreChip, #moreLyr { display: none !important; }
+}

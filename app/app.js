@@ -897,28 +897,46 @@
     });
   })();
 
-  // 첫 방문자용 예시: 한 번 누르면 조건이 걸린 결과를 바로 보여준다
-  async function runDemo(kind) {
-    if (kind === "commute") {
-      await loadGraph();
-      const ia = findNode("강남"), ib = findNode("여의도");
-      if (ia < 0 || ib < 0) return toast("노선 정보를 불러오지 못했어요.");
-      state.commute = { a: { idx: ia, name: graph.nodes[ia][0] }, b: { idx: ib, name: graph.nodes[ib][0] }, max: 40, mode: "max" };
-      applyCommute(); syncCommuteUrl(); updateCommuteChip(); hit("commute");
-    } else if (kind === "budget") {
-      state.budget = { max: 80000, min: 0, gu: "", kid: true, gender: "", fam: true, pri: "eduvalue" };
-      state.sort = "budget";
-      $$("[data-sort]").forEach((x) => x.classList.toggle("on", x.dataset.sort === "budget"));
-      hit("budget");
-    } else {
-      state.sort = "feelow";
-      $$("[data-sort]").forEach((x) => x.classList.toggle("on", x.dataset.sort === "feelow"));
-    }
+  // 리스트 맨 위 빠른 입력: 회사 역과 예산을 그 자리에서 넣어 결과를 본다
+  // (예시를 강남·여의도로 박아두면 그 동네 사람만 쓰라는 얘기처럼 보인다는 지적 반영)
+  async function applyCommuteInput(aVal, bVal, maxVal) {
+    await loadGraph();
+    const ia = findNode(aVal), ib = (bVal || "").trim() ? findNode(bVal) : null;
+    if (ia < 0) return toast(`'${aVal}' 역을 찾지 못했어요. 역 이름을 다시 확인해 주세요.`);
+    if (ib !== null && ib < 0) return toast(`'${bVal}' 역을 찾지 못했어요.`);
+    state.commute = { a: { idx: ia, name: graph.nodes[ia][0] }, b: ib !== null ? { idx: ib, name: graph.nodes[ib][0] } : null,
+                      max: +maxVal || 40, mode: "max" };
+    applyCommute(); syncCommuteUrl(); updateCommuteChip(); hit("commute");
     renderMarkers(); renderList(); setSheet("half");
     const first = visibleComplexes()[0];
     if (first) map.flyTo({ center: [first.lng, first.lat], zoom: 12.5 });
+    else toast("조건에 맞는 단지가 없어요. 시간을 늘려보세요.");
   }
-  $$(".demo").forEach((b) => b.addEventListener("click", () => runDemo(b.dataset.demo)));
+  const qc = $("#quickCommute");
+  if (qc) {
+    // 역 이름 자동완성 목록은 입력을 시작할 때 받아온다 (첫 로딩을 가볍게)
+    qc.querySelectorAll("input").forEach((el) => el.addEventListener("focus", () => loadGraph().catch(() => {}), { once: true }));
+    qc.addEventListener("submit", (e) => { e.preventDefault(); applyCommuteInput(qc.a.value, qc.b.value, qc.max.value); });
+  }
+  const qb = $("#quickBudget");
+  if (qb) qb.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const max = Math.round(parseFloat(qb.max.value || "0") * 10000);
+    if (!max) return toast("예산을 억 단위로 넣어주세요.");
+    state.budget = { max, min: 0, gu: "", kid: true, gender: "", fam: true, pri: "eduvalue" };
+    state.sort = "budget";
+    $$("[data-sort]").forEach((x) => x.classList.toggle("on", x.dataset.sort === "budget"));
+    hit("budget");
+    renderMarkers(); renderList(); setSheet("half");
+    const first = visibleComplexes()[0];
+    if (first) map.flyTo({ center: [first.lng, first.lat], zoom: 12.5 });
+    else toast("그 예산에 맞는 가족형 단지를 찾지 못했어요.");
+  });
+  $$(".demo").forEach((b) => b.addEventListener("click", () => {
+    state.sort = "feelow";
+    $$("[data-sort]").forEach((x) => x.classList.toggle("on", x.dataset.sort === "feelow"));
+    renderMarkers(); renderList(); setSheet("half");
+  }));
   function updateDemoRow() {
     const row = $("#demoRow");
     if (row) row.hidden = !!(state.commute || state.budget || state.sort || state.q);
@@ -958,6 +976,17 @@
 
   $("#q").addEventListener("input", (e) => { state.q = e.target.value.trim(); renderMarkers(); renderList(); if (state.q) setSheet("half"); });
   $("#q").addEventListener("keydown", (e) => { if (e.key === "Enter") { const f = visibleComplexes()[0]; if (f) openDetail(f.id, "half"); e.target.blur(); } });
+  // 더보기: 칩·레이어를 평소엔 접어두고 필요할 때만 펼친다
+  $("#moreChip") && $("#moreChip").addEventListener("click", () => {
+    const on = document.body.classList.toggle("more-chips");
+    $("#moreChip").classList.toggle("on", on);
+    $("#moreChip").textContent = on ? "⋯ 접기" : "⋯ 더보기";
+  });
+  $("#moreLyr") && $("#moreLyr").addEventListener("click", () => {
+    const on = document.body.classList.toggle("more-lyr");
+    $("#moreLyr").classList.toggle("on", on);
+  });
+
   $$(".lyr[data-layer]").forEach((b) => b.addEventListener("click", () => { state.layers[b.dataset.layer] = !state.layers[b.dataset.layer]; applyLayers(); }));
   $("#locateBtn").addEventListener("click", () => {
     if (!navigator.geolocation) return toast("위치 정보를 지원하지 않는 브라우저예요.");
