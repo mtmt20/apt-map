@@ -495,7 +495,7 @@
         ...(c.mg && (c.mg[0] <= 1 || c.mg[1] <= 1) ? [`<span class="tag bad">${c.mg[0] <= 1 ? "아들" : "딸"} 배정 가능 중학교 ${Math.min(...c.mg)}곳</span>`] : []),
         ...(c.risk_n ? [`<span class="tag bad">위험 신호 ${c.risk_n}</span>`] : []),
         ...(c.up_n ? [`<span class="tag good">상승 신호 ${c.up_n}</span>`] : []),
-      ].join("");
+      ].slice(0, 6).join("");   // 카드가 길어지지 않게 태그는 6개까지만 (나머지는 단지를 눌러 상세에서)
       return `<div class="card ${state.selected === c.id ? "sel" : ""}" data-id="${c.id}">
         <div><h3>${esc(c.name)}</h3><div class="sub">${esc(c.umd)} · ${c.households ? c.households.toLocaleString() + "세대 · " : ""}${c.built}년 · ${lineBadges(c.station.lines)}${esc(c.station.name)} ${c.station.walk_min}분</div></div>
         <div class="price">${rep ? fmtPrice(rep.latest) : "-"}<small>${rep ? "전용 " + rep.area + "㎡ 실거래" : ""} ${fmtChg(c.chg_1y)}</small></div>
