@@ -63,6 +63,7 @@
     center: [126.9515, 37.5505], zoom: 14.6, attributionControl: false, maxZoom: 19,
   });
   window.__app = { map, state };
+  const HOME = { center: [126.9515, 37.5505], zoom: 13.6 };   // 뒤로가기 2번 눌렀을 때 돌아갈 화면
   let mapReady = false;
   map.once("load", () => { mapReady = true; });
   map.once("error", (e) => { if (!map.isStyleLoaded()) { console.warn("basemap fallback", e && e.error); map.setStyle(OSM_RASTER); } });
@@ -832,7 +833,21 @@
 
   // ---------- sheet ----------
   const sheet = $("#sheet");
-  function setSheet(s) { sheet.dataset.state = s; }
+  function setSheet(s) { sheet.dataset.state = s; syncMapSize(); }
+  // 폰에서는 시트가 지도를 덮어버려서, 시트 높이만큼 지도 아래를 잘라 준다 (지도는 최소 38% 유지)
+  let mapSizeTimer = null;
+  function syncMapSize() {
+    const el = $("#map");
+    if (innerWidth >= 900) { el.style.bottom = "0px"; return; }
+    // 전환 중에는 실제 높이가 중간값이라, 상태에서 목표 높이를 바로 계산한다 (full 이어도 지도 38% 는 남긴다)
+    const st = sheet.dataset.state;
+    const h = st === "full" ? innerHeight * 0.62 : st === "half" ? innerHeight * 0.52 : 156;
+    el.style.bottom = Math.round(h) + "px";
+    clearTimeout(mapSizeTimer);
+    mapSizeTimer = setTimeout(() => map.resize(), 300);   // 시트 전환(0.28s) 끝난 뒤 한 번 더
+    map.resize();
+  }
+  addEventListener("resize", syncMapSize);
   (function dragInit() {
     const grip = $("#grip"); let y0 = 0, h0 = 0, moved = false;
     grip.addEventListener("pointerdown", (e) => { y0 = e.clientY; h0 = sheet.getBoundingClientRect().height; moved = false; sheet.classList.add("dragging"); grip.setPointerCapture(e.pointerId); });
@@ -843,8 +858,12 @@
       if (!moved) { setSheet(sheet.dataset.state === "peek" ? "half" : sheet.dataset.state === "half" ? "full" : "peek"); return; }
       const cands = { peek: 156, half: innerHeight * 0.52, full: innerHeight - 20 };
       setSheet(Object.keys(cands).sort((a, b) => Math.abs(cands[a] - h) - Math.abs(cands[b] - h))[0]);
+      syncMapSize();
     };
     grip.addEventListener("pointerup", end); grip.addEventListener("pointercancel", end);
+    // 리스트 상단(단지 개수 줄)을 눌러도 시트 크기가 바뀌게 (손잡이가 얇아서 누르기 어렵다는 요청)
+    const cycle = () => setSheet(sheet.dataset.state === "peek" ? "half" : sheet.dataset.state === "half" ? "full" : "peek");
+    $$(".list-head").forEach((el) => el.addEventListener("click", cycle));
   })();
 
   // ---------- controls ----------
@@ -853,6 +872,38 @@
     else { state.sort = state.sort === b.dataset.sort ? null : b.dataset.sort; $$("[data-sort]").forEach((x) => x.classList.toggle("on", x.dataset.sort === state.sort)); }
     renderMarkers(); renderList();
   }));
+  // 뒤로가기: 한 번에 앱이 꺼지지 않게 단계를 둔다 (1번 열린 것 닫기 -> 2번 홈 화면 -> 3번 종료)
+  let backStage = 0;
+  function goHome() {
+    closeDetail();
+    state.q = ""; $("#q").value = "";
+    state.commute = null; if ($("#commuteChip")) updateCommuteChip();
+    state.budget = null; state.sort = null;
+    $$("[data-sort]").forEach((x) => x.classList.remove("on"));
+    $$(".modal").forEach((m) => { m.hidden = true; });
+    map.flyTo({ center: HOME.center, zoom: HOME.zoom });
+    setSheet(innerWidth < 900 ? "half" : "full");
+    renderMarkers(); renderList();
+    toast("처음 화면으로 돌아왔어요. 한 번 더 누르면 닫혀요.");
+  }
+  history.replaceState({ jk: 0 }, "");
+  history.pushState({ jk: 1 }, "");
+  history.pushState({ jk: 2 }, "");
+  addEventListener("popstate", () => {
+    if (backStage === 0) {
+      backStage = 1;
+      const openModal = $$(".modal").find((m) => !m.hidden);
+      if (openModal) openModal.hidden = true;
+      else if (!$("#detailView").hidden) closeDetail();
+      else if (sheet.dataset.state === "full") setSheet("half");
+      else toast("한 번 더 누르면 처음 화면, 세 번이면 닫혀요.");
+    } else if (backStage === 1) {
+      backStage = 2;
+      goHome();
+    }
+    // backStage 2 에서 또 누르면 남은 기록이 없어 그대로 앱이 닫힌다
+  });
+
   $("#q").addEventListener("input", (e) => { state.q = e.target.value.trim(); renderMarkers(); renderList(); if (state.q) setSheet("half"); });
   $("#q").addEventListener("keydown", (e) => { if (e.key === "Enter") { const f = visibleComplexes()[0]; if (f) openDetail(f.id, "half"); e.target.blur(); } });
   $$(".lyr[data-layer]").forEach((b) => b.addEventListener("click", () => { state.layers[b.dataset.layer] = !state.layers[b.dataset.layer]; applyLayers(); }));
@@ -879,7 +930,7 @@
       $("#gapChip").hidden = !complexes.some((c) => c.jeonse_ratio);
       const gus = [...new Set(complexes.map((c) => c.sgg).filter(Boolean))].sort();
       $("#budgetGu").innerHTML = `<option value="">서울 전체</option>` + gus.map((g) => `<option value="${esc(g)}">${esc(g)}</option>`).join("");
-      if (meta.center) map.jumpTo({ center: meta.center, zoom: meta.mode === "real" ? 13.6 : 14.6 });
+      if (meta.center) { HOME.center = meta.center; HOME.zoom = meta.mode === "real" ? 13.6 : 14.6; map.jumpTo({ center: HOME.center, zoom: HOME.zoom }); }
       const deep = new URLSearchParams(location.search).get("id");   // 정적 페이지 -> 앱 딥링크
       if (deep && complexes.some((c) => c.id === deep)) setTimeout(() => openDetail(deep, "half"), 400);
       const cmq = new URLSearchParams(location.search).get("cm");   // 공유 링크: ?cm=강남,여의도,40
