@@ -834,7 +834,11 @@
 
   // ---------- sheet ----------
   const sheet = $("#sheet");
-  function setSheet(s) { sheet.dataset.state = s; syncMapSize(); }
+  function setSheet(s) {
+    sheet.dataset.state = s; syncMapSize();
+    // 폰에서 리스트를 펼쳤을 때만 '지도 보기' 버튼을 띄운다
+    const mb = $("#mapBtn"); if (mb) mb.hidden = !(innerWidth < 900 && s !== "peek");
+  }
   // 폰에서는 시트가 지도를 덮어버려서, 시트 높이만큼 지도 아래를 잘라 준다 (지도는 최소 38% 유지)
   let mapSizeTimer = null;
   function syncMapSize() {
@@ -849,6 +853,7 @@
     map.resize();
   }
   addEventListener("resize", syncMapSize);
+  $("#mapBtn") && $("#mapBtn").addEventListener("click", () => { $("#sheetBody").scrollTop = 0; setSheet("peek"); });
   (function dragInit() {
     const grip = $("#grip"); let y0 = 0, h0 = 0, moved = false;
     grip.addEventListener("pointerdown", (e) => { y0 = e.clientY; h0 = sheet.getBoundingClientRect().height; moved = false; sheet.classList.add("dragging"); grip.setPointerCapture(e.pointerId); });
