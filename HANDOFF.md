@@ -355,6 +355,13 @@
     개선 후보: 임시 폴더를 Defender 제외 경로로 옮기거나 gh-pages 를 증분 커밋으로 바꾸기.
 
 
+- 2026-09-18 (39차): **애드센스 코드 삽입** (ca-pub-2024521419046920). index.html, generate_content shell, generate_pages 2개 템플릿 head 에 삽입(admin/feed 제외).
+  `app/ads.txt` = `google.com, pub-2024521419046920, DIRECT, f08c47fec0942fa0`. 이용약관 `terms.html` 도 추가(09-17). 라이브 확인 완료. v72.
+  - **GitHub 계정명 변경**: `mtmt88087044-pixel` -> **`mtmt20`** (토큰 /user 조회로 확인, 같은 저장소, 예전 주소는 리디렉트됨).
+    deploy_github_pages.py 기본 owner 를 mtmt20 으로 수정. Pages cname jipkokmap.kr 그대로 정상.
+  - 사용자 작업 대기: 애드센스 화면에서 "코드 삽입함" 체크 -> 확인 -> 검토 요청.
+
+
 ## 진행 중 / 남은 작업
 0. 활용신청 3건 완료 시: 응급실(소아)·미세먼지(동/측정소)·스쿨존 레이어. 애드센스 승인용 콘텐츠(사이트 소개·지표 설명·구별 랭킹 글) + 쿠팡 파트너스 '이사 준비' 페이지.
 0. 구글 서치콘솔 사이트맵 상태 재확인(며칠 뒤 자동 재시도됨). LOCALDATA 복구 시 유흥주점·단란주점·숙박업 수집 붙이기. 동 단위 인구는 KOSIS 키 받으면 진행.
