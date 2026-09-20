@@ -315,6 +315,11 @@ button { font: inherit; color: inherit; cursor: pointer; border: 0; background: 
 /* 조작을 단순하게: 자주 안 쓰는 칩·레이어는 '더보기' 를 누를 때만 보인다 */
 body:not(.more-chips) .chips [data-more="1"] { display: none; }
 body:not(.more-lyr) .layers [data-more="1"] { display: none; }
+/* 폰: 버튼을 다 펼치면 세로로 넘쳐 리스트 밑에 깔려 안 눌렸다. 2열로 접고 리스트 위에서 끊는다 */
+@media (max-width: 899px) {
+  .layers { max-height: calc(100vh - var(--sheet-peek) - 128px); flex-wrap: wrap-reverse; align-content: flex-start; }
+  body.more-lyr .layers { display: grid; grid-template-columns: repeat(2, 52px); grid-auto-rows: 52px; justify-items: end; }
+}
 #moreChip.on, #moreLyr.on { color: var(--brand); border-color: var(--brand); }
 @media (min-width: 900px) {
   /* 넓은 화면에서는 전부 보여준다 */
