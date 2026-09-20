@@ -84,7 +84,7 @@ button { font: inherit; color: inherit; cursor: pointer; border: 0; background: 
 .mk {
   background: var(--bg); color: var(--fg); border-radius: 12px; padding: 5px 9px 4px;
   box-shadow: 0 3px 10px rgba(15, 23, 42, .25); font-size: 12px; line-height: 1.15; white-space: nowrap;
-  border: 1.5px solid transparent; cursor: pointer; text-align: center;
+  border: 1.5px solid transparent; cursor: pointer; text-align: center; z-index: 2;
 }
 .mk::after {
   content: ""; position: absolute; left: 50%; bottom: -6px; width: 10px; height: 10px;
@@ -96,7 +96,7 @@ button { font: inherit; color: inherit; cursor: pointer; border: 0; background: 
 .mk .chg { font-weight: 700; }
 .mk .chg.up { color: var(--up); }
 .mk .chg.down { color: var(--down); }
-.mk.sel { border-color: var(--brand); background: var(--brand); color: #fff; }
+.mk.sel { z-index: 5; border-color: var(--brand); background: var(--brand); color: #fff; }
 .mk.sel small, .mk.sel .chg { color: #fff; }
 .mk.dim { opacity: .35; }
 .mk.compact { padding: 3px 7px 2px; border-radius: 9px; }
@@ -104,7 +104,7 @@ button { font: inherit; color: inherit; cursor: pointer; border: 0; background: 
 .mk.compact small { font-size: 9.5px; }
 .mk.auction { background: #111827; color: #fbbf24; border-radius: 999px; padding: 4px 9px; font-weight: 800; }
 .mk.auction::after { background: #111827; }
-.mk.school { background: transparent; box-shadow: none; padding: 0; font-weight: 800; font-size: 12px; color: #7c3aed; text-shadow: 0 0 4px var(--bg), 0 0 4px var(--bg); pointer-events: none; }
+.mk.school { z-index: 6; background: transparent; box-shadow: none; padding: 0; font-weight: 800; font-size: 12px; color: #7c3aed; text-shadow: 0 0 4px var(--bg), 0 0 4px var(--bg); pointer-events: none; }
 .mk.school::after { display: none; }
 
 /* ---------- bottom sheet ---------- */
@@ -168,7 +168,7 @@ button { font: inherit; color: inherit; cursor: pointer; border: 0; background: 
 .gapbar .pin.a { background: var(--up); }
 .gapbar .lbl { display: flex; justify-content: space-between; font-size: 12px; color: var(--muted); }
 .gapbar .lbl b { color: var(--fg); }
-.chart { width: 100%; height: 150px; display: block; }
+.chart { width: 100%; height: auto; display: block; }
 .jrow { clear: both; display: flex; flex-wrap: wrap; gap: 6px 14px; margin-top: 10px; padding: 9px 12px; border-radius: 12px; background: var(--bg); font-size: 13px; }
 .jrow b { font-weight: 800; }
 .plist .info i { background: rgba(37, 99, 235, .12); color: var(--brand); }

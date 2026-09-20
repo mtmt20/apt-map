@@ -122,10 +122,11 @@
                "circle-color": ["case", ["get", "transfer"], "#fff", ["get", "color"]],
                "circle-stroke-color": ["case", ["get", "transfer"], "#1f2937", "#fff"],
                "circle-stroke-width": ["interpolate", ["linear"], ["zoom"], 11, 1.5, 17, 3] } });
-    map.addLayer({ id: "sub-label", type: "symbol", source: "stations", minzoom: 12,
+    map.addLayer({ id: "sub-label", type: "symbol", source: "stations", minzoom: 11.6,
       layout: { "text-field": ["format", ["get", "name"], { "font-scale": 1 }, "\n", {}, ["get", "line"], { "font-scale": 0.72 }], "text-font": ["Noto Sans Bold"],
-                "text-size": ["interpolate", ["linear"], ["zoom"], 12, 12, 14, 15, 17, 19],
-                "text-offset": [0, 1.0], "text-anchor": "top", "text-allow-overlap": false, "text-optional": true },
+                "text-size": ["interpolate", ["linear"], ["zoom"], 11.6, 12, 14, 15.5, 17, 19],
+                "text-offset": [0, 1.0], "text-anchor": "top", "text-allow-overlap": false, "text-optional": true,
+                "symbol-sort-key": ["case", ["get", "transfer"], 0, 1] },
       paint: { "text-color": ["case", ["get", "transfer"], "#111827", ["get", "color"]], "text-halo-color": "#fff", "text-halo-width": 2.2 } });
 
     // 도로: 큰길은 서울 전체 파일, 골목/동네길은 화면에 걸친 격자 타일만 로드
@@ -248,7 +249,11 @@
   function lazySource(id, url) {
     if (lazyLoaded[id] || !map.getSource(id)) return;
     lazyLoaded[id] = true;
-    fetch(url).then((r) => r.json()).then((gj) => map.getSource(id).setData(gj)).catch(() => { lazyLoaded[id] = false; });
+    fetch(url).then((r) => r.json()).then((gj) => {
+      map.getSource(id).setData(gj);
+      // 역 좌표를 따로 들고 있다가, 아파트 핀이 역 이름을 가리지 않게 자리를 비켜준다
+      if (id === "stations") { state.stationPts = gj.features.map((f) => f.geometry.coordinates); renderMarkers(); }
+    }).catch(() => { lazyLoaded[id] = false; });
   }
   const LINE_COLORS = { "1호선": "#004A85", "2호선": "#00A23F", "3호선": "#ED6C00", "4호선": "#009BCE", "5호선": "#794698", "6호선": "#7C4932",
     "7호선": "#6E7E31", "8호선": "#D11D70", "9호선": "#A49D87", "신분당선": "#B81B30", "경의중앙선": "#6AC2B3", "경춘선": "#007A62",
@@ -258,7 +263,7 @@
   function applyLayers() {
     const v = (ids, on) => ids.forEach((id) => map.getLayer(id) && map.setLayoutProperty(id, "visibility", on ? "visible" : "none"));
     v(["school-fill", "school-line"], state.layers.school);
-    state.schoolMarkers.forEach((m) => m.getElement().style.display = state.layers.school && map.getZoom() >= 13.8 ? "" : "none");
+    state.schoolMarkers.forEach((m) => m.getElement().style.display = state.layers.school && map.getZoom() >= 13.2 ? "" : "none");
     v(["sub-line-case", "sub-line", "sub-dot", "sub-label", "fut-line", "fut-line-label", "fut-dot", "fut-label"], state.layers.subway);
     if (state.layers.subway) { lazySource("subway-lines", "data/subway_lines.geojson"); lazySource("stations", "data/stations.geojson"); lazySource("future-rail", "data/future_rail.geojson"); }
     v(["road-walk", "road-alley", "road-minor", "road-major", "road-major-far"], state.layers.road);
@@ -290,7 +295,11 @@
       ((b.id === state.selected) - (a.id === state.selected)) ||
       ((areaMatch(b) && matchQ(b)) - (areaMatch(a) && matchQ(a))) ||
       (b.trade_count_1y - a.trade_count_1y));
+    // 학교·지하철역 자리를 먼저 잡아둔다. 아파트 핀은 이 자리를 피해서 그려진다 (학교·역 우선)
     const boxes = [];
+    const keepOut = (p, w, h, up) => { if (p.x > -w && p.x < vw + w && p.y > -h && p.y < vh + h) boxes.push({ x: p.x - w / 2, y: p.y - up, x2: p.x + w / 2, y2: p.y - up + h }); };
+    if (state.layers.subway && state.stationPts && z >= 12) state.stationPts.forEach((s) => keepOut(map.project(s), 92, 52, 12));
+    if (state.layers.school && z >= 13.2) state.schoolMarkers.forEach((m) => keepOut(map.project(m.getLngLat()), 104, 30, 15));
     order.forEach((c) => {
       const rep = repArea(c, state.area);
       let m = state.markers[c.id];
@@ -515,29 +524,50 @@
     const labels = keys.map((k, i) => { const [x, y] = pt(i, 128); return `<text x="${x}" y="${y}" font-size="10" fill="var(--muted)" text-anchor="middle" dominant-baseline="middle">${esc(k)}</text>`; }).join("");
     return `<svg viewBox="0 0 184 176" style="width:184px;height:176px;flex:0 0 auto">${grid}<polygon points="${poly}" fill="rgba(124,58,237,.25)" stroke="#7c3aed" stroke-width="2"/>${labels}</svg>`;
   }
+  // 세로축 = 실제 거래가(억), 가로축 = 연·월. 눈금과 격자선을 그려 "얼마인지"가 바로 읽히게 한다.
   function chartSVG(trades, areaSel) {
     const pts = trades.filter((t) => !areaSel || bucket(t.area) === areaSel).map((t) => ({ d: new Date(t.date), v: t.price / (t.area / PY), p: t.price }));
     if (pts.length < 2) return `<div class="muted" style="font-size:13px">거래가 적어 추세를 그릴 수 없어요.</div>`;
-    const W = 340, H = 150, L = 8, R = 8, T = 12, B = 22;
-    const xs = pts.map((p) => p.d.getTime()), vs = pts.map((p) => p.v);
-    const x0 = Math.min(...xs), x1 = Math.max(...xs), v0 = Math.min(...vs) * 0.97, v1 = Math.max(...vs) * 1.03;
-    const X = (x) => L + (x - x0) / (x1 - x0 || 1) * (W - L - R), Y = (v) => T + (1 - (v - v0) / (v1 - v0 || 1)) * (H - T - B);
+    const W = 340, H = 196, L = 46, R = 10, T = 14, B = 34;
+    const xs = pts.map((p) => p.d.getTime()), ps = pts.map((p) => p.p);
+    const x0 = Math.min(...xs), x1 = Math.max(...xs);
+    const pad = Math.max((Math.max(...ps) - Math.min(...ps)) * 0.15, Math.max(...ps) * 0.03);
+    const y0 = Math.min(...ps) - pad, y1 = Math.max(...ps) + pad;
+    const X = (x) => L + (x - x0) / (x1 - x0 || 1) * (W - L - R), Y = (v) => T + (1 - (v - y0) / (y1 - y0 || 1)) * (H - T - B);
+    // 가로 격자: 5천만원 단위에서 시작해 눈금이 3~5개가 되게 키운다
+    const span = y1 - y0;
+    const step = [1000, 2500, 5000, 10000, 20000, 50000, 100000].find((s) => span / s <= 5) || 200000;
+    const grid = [];
+    for (let v = Math.ceil(y0 / step) * step; v <= y1; v += step) {
+      const y = Y(v);
+      grid.push(`<line x1="${L}" y1="${y.toFixed(1)}" x2="${W - R}" y2="${y.toFixed(1)}" stroke="#e2e8f0" stroke-width="1"/>`);
+      grid.push(`<text x="${L - 6}" y="${(y + 4).toFixed(1)}" font-size="11" fill="#64748b" text-anchor="end">${fmtPrice(v)}</text>`);
+    }
+    // 세로 격자: 첫 달·끝 달 포함 최대 4개 지점
+    const lab = (d) => `${String(d.getFullYear()).slice(2)}.${d.getMonth() + 1}`;
+    const nTick = Math.min(4, Math.max(2, Math.round((x1 - x0) / (1000 * 3600 * 24 * 120))));
+    for (let i = 0; i < nTick; i++) {
+      const t = x0 + (x1 - x0) * (i / (nTick - 1)), x = X(t);
+      grid.push(`<line x1="${x.toFixed(1)}" y1="${T}" x2="${x.toFixed(1)}" y2="${H - B}" stroke="#f1f5f9" stroke-width="1"/>`);
+      grid.push(`<text x="${x.toFixed(1)}" y="${H - B + 16}" font-size="11" fill="#64748b" text-anchor="${i === 0 ? "start" : i === nTick - 1 ? "end" : "middle"}">${lab(new Date(t))}</text>`);
+    }
     // 월별 중앙값 선
     const byM = {};
-    pts.forEach((p) => { const k = p.d.getFullYear() * 12 + p.d.getMonth(); (byM[k] = byM[k] || []).push(p.v); });
+    pts.forEach((p) => { const k = p.d.getFullYear() * 12 + p.d.getMonth(); (byM[k] = byM[k] || []).push(p.p); });
     const line = Object.keys(byM).map(Number).sort((a, b) => a - b).map((k) => {
       const arr = byM[k].sort((a, b) => a - b); const med = arr[Math.floor(arr.length / 2)];
       return [X(new Date(Math.floor(k / 12), k % 12, 15).getTime()), Y(med)];
     });
     const path = line.map((p, i) => (i ? "L" : "M") + p[0].toFixed(1) + " " + p[1].toFixed(1)).join(" ");
-    const dots = pts.map((p) => `<circle cx="${X(p.d.getTime()).toFixed(1)}" cy="${Y(p.v).toFixed(1)}" r="3" fill="#2563eb" opacity=".45"><title>${p.d.toISOString().slice(0, 10)} ${fmtPrice(p.p)} (평당 ${Math.round(p.v).toLocaleString()}만)</title></circle>`).join("");
-    const first = pts[0].d, last = pts[pts.length - 1].d;
-    const lab = (d) => `${String(d.getFullYear()).slice(2)}.${d.getMonth() + 1}`;
-    return `<svg class="chart" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">
+    const dots = pts.map((p) => `<circle cx="${X(p.d.getTime()).toFixed(1)}" cy="${Y(p.p).toFixed(1)}" r="3" fill="#2563eb" opacity=".45"><title>${p.d.toISOString().slice(0, 10)} ${fmtPrice(p.p)} (평당 ${Math.round(p.v).toLocaleString()}만)</title></circle>`).join("");
+    const last = pts.reduce((a, b) => (a.d > b.d ? a : b));
+    return `<svg class="chart" viewBox="0 0 ${W} ${H}">${grid.join("")}
+      <line x1="${L}" y1="${T}" x2="${L}" y2="${H - B}" stroke="#cbd5e1" stroke-width="1"/>
+      <line x1="${L}" y1="${H - B}" x2="${W - R}" y2="${H - B}" stroke="#cbd5e1" stroke-width="1"/>
       <path d="${path}" fill="none" stroke="#2563eb" stroke-width="2.5" stroke-linejoin="round"/>${dots}
-      <text x="${L}" y="${H - 6}" font-size="11" fill="#94a3b8">${lab(first)}</text>
-      <text x="${W - R}" y="${H - 6}" font-size="11" fill="#94a3b8" text-anchor="end">${lab(last)}</text>
-      <text x="${W - R}" y="${T}" font-size="11" fill="#94a3b8" text-anchor="end">평당 ${Math.round(v1 / 1.03).toLocaleString()}만</text></svg>`;
+      <circle cx="${X(last.d.getTime()).toFixed(1)}" cy="${Y(last.p).toFixed(1)}" r="4.5" fill="#2563eb"/>
+      <text x="${W - R}" y="${H - 6}" font-size="10.5" fill="#94a3b8" text-anchor="end">점 하나 = 실거래 1건 · 선은 월별 중앙값</text>
+      <text x="${L}" y="${H - 6}" font-size="10.5" fill="#94a3b8">최근 평당 ${Math.round(last.v).toLocaleString()}만</text></svg>`;
   }
 
   function openDetail(id, sheetState) {
