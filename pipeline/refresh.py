@@ -55,6 +55,7 @@ def main():
         step("rent " + name, ["pipeline/fetch_rent.py", "--lawd", code, "--months", "12"])
         if a.full:
             step("kapt " + name, ["pipeline/fetch_kapt.py", "--sgg", code])
+    step("auction", ["pipeline/fetch_auction.py"])
     step("geocode", ["pipeline/geocode.py"])
     if not a.skip_poi:
         step("kakao poi", ["pipeline/fetch_kakao_poi.py"])

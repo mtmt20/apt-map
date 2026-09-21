@@ -527,6 +527,41 @@ def months_ago(d, n):
     return dt.date(y, m, 1)
 
 
+def load_auctions(cs):
+    """fetch_auction.py 가 받아둔 온비드 공매 물건을 단지에 붙인다.
+
+    주소가 '서울특별시 노원구 상계동 1309 한일유앤아이아파트 제103동 제1704호' 형태라
+    법정동 + 지번으로 단지를 찾는다. 같은 지번에 단지가 여럿이면 이름이 겹치는 쪽을 고른다.
+    파일이 없으면 데모 경매 데이터로 돌아간다(키 없이 화면만 볼 때).
+    """
+    p = os.path.join(RAW, "auction_onbid.json")
+    if not os.path.exists(p):
+        return demo_data.auctions()
+    rows = json.load(open(p, encoding="utf-8"))
+    by_key = {}
+    for c in cs:
+        by_key.setdefault((c["umd"], str(c["jibun"])), []).append(c)
+    out = []
+    for r in rows:
+        if not r.get("umd") or not r.get("area"):
+            continue
+        m = re.search(r"{}\s+(\d+(?:-\d+)?)".format(re.escape(r["umd"])), r.get("addr", ""))
+        cands = by_key.get((r["umd"], m.group(1)), []) if m else []
+        if len(cands) > 1:
+            nm = re.sub(r"[^가-힣A-Za-z]", "", r.get("addr", ""))
+            cands = sorted(cands, key=lambda c: -sum(1 for ch in set(c["name"]) if ch in nm))
+        if not cands:
+            continue
+        out.append({
+            "case": r["case"], "complex_id": cands[0]["id"], "unit": r.get("unit", ""),
+            "area": r["area"], "appraisal": r["appraisal"] // 10000, "min_price": r["min_price"] // 10000,
+            "min_rate": r.get("min_rate"), "fail_count": r.get("fail_count", 0),
+            "sale_date": r.get("bid_end", ""), "court": "{} · {}".format(r.get("source", "온비드"), r.get("kind", "")),
+            "use": r.get("use", ""), "status": r.get("status", ""),
+        })
+    return out
+
+
 FUTURE_RAIL = {"lines": None, "stations": []}   # fetch_future_rail.py 결과 (main 에서 채움)
 
 
@@ -1084,7 +1119,7 @@ def main():
             c["cons"].append("주변 교과학원 적음 (1km 내 {}개)".format(v))
             c["cons"] = c["cons"][:4]
 
-    aucs = demo_data.auctions()
+    aucs = load_auctions(cs)
     by_id = {c["id"]: c for c in cs}
     for a in aucs:
         c = by_id.get(a["complex_id"])
@@ -1093,6 +1128,9 @@ def main():
             a["discount_pct"] = round((1 - a["min_price"] / a["appraisal"]) * 100, 1)
             recent = [t for t in c["trades"] if abs(t["area"] - a["area"]) < 3]
             a["recent_trade"] = recent[-1]["price"] if recent else None
+            # 시세 대비 최저입찰가. 경매 앱은 시세를 모르고 부동산 앱은 경매를 모른다 - 이게 우리 자리다.
+            if a["recent_trade"]:
+                a["vs_trade_pct"] = round((1 - a["min_price"] / a["recent_trade"]) * 100, 1)
             c.setdefault("auctions", []).append(a["case"])
 
     os.makedirs(OUT, exist_ok=True)

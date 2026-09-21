@@ -208,7 +208,7 @@
     // 경매
     state.auctions.forEach((a) => {
       const el = document.createElement("div"); el.className = "mk auction";
-      el.innerHTML = `⚖️ ${fmtPrice(a.min_price)} <small style="color:#fde68a">${a.fail_count}회 유찰</small>`;
+      el.innerHTML = `⚖️ ${fmtPrice(a.min_price)} <small style="color:#fde68a">${a.vs_trade_pct >= 5 ? "시세 -" + Math.round(a.vs_trade_pct) + "%" : a.fail_count ? a.fail_count + "회 유찰" : "공매"}</small>`;
       el.addEventListener("click", (ev) => { ev.stopPropagation(); openDetail(a.complex_id, "half"); });
       const m = new maplibregl.Marker({ element: el, anchor: "bottom", offset: [0, -58] }).setLngLat([a.lng, a.lat]);
       state.aucMarkers.push(m);
@@ -677,11 +677,13 @@
           <div><div class="k">공원 (700m)</div><div class="v">${c.life.park}곳</div></div>
           <div><div class="k">도서관 (1km)</div><div class="v">${c.life.library}곳</div></div></div>
           <div class="note">카카오 지도 등록 기준 개수. 소아과는 키워드 검색이라 오차가 있어요.</div></div>` : ""}
-        ${aucs.length ? `<div class="section"><h4>경매 물건 <span class="r muted">${esc(aucs[0].court)}</span></h4>
-          ${aucs.map((a) => `<div class="auc"><div><b>${esc(a.unit)} · ${a.area}㎡</b><div class="s">${esc(a.case)} · 매각 ${a.sale_date} · ${a.fail_count}회 유찰</div>
-            <div class="s">감정가 ${fmtPrice(a.appraisal)} → 최저가 <b>${fmtPrice(a.min_price)}</b>${a.recent_trade ? " · 같은 평형 실거래 " + fmtPrice(a.recent_trade) : ""}</div></div>
+        ${aucs.length ? `<div class="section"><h4>공매 물건 <span class="r muted">${esc(aucs[0].court)}</span></h4>
+          ${aucs.map((a) => `<div class="auc"><div><b>${esc(a.unit)} · ${a.area}㎡${a.use ? " · " + esc(a.use) : ""}</b>
+            <div class="s">${esc(a.case)} · 입찰 마감 ${a.sale_date}${a.fail_count ? " · " + a.fail_count + "회 유찰" : ""}${a.status ? " · " + esc(a.status) : ""}</div>
+            <div class="s">감정가 ${fmtPrice(a.appraisal)} → 최저가 <b>${fmtPrice(a.min_price)}</b>${a.recent_trade ? " · 같은 평형 실거래 " + fmtPrice(a.recent_trade) : ""}</div>
+            ${a.vs_trade_pct != null ? `<div class="s"><b class="${a.vs_trade_pct >= 20 ? "up" : ""}">실거래가보다 ${a.vs_trade_pct >= 0 ? a.vs_trade_pct + "% 낮음" : (-a.vs_trade_pct) + "% 높음"}</b></div>` : ""}</div>
             <div class="pct">-${a.discount_pct}%</div></div>`).join("")}
-          <div class="note">경매는 권리분석(임차인·선순위 등)이 필수예요. 최저가만 보고 판단하지 마세요.</div></div>` : ""}
+          <div class="note">한국자산관리공사 온비드 공매 자료입니다. 법원경매는 포함되지 않습니다. 권리분석(임차인·선순위 등)이 필수이고, 최저가만 보고 판단하면 안 됩니다. 입찰은 <a href="https://www.onbid.co.kr" target="_blank" rel="noopener noreferrer">온비드</a>에서 합니다.</div></div>` : ""}
         ${(window.APT_CONFIG && window.APT_CONFIG.COURT_LINK) ? `<div class="section"><h4>경매로 나온 물건 확인</h4>
           <div class="courtbox">
             <div class="cb-addr"><span>${esc(c.addr)}</span><button class="cb-copy" data-addr="${esc(c.addr)}">주소 복사</button></div>
