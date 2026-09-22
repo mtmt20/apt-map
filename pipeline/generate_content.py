@@ -11,6 +11,7 @@ import html
 import json
 import os
 import re
+import urllib.parse
 import statistics
 import sys
 
@@ -24,6 +25,7 @@ from content_fund import FUND_BODY, FUND_JS  # noqa: E402
 import content_school_budget  # noqa: E402
 import content_future_rail  # noqa: E402
 import content_academy_fee  # noqa: E402
+import content_dong  # noqa: E402
 load_env()
 BASE = (os.environ.get("SITE_BASE") or "https://jipkokmap.kr").rstrip("/")
 CONTACT = os.environ.get("CONTACT_EMAIL", "")
@@ -290,6 +292,11 @@ def rank_pages(cs):
         body.append("<div class=\"card\"><p>{}</p><p>{}에서 실거래가 있는 단지는 {}개이고, 평당가 중앙값은 {:,}만원입니다. 초등학교가 300m 안에 있는 초품아 단지는 {}개, 역보다 30m 이상 높은 언덕 단지는 {}개, 최근 상승 신호가 잡힌 단지는 {}개입니다. 아이 키우기 점수 중앙값은 {}점입니다.</p></div>".format(
             esc(GU_INTRO.get(gu, "")), esc(gu), len(members), med, chop, hill, up, int(kmed)))
         active = [c for c in members if c["trade_count_1y"] >= 3]
+        dongs = sorted({c["umd"] for c in members if c.get("umd")})
+        if dongs:
+            body.append('<div class="card"><p style="margin:0 0 6px"><b>동네별로 보기</b> — 같은 구 안에서도 동마다 시세와 학군이 다릅니다.</p><div class="tags">{}</div></div>'.format(
+                "".join('<a class="tag" href="../dong/{}.html" style="font-size:13px;padding:6px 10px">{}</a>'.format(
+                    urllib.parse.quote("{}-{}".format(gu, d)), esc(d)) for d in dongs)))
         body.append("<h2>👶 아이 키우기 점수 상위 10</h2><div class=\"card\">" + rank_table(sorted([c for c in active if c.get("kid")], key=lambda c: -c["kid"]["score"])[:10],
                     [("단지", link), ("점수", lambda c: "<b>{}</b>".format(c["kid"]["score"])), ("대표 실거래", rep_price), ("배정 초등", lambda c: "{} {}분".format(esc(c["school"]["elem"]), c["school"]["elem_walk_min"]))]) + "</div>")
         body.append("<h2>🎓 학군 지수 상위 10</h2><div class=\"card\">" + rank_table(sorted([c for c in active if c.get("edu_score") is not None], key=lambda c: -c["edu_score"])[:10],
@@ -309,6 +316,7 @@ def rank_pages(cs):
     body.append('<div class="card"><p style="margin:0"><b>📚 <a href="academy-fee.html">서울 동네별 학원비</a></b> — 학군은 좋으면서 학원비가 싼 단지를 정리했습니다. 기존 앱에 없는 지표입니다.</p></div>')
     body.append('<div class="card"><p style="margin:0"><b>🚧 <a href="future-rail.html">공사 중 지하철 예정역 도보권 아파트</a></b> — 동북선·월곶판교선 예정역 근처 단지를 역별로 정리했습니다.</p></div>')
     body.append('<div class="card"><p style="margin:0"><b>💰 <a href="budget-school.html">예산별 학군지 가이드</a></b> — 내 예산으로 갈 수 있는 최고 학군을 가격 구간별로 정리했습니다.</p></div>')
+    body.append('<div class="card"><p style="margin:0"><b>🏘️ <a href="../dong/index.html">서울 동네별 아파트 시세</a></b> — 법정동 단위로 평당가·학군·학원비를 정리했습니다.</p></div>')
     body.append("<h2>구별 랭킹 보기</h2><div class=\"card\"><div class=\"tags\">" + "".join('<a class="tag" href="{}.html" style="font-size:14px;padding:8px 12px">{}</a>'.format(esc(g), esc(g)) for g in sorted(by_gu)) + "</div></div>")
     body.append("<h2>👶 서울 아이 키우기 점수 상위 30</h2><div class=\"card\">" + rank_table(sorted([c for c in active if c.get("kid")], key=lambda c: -c["kid"]["score"])[:30],
                 [("단지", link), ("구", lambda c: esc(c["sgg"])), ("점수", lambda c: "<b>{}</b>".format(c["kid"]["score"])), ("대표 실거래", rep_price)]) + "</div>")
@@ -324,6 +332,7 @@ def main():
     cdir = os.path.join(APP, "data", "c")
     cs = [json.load(open(os.path.join(cdir, f), encoding="utf-8")) for f in os.listdir(cdir) if f.endswith(".json")]
     os.makedirs(os.path.join(APP, "rank"), exist_ok=True)
+    os.makedirs(os.path.join(APP, "dong"), exist_ok=True)
     contact = esc(CONTACT) if CONTACT else "집콕맵 지도 화면의 제보 기능 또는 운영자 이메일(추후 공개)"
     pages = {
         "about.html": shell("집콕맵 소개 · 데이터 출처와 한계", "세 아이 부모가 만든 아파트 지도. 실거래·학구도·학교 통계·기피시설·지형을 공공데이터로 계산합니다.", ABOUT.format(contact=contact), "about.html"),
@@ -355,6 +364,8 @@ def main():
         "서울 동네별 학원비 · 학군 대비 학원비 싼 아파트 | 집콕맵",
         "교육청 공시 교습비로 계산한 서울 구별·단지별 월 학원비. 학군은 좋으면서 학원비가 싼 아파트 30곳을 정리했습니다.",
         content_academy_fee.page_body(cs, rank_table), "rank/academy-fee.html", og_head("og-academy-fee.png"))
+    # 동(법정동) 페이지: 사람들은 "강서구 아파트"보다 "화곡동 아파트 시세"로 검색한다.
+    pages.update(content_dong.pages(cs, shell, rank_table))
     for path, htm in pages.items():
         open(os.path.join(APP, path), "w", encoding="utf-8").write(htm)
     # 허브/콘텐츠 페이지를 sitemap-core.xml 과 RSS(네이버 서치어드바이저용)에 등록
@@ -370,6 +381,8 @@ def main():
            "<title>집콕맵 · 서울 아파트 실거래·학군·출퇴근</title><link>{}/</link>".format(BASE),
            "<description>서울 아파트 실거래가와 배정 학군, 지하철 출퇴근 시간, 예산 대비 학군 정보</description><language>ko</language>"]
     for p in sorted(pages):
+        if p.startswith("dong/") and p != "dong/index.html":
+            continue
         t = re.search(r"<title>(.*?)</title>", pages[p])
         rss.append("<item><title>{}</title><link>{}/{}</link><guid>{}/{}</guid></item>".format(
             (t.group(1) if t else p).replace("&", "&amp;"), BASE, p, BASE, p))

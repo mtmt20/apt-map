@@ -112,6 +112,28 @@ export default {
         await env.APT.put(rlKey, String(n + 1), { expirationTtl: 3700 });
         return json({ ok: true, count: list.length }, 200, h);
       }
+      // 사용자 의견(버그·불편·요청). 가격 제보(/reports)와 달리 자유 문장 한 줄이다.
+      if (path === "/feedback" && req.method === "POST") {
+        const hour = Math.floor(Date.now() / 3600000);
+        const rlKey = `fbrl:${ip}:${hour}`;
+        const n = parseInt((await env.APT.get(rlKey)) || "0", 10);
+        if (n >= 5) return json({ error: "too many" }, 429, h);
+        const body = await readJson(req);
+        if (!body) return json({ error: "bad json" }, 400, h);
+        if (body.hp) return json({ ok: true }, 200, h);                       // honeypot
+        const text = clean(body.text, 500);
+        if (!text || text.length < 2) return json({ error: "empty" }, 400, h);
+        const rec = {
+          text, kind: clean(body.kind, 20) || "기타", page: clean(body.page, 120),
+          contact: clean(body.contact, 80), mobile: !!body.mobile,
+          date: kstDay(Date.now()), ts: Date.now(), iph: await sha(ip),
+        };
+        const list = (await env.APT.get("feedback", "json")) || [];
+        list.unshift(rec);
+        await env.APT.put("feedback", JSON.stringify(list.slice(0, 300)));
+        await env.APT.put(rlKey, String(n + 1), { expirationTtl: 3700 });
+        return json({ ok: true }, 200, h);
+      }
       if (path === "/recent") {
         const recent = ((await env.APT.get("recent", "json")) || []).filter((r) => (r.flags || 0) < 3 && !r.hidden);
         return json({ recent: recent.map((r) => { const o = Object.assign({}, r); delete o.iph; return o; }) }, 200, h);
@@ -185,6 +207,16 @@ export default {
             out.push(Object.assign({ date: d }, (await env.APT.get("stats:" + d, "json")) || { visit: 0, mobile: 0, pages: {}, ev: {}, ref: {} }));
           }
           return json({ days: out }, 200, h);
+        }
+        if (path === "/admin/feedback") {
+          return json({ feedback: (await env.APT.get("feedback", "json")) || [] }, 200, h);
+        }
+        if (path === "/admin/feedback/delete" && req.method === "POST") {
+          const body = await readJson(req);
+          const ts = parseInt(body.ts, 10);
+          const list = (await env.APT.get("feedback", "json")) || [];
+          await env.APT.put("feedback", JSON.stringify(list.filter((r) => r.ts !== ts)));
+          return json({ ok: true }, 200, h);
         }
         if (path === "/admin/reports") {
           return json({ recent: (await env.APT.get("recent", "json")) || [] }, 200, h);

@@ -212,6 +212,29 @@
     applyLayers();
   }
 
+  // 의견 보내기: 가격 제보와 달리 자유 문장. 익명으로 워커 KV 에 쌓이고 admin.html 에서 본다.
+  function initFeedback() {
+    const btn = $("#fbBtn"), m = $("#fbModal"), f = $("#fbForm");
+    if (!btn || !m || !f) return;
+    btn.addEventListener("click", () => { m.hidden = false; setTimeout(() => f.text.focus(), 80); });
+    $("#fbCancel").onclick = () => { m.hidden = true; };
+    m.addEventListener("click", (e) => { if (e.target === m) m.hidden = true; });
+    f.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      if (!API) { toast("아직 의견 서버가 연결되지 않았어요."); return; }
+      const body = { kind: f.kind.value, text: f.text.value.trim(), contact: f.contact.value.trim(),
+                     hp: f.hp.value, page: location.pathname + location.search, mobile: innerWidth < 900 };
+      if (body.text.length < 2) return;
+      try {
+        const r = await fetch(API + "/feedback", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+        if (!r.ok) throw new Error();
+        f.reset(); m.hidden = true;
+        toast("보내주셔서 고맙습니다. 읽고 고치겠습니다.");
+      } catch (_) { toast("전송에 실패했어요. 잠시 뒤 다시 시도해주세요."); }
+    });
+  }
+  initFeedback();
+
   const roadTiles = { loaded: new Set(), feats: [], seen: new Set(), index: null, T: 0.02 };
   function loadRoadTiles() {
     if (!state.layers.road || !map.getSource("roads") || map.getZoom() < 13.5) return;

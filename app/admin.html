@@ -12,7 +12,9 @@
 <h1>방문 통계</h1>
 <div class="card"><label>관리자 키 <input id="key" type="password" placeholder="ADMIN_KEY"></label><p><button class="btn" id="load">불러오기</button></p></div>
 <div class="card" id="stats">키를 입력하고 불러오기를 누르세요.</div>
-<h2>제보</h2>
+<h2>사용자 의견</h2>
+<div class="card" id="fb">-</div>
+<h2>가격 제보</h2>
 <div class="card" id="list">-</div>
 <h2>알림 등록</h2><div class="card" id="alerts">-</div>
 </div>
@@ -26,6 +28,26 @@
   const saved = sessionStorage.getItem("adminKey"); if (saved) $("#key").value = saved;
   $("#load").onclick = () => {
     const key = $("#key").value.trim(); sessionStorage.setItem("adminKey", key);
+    fetch(`${API}/admin/feedback?key=${encodeURIComponent(key)}`).then((r) => r.json()).then((j) => {
+      const el = document.querySelector("#fb");
+      if (j.error) { el.textContent = "권한 없음"; return; }
+      const fb = j.feedback || [];
+      if (!fb.length) { el.innerHTML = "<p class='sub'>아직 들어온 의견이 없습니다.</p>"; return; }
+      const byKind = {};
+      fb.forEach((r) => { byKind[r.kind] = (byKind[r.kind] || 0) + 1; });
+      el.innerHTML = "<p class='sub'>" + fb.length + "건 · " +
+        Object.entries(byKind).map(([k, v]) => esc(k) + " " + v).join(" · ") + "</p>" +
+        fb.map((r) => `<div style="border-top:1px solid #e2e8f0;padding:10px 0">
+          <div class="sub">${esc(r.date)} · <b>${esc(r.kind)}</b>${r.mobile ? " · 폰" : " · PC"}${r.page ? " · " + esc(r.page) : ""}</div>
+          <div style="white-space:pre-wrap;margin:4px 0">${esc(r.text)}</div>
+          ${r.contact ? `<div class="sub">답장: ${esc(r.contact)}</div>` : ""}
+          <button class="btn ghost" data-fbts="${r.ts}" style="width:auto;padding:5px 10px;font-size:12px;margin-top:4px">지우기</button>
+        </div>`).join("");
+      el.querySelectorAll("[data-fbts]").forEach((b) => b.onclick = () => {
+        fetch(`${API}/admin/feedback/delete`, { method: "POST", headers: { "content-type": "application/json" },
+          body: JSON.stringify({ key, ts: +b.dataset.fbts }) }).then(() => { b.closest("div").remove(); });
+      });
+    }).catch(() => { document.querySelector("#fb").textContent = "불러오기 실패"; });
     fetch(`${API}/admin/reports?key=${encodeURIComponent(key)}`).then((r) => r.json()).then((j) => {
       if (j.error) { $("#list").textContent = "권한 없음"; return; }
       const rs = j.recent || [];
