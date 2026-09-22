@@ -296,12 +296,18 @@ def crosses_major_road(lat1, lng1, lat2, lng2, roads_idx):
     return False
 
 
+# 주유소·모텔은 서울 어디에나 있어 "여기만 그렇다"는 신호가 되지 못한다. 2026-09-23 제외.
+NUISANCE_SKIP = {"fuel", "motel"}
+
+
 def load_nuisance():
     """OSM + LOCALDATA 기피시설 -> {kind: {"points": [...], "lines": [...]}} + 격자 인덱스"""
     out = {}
     p = os.path.join(RAW, "nuisance_osm.json")
     if os.path.exists(p):
         for kind, items in json.load(open(p, encoding="utf-8")).items():
+            if kind in NUISANCE_SKIP:
+                continue
             if items and "coords" in items[0]:
                 out[kind] = {"lines": items, "points": []}
             else:
@@ -309,6 +315,8 @@ def load_nuisance():
     p2 = os.path.join(RAW, "nuisance_localdata.json")
     if os.path.exists(p2):
         for kind, items in json.load(open(p2, encoding="utf-8")).items():
+            if kind in NUISANCE_SKIP:
+                continue
             out[kind] = {"lines": [], "points": items}
     for kind, d in out.items():
         d["pidx"] = grid_index(d["points"], lambda x: [(x["lng"], x["lat"])])
@@ -525,6 +533,33 @@ def months_ago(d, n):
         y -= 1
         m += 12
     return dt.date(y, m, 1)
+
+
+# 요약 JSON 은 단지마다 같은 키 이름을 6,800번 반복해 파일의 절반이 키였다(6.6MB 중 3MB).
+# 키를 한 번만 적고 값은 순서대로 늘어놓는다. 앱이 받아서 원래 모양으로 되돌린다.
+PACK_SUB = {
+    "by_area": ("area", "latest", "latest_date", "count", "jeonse_ratio"),
+    "station": ("name", "walk_min", "dist", "lines"),
+    "school": ("elem", "elem_walk_min", "chopuma", "class_size"),
+    "terrain": ("elev", "station_dh", "slope_pct"),
+}
+
+
+def pack_summary(summary):
+    keys = sorted({k for sm in summary for k in sm})
+    rows = []
+    for sm in summary:
+        row = []
+        for k in keys:
+            v = sm.get(k)
+            sub = PACK_SUB.get(k)
+            if sub and isinstance(v, dict):
+                v = [v.get(x) for x in sub]
+            elif sub and isinstance(v, list):
+                v = [[a.get(x) for x in sub] for a in v]
+            row.append(v)
+        rows.append(row)
+    return {"k": keys, "sub": {k: list(v) for k, v in PACK_SUB.items()}, "list": ["by_area"], "r": rows}
 
 
 def load_auctions(cs):
@@ -1169,7 +1204,7 @@ def main():
             sm["fee"], sm["fee_pct"], sm["fee_n"] = c["edu"]["fee_med"], c.get("fee_top_pct"), c["edu"]["fee_n"]
         summary.append(sm)
         json.dump(c, open(os.path.join(cdir, c["id"] + ".json"), "w", encoding="utf-8"), ensure_ascii=False, separators=(",", ":"))
-    dump("complexes.json", summary)
+    dump("complexes.json", pack_summary(summary))
     feats = []
     for z in zones:
         feats.append({"type": "Feature", "properties": {"name": z["name"], "kind": "zone", "note": zone_note, "shared": bool(z.get("shared"))},
@@ -1186,10 +1221,30 @@ def main():
         for l in d["lines"]:
             nfeats.append({"type": "Feature", "properties": {"kind": kind, "label": label, "name": l.get("name", "")}, "geometry": {"type": "LineString", "coordinates": l["coords"]}})
     dump("nuisance.geojson", {"type": "FeatureCollection", "features": nfeats})
+    # 지도 표시는 랜드마크급만 남긴다. 점수 계산에는 전체 AMENITIES 를 그대로 쓴다.
+    BIG_PARK_M2 = 30000          # 3만㎡ = 축구장 4개. 서울에 266곳.
+    MART_BRANDS = ("이마트", "트레이더스", "홈플러스", "Homeplus", "롯데마트", "코스트코", "Costco",
+                   "백화점", "스타필드", "타임스퀘어", "코엑스", "IFC", "더현대", "아울렛", "롯데월드몰")
+    MAP_KINDS = {"park", "mart", "emergency", "university"}
+
+    # "케이마트"·"오케이마트"가 "이마트"로 걸리지 않게 앞이 글자가 아닐 때만 인정한다.
+    mart_re = re.compile(r"(?:^|[\s(\[/·\-])(" + "|".join(map(re.escape, MART_BRANDS)) + ")")
+
+    def landmark(kind, x):
+        if kind == "park":
+            return (x.get("area_m2") or 0) >= BIG_PARK_M2
+        if kind == "mart":
+            return bool(mart_re.search(x.get("name") or ""))
+        return True
+
     afeats = []
     for kind, d in AMENITIES.items():
+        if kind not in MAP_KINDS:
+            continue
         label = AMENITY_KINDS.get(kind, kind)
         for x in d["points"]:
+            if not landmark(kind, x):
+                continue
             afeats.append({"type": "Feature", "properties": {"kind": kind, "label": label, "name": x.get("name", ""), "area": x.get("area_m2")},
                            "geometry": {"type": "Point", "coordinates": [x["lng"], x["lat"]]}})
             if x.get("ring"):

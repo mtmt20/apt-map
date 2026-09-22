@@ -30,7 +30,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="집콕맵">
 <link rel="stylesheet" href="vendor/maplibre-gl.css">
-<link rel="stylesheet" href="style.css?v=75">
+<link rel="stylesheet" href="style.css?v=76">
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"WebSite","name":"집콕맵","url":"https://jipkokmap.kr/","description":"서울 아파트 실거래가, 배정 초등학교와 학군, 지하철 출퇴근 시간, 예산 대비 학군을 지도 한 장에서 확인하는 서비스","inLanguage":"ko"}</script>
 <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-2024521419046920" crossorigin="anonymous"></script>
 </head>
@@ -81,8 +81,8 @@
   <button class="lyr" data-more="1" data-layer="road" title="큰길/골목/인도">
     <span class="ico">🛣️</span><span>도로</span>
   </button>
-  <button class="lyr" data-layer="amenity" title="주요시설 (병원·마트·어린이집·공원)">
-    <span class="ico">🏥</span><span>편의</span>
+  <button class="lyr" data-layer="amenity" title="랜드마크 (큰 공원·대형마트·백화점·응급실·대학)">
+    <span class="ico">🏞️</span><span>랜드마크</span>
   </button>
   <button class="lyr" data-more="1" data-layer="nuisance" title="기피·주의 시설">
     <span class="ico">🚧</span><span>기피</span>
@@ -99,9 +99,9 @@
 
 <div class="legend" id="terrainLegend" hidden style="top:auto;bottom:calc(var(--sheet-peek) + 12px)"><div>⛰️ 음영이 진할수록 경사·언덕</div><button class="btn" id="tiltBtn" style="margin-top:6px;padding:7px 10px;font-size:12px;width:100%">↗ 3D 기울이기</button></div>
 <div class="legend big" id="amLegend" hidden>
-  <div><i class="d" style="background:#dc2626"></i>병원·응급실</div><div><i class="d" style="background:#f97316"></i>소아과</div><div><i class="d" style="background:#2563eb"></i>대형마트·백화점</div>
-  <div><i class="d" style="background:#f59e0b"></i>어린이집·유치원</div><div><i class="d" style="background:#eab308"></i>놀이터</div><div><i class="d" style="background:#16a34a"></i>공원</div><div><i class="d" style="background:#7c3aed"></i>도서관</div>
-  <div class="muted" style="margin-top:4px">단지를 선택하면 반경 500m·1km 원이 표시돼요</div>
+  <div><i class="d" style="background:#16a34a"></i>큰 공원 (3만㎡ 이상)</div><div><i class="d" style="background:#2563eb"></i>대형마트·백화점</div>
+  <div><i class="d" style="background:#dc2626"></i>응급실</div><div><i class="d" style="background:#7c3aed"></i>대학교</div>
+  <div class="muted" style="margin-top:4px">동네를 가늠할 큰 시설만 표시합니다. 병원·어린이집·도서관 개수는 단지를 눌러 상세에서 보세요.</div>
 </div>
 <div class="legend" id="legend" hidden>
   <div><i class="l major"></i>큰길 (차 많음)</div>
@@ -215,7 +215,7 @@
   </div>
 </div>
 <script src="config.js"></script>
-<script src="app.js?v=75"></script>
+<script src="app.js?v=76"></script>
 <script>if ("serviceWorker" in navigator && location.protocol === "https:") navigator.serviceWorker.register("sw.js").catch(() => {});</script>
 </body>
 </html>

@@ -87,12 +87,8 @@
       paint: { "fill-color": matchExpr, "fill-opacity": 0.13 } });
     map.addLayer({ id: "school-line", type: "line", source: "schools", filter: ["==", ["get", "kind"], "zone"],
       paint: { "line-color": matchExpr, "line-width": 2, "line-dasharray": [3, 2], "line-opacity": 0.9 } });
-    state.schools.features.filter((f) => f.properties.kind === "school").forEach((f, i) => {
-      const el = document.createElement("div"); el.className = "mk school";
-      el.style.color = PALETTE[names.indexOf(f.properties.name) % PALETTE.length];
-      el.innerHTML = `🏫 ${esc(f.properties.name.replace("등학교", ""))}`;
-      state.schoolMarkers.push(new maplibregl.Marker({ element: el, anchor: "center" }).setLngLat(f.geometry.coordinates).addTo(map));
-    });
+    state.schoolFeats = state.schools.features.filter((f) => f.properties.kind === "school");
+    state.schoolNames = names;
 
     // 지하철: 노선 경로(공식 색) + 역. 항상 강조해서 보여준다 (요청)
     map.addSource("subway-lines", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
@@ -259,11 +255,34 @@
     "7호선": "#6E7E31", "8호선": "#D11D70", "9호선": "#A49D87", "신분당선": "#B81B30", "경의중앙선": "#6AC2B3", "경춘선": "#007A62",
     "공항철도": "#0079AC", "서해선": "#5EAC41", "수인분당선": "#ECA300", "GTX-A": "#AB087D", "신림선": "#6789CA", "우이신설선": "#BACC50" };
   const lineBadges = (ls) => (ls || []).map((l) => `<span class="lnb" style="background:${LINE_COLORS[l] || "#64748b"}">${esc(l.replace("호선", "").replace("선", ""))}</span>`).join("");
+  function syncSchoolMarkers() {
+    const on = state.layers.school && map.getZoom() >= 13.2;
+    if (!on || !state.schoolFeats) {
+      state.schoolMarkers.forEach((m) => m.remove());
+      state.schoolMarkers = []; state.schoolMade = null;
+      return;
+    }
+    const bb = map.getBounds(), pad = 0.1 * (bb.getNorth() - bb.getSouth());
+    const made = state.schoolMade || (state.schoolMade = new Map());
+    const want = new Set();
+    state.schoolFeats.forEach((f, i) => {
+      const [lng, lat] = f.geometry.coordinates;
+      if (lat < bb.getSouth() - pad || lat > bb.getNorth() + pad || lng < bb.getWest() - pad || lng > bb.getEast() + pad) return;
+      want.add(i);
+      if (made.has(i)) return;
+      const el = document.createElement("div"); el.className = "mk school";
+      el.style.color = PALETTE[state.schoolNames.indexOf(f.properties.name) % PALETTE.length];
+      el.innerHTML = `🏫 ${esc(f.properties.name.replace("등학교", ""))}`;
+      made.set(i, new maplibregl.Marker({ element: el, anchor: "center" }).setLngLat(f.geometry.coordinates).addTo(map));
+    });
+    made.forEach((m, i) => { if (!want.has(i)) { m.remove(); made.delete(i); } });
+    state.schoolMarkers = [...made.values()];
+  }
   function applyCrowns() { const show = map.getZoom() < 13.3; state.crownMarkers.forEach((m) => m.getElement().style.display = show ? "" : "none"); }
   function applyLayers() {
     const v = (ids, on) => ids.forEach((id) => map.getLayer(id) && map.setLayoutProperty(id, "visibility", on ? "visible" : "none"));
     v(["school-fill", "school-line"], state.layers.school);
-    state.schoolMarkers.forEach((m) => m.getElement().style.display = state.layers.school && map.getZoom() >= 13.2 ? "" : "none");
+    syncSchoolMarkers();
     v(["sub-line-case", "sub-line", "sub-dot", "sub-label", "fut-line", "fut-line-label", "fut-dot", "fut-label"], state.layers.subway);
     if (state.layers.subway) { lazySource("subway-lines", "data/subway_lines.geojson"); lazySource("stations", "data/stations.geojson"); lazySource("future-rail", "data/future_rail.geojson"); }
     v(["road-walk", "road-alley", "road-minor", "road-major", "road-major-far"], state.layers.road);
@@ -1034,12 +1053,32 @@
   });
   map.on("click", () => { if (state.selected && innerWidth < 900) setSheet("peek"); });
   let zt = null;
-  map.on("zoomend", () => { clearTimeout(zt); zt = setTimeout(() => { renderMarkers(); applyLayers(); applyCrowns(); }, 60); });
-  map.on("moveend", () => { clearTimeout(zt); zt = setTimeout(() => { renderMarkers(); if (!state.selected) renderList(); }, 60); });
+  map.on("zoomend", () => { clearTimeout(zt); zt = setTimeout(() => { syncSchoolMarkers(); renderMarkers(); applyLayers(); applyCrowns(); }, 60); });
+  map.on("moveend", () => { clearTimeout(zt); zt = setTimeout(() => { syncSchoolMarkers(); renderMarkers(); if (!state.selected) renderList(); }, 60); });
 
   // ---------- boot ----------
+  // complexes.json 은 키를 한 번만 적은 형태(k/sub/r)로 온다. 같은 키 이름 6,800번 반복이
+  // 파일의 절반이었다. 여기서 원래 객체 모양으로 되돌린다. (예전 배열 형식도 그대로 받는다)
+  function unpackComplexes(d) {
+    if (Array.isArray(d)) return d;
+    const { k, sub, r } = d, listKeys = new Set(d.list || []);
+    const subKeys = k.map((key) => (sub && sub[key]) || null);
+    const isList = k.map((key) => listKeys.has(key));
+    const toObj = (keys, arr) => { const o = {}; for (let i = 0; i < keys.length; i++) o[keys[i]] = arr[i]; return o; };
+    return r.map((row) => {
+      const c = {};
+      for (let i = 0; i < k.length; i++) {
+        const v = row[i], sk = subKeys[i];
+        if (!sk || !Array.isArray(v)) c[k[i]] = v;
+        else if (isList[i]) c[k[i]] = v.map((a) => toObj(sk, a));
+        else c[k[i]] = toObj(sk, v);
+      }
+      return c;
+    });
+  }
   Promise.all(["complexes", "auctions", "meta"].map((n) => fetch(`data/${n}.json`).then((r) => r.json())))
-    .then(([complexes, auctions, meta]) => {
+    .then(([complexesRaw, auctions, meta]) => {
+      const complexes = unpackComplexes(complexesRaw);
       Object.assign(state, { complexes, auctions, meta });
       // 학군 폴리곤(180KB)은 첫 화면이 뜬 뒤에 받는다
       fetch("data/schools.geojson").then((r) => r.json()).then((schools) => { state.schools = schools; tryAdd(); }).catch(() => {});
