@@ -457,6 +457,44 @@
   const commuteOk = (c) => !state.commute || (c._cm != null && c._cm <= state.commute.max);
   const commuteTag = (c) => !state.commute || c._cmA == null ? "" :
     `<span class="tag cm">🚉 ${esc(state.commute.a.name)} ${c._cmA}분${state.commute.b && c._cmB != null ? ` · ${esc(state.commute.b.name)} ${c._cmB}분` : ""}</span>`;
+  // ---------- 지금 보는 화면을 그대로 링크로 ----------
+  // 선택한 단지, 검색어, 정렬, 평형, 출퇴근 조건, 지도 위치를 주소에 담는다.
+  function viewUrl() {
+    const u = new URL(location.origin + location.pathname);
+    const C = state.commute;
+    if (state.selected) u.searchParams.set("id", state.selected);
+    if (state.q) u.searchParams.set("q", state.q);
+    if (state.sort && state.sort !== "budget") u.searchParams.set("sort", state.sort);
+    if (state.area && state.area !== "all") u.searchParams.set("area", state.area);
+    if (C) u.searchParams.set("cm", [C.a.name, C.b ? C.b.name : "", C.max].join(","));
+    if (map) {
+      const c = map.getCenter();
+      u.searchParams.set("at", [c.lat.toFixed(4), c.lng.toFixed(4), map.getZoom().toFixed(1)].join(","));
+    }
+    return u.toString();
+  }
+  function viewTitle() {
+    const bits = [];
+    if (state.selected) {
+      const c = state.complexes.find((x) => x.id === state.selected);
+      if (c) bits.push(`${c.name} (${c.sgg} ${c.umd})`);
+    }
+    if (state.q && !bits.length) bits.push(`"${state.q}" 검색`);
+    if (state.commute) bits.push(`${state.commute.a.name}${state.commute.b ? "·" + state.commute.b.name : ""} ${state.commute.max}분 이내`);
+    const SORT = { kid: "아이 키우기 좋은 순", edu: "학군순", eduvalue: "예산 대비 학군순", ppy: "평당가순",
+                   chg: "상승률순", feelow: "학원비 싼 순", fav: "내 찜" };
+    if (SORT[state.sort]) bits.push(SORT[state.sort]);
+    if (state.area && state.area !== "all") bits.push(state.area + "㎡대");
+    if (!bits.length) bits.push("서울 아파트 실거래·학군 지도");
+    return bits.join(" · ") + " | 집콕맵";
+  }
+  async function shareView() {
+    hit("share");
+    const url = viewUrl(), title = viewTitle();
+    try { if (navigator.share) { await navigator.share({ title, text: title, url }); return; } } catch (e) { return; }
+    try { await navigator.clipboard.writeText(url); toast("링크를 복사했어요. 지금 화면 그대로 열립니다."); }
+    catch (e) { prompt("이 링크를 복사하세요", url); }
+  }
   function syncCommuteUrl() {
     const u = new URL(location.href), C = state.commute;
     if (C) u.searchParams.set("cm", [C.a.name, C.b ? C.b.name : "", C.max].join(",")); else u.searchParams.delete("cm");
@@ -638,6 +676,7 @@
       const age = new Date().getFullYear() - c.built;
       $("#detailView").innerHTML = `
         <div class="d-head"><button class="back" id="backBtn">‹</button>
+          <button class="back" id="shareDetail" title="이 단지를 링크로 공유" style="font-size:17px">🔗</button>
           <div style="flex:1"><h2>${esc(c.name)} ${favBtn(c.id)}</h2><div class="sub">${esc(c.addr)}${c.households ? ` · <b>${c.households.toLocaleString()}세대</b>` : ""} · ${c.built}년 (${age}년차)${c.max_floor ? ` · 최고 ${c.max_floor}층` : ""}${c.dongs ? ` · ${c.dongs}개동` : ""}${c.far ? ` · 용적률 ${c.far}%` : ""}</div></div></div>
 
         <div class="section">
@@ -742,6 +781,7 @@
           <a class="btn ghost" style="margin-top:8px" href="apt/${encodeURIComponent(c.id)}.html">📄 단지 상세 페이지 (공유용)</a></div>
         <div class="disclaim">${state.meta.mode === "demo" ? "⚠️ 지금은 데모 데이터입니다. 단지 위치·세대수는 대략값, 가격은 시세 흐름을 흉내낸 생성값이며 학군 경계도 예시입니다. 국토교통부 실거래가 API 키를 연결하면 실데이터로 바뀝니다." : "실거래가: 국토교통부 실거래가 공개시스템 (신고 지연 최대 30일). 학군: 학구도안내서비스 기준, 실제 배정은 교육청 공지를 확인하세요."}</div>`;
 
+      if ($("#shareDetail")) $("#shareDetail").addEventListener("click", (e) => { e.stopPropagation(); shareView(); });
       $("#backBtn").onclick = closeDetail;
       $$(".atab").forEach((b) => b.onclick = () => { areaSel = b.dataset.a; render(); });
       if ($("#cmpBtn")) $("#cmpBtn").onclick = () => { toggleCompare(id); render(); };
@@ -835,6 +875,7 @@
   });
   $("#commuteModal").addEventListener("click", (e) => { if (e.target === $("#commuteModal")) $("#commuteModal").hidden = true; });
   $("#commuteShare").addEventListener("click", shareCommute);
+  if ($("#shareBtn")) $("#shareBtn").addEventListener("click", (e) => { e.stopPropagation(); shareView(); });
   $("#commuteClear").addEventListener("click", () => { state.commute = null; syncCommuteUrl(); $("#commuteModal").hidden = true; updateCommuteChip(); renderMarkers(); renderList(); });
   $("#commuteForm").addEventListener("submit", async (e) => {
     e.preventDefault();
@@ -1114,6 +1155,25 @@
       const gus = [...new Set(complexes.map((c) => c.sgg).filter(Boolean))].sort();
       $("#budgetGu").innerHTML = `<option value="">서울 전체</option>` + gus.map((g) => `<option value="${esc(g)}">${esc(g)}</option>`).join("");
       if (meta.center) { HOME.center = meta.center; HOME.zoom = meta.mode === "real" ? 13.6 : 14.6; map.jumpTo({ center: HOME.center, zoom: HOME.zoom }); }
+      // 공유 링크로 들어온 경우: 검색어·정렬·평형·지도 위치를 먼저 되살린다
+      const P = new URLSearchParams(location.search);
+      const at = P.get("at");
+      if (at) {
+        const [la, ln, z] = at.split(",").map(Number);
+        if (isFinite(la) && isFinite(ln)) map.jumpTo({ center: [ln, la], zoom: isFinite(z) ? z : 14 });
+      }
+      const sq = P.get("q");
+      if (sq) { state.q = sq; if ($("#q")) $("#q").value = sq; }
+      const sa = P.get("area");
+      if (sa && $$(`[data-area="${sa}"]`).length) {
+        state.area = sa;
+        $$("[data-area]").forEach((x) => x.classList.toggle("on", x.dataset.area === sa));
+      }
+      const ss = P.get("sort");
+      if (ss && $$(`[data-sort="${ss}"]`).length) {
+        state.sort = ss;
+        $$("[data-sort]").forEach((x) => x.classList.toggle("on", x.dataset.sort === ss));
+      }
       const deep = new URLSearchParams(location.search).get("id");   // 정적 페이지 -> 앱 딥링크
       if (deep && complexes.some((c) => c.id === deep)) setTimeout(() => openDetail(deep, "half"), 400);
       const cmq = new URLSearchParams(location.search).get("cm");   // 공유 링크: ?cm=강남,여의도,40
