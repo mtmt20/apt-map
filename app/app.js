@@ -35,6 +35,8 @@
   const favBtn = (id) => `<button class="fav ${favs.ids.has(id) ? "on" : ""}" data-id="${esc(id)}" title="찜" aria-label="찜">♥</button>`;
 
   // ---------- utils ----------
+  // 서울 상위 %를 A~E 로. 학교 성적이 아니라 집콕맵 학군 지수(학원 밀집·초등 전입·중학교)의 서울 내 순위다.
+  const eduGrade = (pct) => pct == null ? "" : pct <= 10 ? "A" : pct <= 25 ? "B" : pct <= 50 ? "C" : pct <= 75 ? "D" : "E";
   const fmtPrice = (v) => v == null ? "-" : v >= 10000 ? (v / 10000).toFixed(v >= 1000000 ? 0 : 1).replace(/\.0$/, "") + "억" : v.toLocaleString() + "만";
   const fmtChg = (v) => v == null ? "" : `<span class="chg ${v >= 0 ? "up" : "down"}">${v >= 0 ? "+" : ""}${v}%</span>`;
   const bucket = (area) => area < 70 ? "59" : area < 100 ? "84" : "114";
@@ -299,7 +301,9 @@
       if (lv === "elem") el.style.color = PALETTE[state.schoolNames.indexOf(p.name) % PALETTE.length];
       const ICON = { elem: "🏫", middle: "🎒", high: "🎓" };
       const nm = p.name.replace("등학교", "").replace("학교", "");
-      const num = p.class_size ? `<b>${p.class_size}</b>명` : "";
+      const HS = { "자율고": "자율", "특목고": "특목", "특성화고": "특성화" };
+      const num = lv === "high" && HS[p.hstype] ? `<b>${HS[p.hstype]}</b>`
+        : p.class_size ? `<b>${p.class_size}</b>명` : "";
       el.innerHTML = `${ICON[lv] || "🏫"} ${esc(nm)}${num ? " " + num : ""}`;
       el.title = `${p.name}${p.class_size ? " · 학급당 " + p.class_size + "명" : ""}${p.hstype ? " · " + p.hstype : ""}${p.coedu && p.coedu !== "남여공학" ? " · " + p.coedu : ""}`;
       made.set(i, new maplibregl.Marker({ element: el, anchor: "center" }).setLngLat(f.geometry.coordinates).addTo(map));
@@ -585,7 +589,7 @@
         ...(c.sale_type === "혼합" ? [`<span class="tag">분양·임대 혼합</span>`] : []),
         ...(c.sale_type === "임대" ? [`<span class="tag">임대 단지</span>`] : []),
         ...(c.edu_band_pct != null && c.edu_band_pct <= 20 ? [`<span class="tag school">${esc(c.budget_band)}대 학군 상위 ${c.edu_band_pct}%</span>`] : []),
-        ...(c.edu_score != null && c.edu_top_pct <= 30 ? [`<span class="tag school">학군 ${c.edu_score}점 · 상위 ${c.edu_top_pct}%</span>`] : []),
+        ...(c.edu_score != null && c.edu_top_pct <= 30 ? [`<span class="tag school">학군 <b>${eduGrade(c.edu_top_pct)}</b> · ${c.edu_score}점 · 상위 ${c.edu_top_pct}%</span>`] : []),
         ...(c.terrain && c.terrain.station_dh != null && c.terrain.station_dh >= 30 ? [`<span class="tag bad">언덕 +${c.terrain.station_dh}m</span>`] : []),
         ...(c.nz ? [`<span class="tag bad">기피시설 ${c.nz}</span>`] : []),
         ...(c.kid != null && c.kid_pct <= 25 ? [`<span class="tag school">👶 아이 키우기 ${c.kid}점</span>`] : []),
@@ -718,7 +722,8 @@
           ${!c.pros.length && !c.cons.length ? `<div class="muted">특이사항 없음</div>` : ""}</div></div>
 
         <div class="section"><h4>배정 학군 <span class="r muted">${esc(state.meta.zone_note || "초등 통학구역 기준")}</span></h4>
-          ${c.edu_score != null ? `<div class="jrow" style="margin:0 0 12px"><span>학군 지수 <b>${c.edu_score}</b>/100</span><span>${esc(areaShort())} <b>${c.edu_rank}위</b> · 상위 ${c.edu_top_pct}%</span><span class="muted">학원 밀집 40 · 초등 전입 25 · 초등 증감 15 · 중학교 20</span></div>` : ""}
+          ${c.edu_score != null ? `<div class="jrow" style="margin:0 0 12px"><span>학군 등급 <b class="grade g${eduGrade(c.edu_top_pct)}">${eduGrade(c.edu_top_pct)}</b></span><span>지수 <b>${c.edu_score}</b>/100</span><span>${esc(areaShort())} <b>${c.edu_rank}위</b> · 상위 ${c.edu_top_pct}%</span></div>
+          <div class="note" style="margin:-6px 0 12px">A는 서울 상위 10%, B 25%, C 50%, D 75%, E 그 아래입니다. 학원 밀집 40 · 초등 전입 25 · 초등 증감 15 · 중학교 20 으로 계산한 <b>집콕맵 자체 지수</b>이고, 학교 성적이 아닙니다. 국가 학업성취도 학교별 공시는 2016년이 마지막이라 성적 등급은 어디서도 최신 자료를 구할 수 없습니다.</div>` : ""}
           ${c.edu_band_pct != null ? `<div class="jrow" style="margin:0 0 12px"><span>같은 가격대 <b>${esc(c.budget_band)}</b></span><span>이 구간 ${c.edu_band_n}개 단지 중 학군 <b>상위 ${c.edu_band_pct}%</b></span><span class="muted">대표 실거래가로 가격대를 나눠, 비슷한 예산에서 학군이 어느 정도인지 비교합니다</span></div>` : ""}
           <div class="school-hero"><div class="ic">🏫</div><div><b>${esc(c.school.elem)}</b>${c.school.elem_official ? ` <span class="tag school" style="vertical-align:middle">공식 학구</span>` : ""}<div class="n">도보 ${c.school.elem_walk_min}분 (${c.school.elem_dist}m) ${c.school.chopuma ? "· <b style='color:#7c3aed'>초품아</b>" : ""}</div>
             ${c.school.elem_shared && c.school.elem_shared.length ? `<div class="n">공동통학구역: ${c.school.elem_shared.map(esc).join(" / ")} 중 선택 배정</div>` : ""}
@@ -847,7 +852,7 @@
       ["전세가율", (c) => c.jeonse_ratio ? c.jeonse_ratio + "%" : "-"],
       ["세대수 / 준공", (c) => `${c.households ? c.households.toLocaleString() + "세대" : "-"} / ${c.built}년`],
       ["👶 아이 키우기", (c) => c.kid ? `<b>${c.kid.score}</b> (상위 ${c.kid.top_pct}%)` : "-"],
-      ["학군 지수", (c) => c.edu_score != null ? `${c.edu_score} (상위 ${c.edu_top_pct}%)` : "-"],
+      ["학군 등급", (c) => c.edu_score != null ? `${eduGrade(c.edu_top_pct)} · ${c.edu_score}점 (상위 ${c.edu_top_pct}%)` : "-"],
       ["동네 학원비(월)", (c) => c.fee ? `${feeMan(c)}만원 (상위 ${c.fee_pct}%)` : "-"],
       ["배정 초등 학급당", (c) => c.school.class_size ? `${c.school.class_size}명` : "-"],
       ["같은 가격대 학군", (c) => c.edu_band_pct != null ? `${c.budget_band} 중 상위 ${c.edu_band_pct}%` : "-"],

@@ -356,3 +356,12 @@ body:not(.more-lyr) .layers [data-more="1"] { display: none; }
   background: #111827; color: #fff; font-size: 14px; font-weight: 800; padding: 11px 20px; border-radius: 999px;
   box-shadow: 0 6px 20px rgba(15, 23, 42, .35); }
 @media (min-width: 900px) { #mapBtn { display: none !important; } }
+
+/* 학군 등급 배지 (집콕맵 자체 지수의 서울 내 순위. 학교 성적이 아님) */
+.grade { display: inline-block; min-width: 20px; text-align: center; border-radius: 6px; padding: 1px 6px; color: #fff; font-weight: 800; }
+.grade.gA { background: #dc2626; }
+.grade.gB { background: #ea580c; }
+.grade.gC { background: #ca8a04; }
+.grade.gD { background: #16a34a; }
+.grade.gE { background: #64748b; }
+.tag.school b { font-weight: 800; }
