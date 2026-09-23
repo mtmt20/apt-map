@@ -30,7 +30,7 @@ sys.path.insert(0, HERE)
 from fetch_trades import RAW  # noqa: E402
 
 OUT = os.path.join(RAW, "nuisance_osm.json")
-DEFAULT_BBOX = "37.425,126.760,37.705,127.190"
+DEFAULT_BBOX = "37.13,126.55,37.85,127.35"   # 서울 + 출퇴근권 경기
 URLS = ["https://overpass-api.de/api/interpreter", "https://lz4.overpass-api.de/api/interpreter", "https://overpass.private.coffee/api/interpreter"]
 HEADERS = {"User-Agent": "apt-map-mvp/0.1 (personal project)"}
 

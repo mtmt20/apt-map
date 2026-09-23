@@ -18,6 +18,10 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.abspath(os.path.join(HERE, ".."))
 sys.path.insert(0, HERE)
 from seoul_sgg import SGG  # noqa: E402
+from gyeonggi_sgg import GG_SGG  # noqa: E402
+
+# 매일 갱신 대상 = 서울 25개 구 + 경기 출퇴근권 19곳
+ALL_SGG = dict(SGG, **GG_SGG)
 
 LOGDIR = os.path.join(ROOT, "logs")
 PY = sys.executable
@@ -50,7 +54,7 @@ def main():
                 raise SystemExit("필수 단계 실패: {} (로그 {})".format(name, log_path))
         return r.returncode == 0
 
-    for code, name in SGG.items():
+    for code, name in ALL_SGG.items():
         step("trades " + name, ["pipeline/fetch_trades.py", "--lawd", code, "--months", "24"])
         step("rent " + name, ["pipeline/fetch_rent.py", "--lawd", code, "--months", "12"])
         if a.full:
@@ -62,9 +66,15 @@ def main():
     if a.full:
         for name in SGG.values():
             step("neis " + name, ["pipeline/fetch_neis.py", "--gu", name, "--neighbors", ""])
-        for code in SGG:
+        # 경기 학원·학교는 NEIS 행정구역명이 시 단위라 구가 아니라 시로 받는다 (교육청 J10)
+        for name in ("성남시", "과천시", "용인시", "수원시", "하남시", "광명시", "안양시",
+                     "부천시", "김포시", "고양시", "구리시", "남양주시", "의정부시"):
+            step("neis " + name, ["pipeline/fetch_neis.py", "--gu", name, "--neighbors", "",
+                                  "--office", "J10", "--sido", "경기도"])
+        for code in ALL_SGG:
             for y in (dt.date.today().year - 1, dt.date.today().year):
-                step("schoolinfo {} {}".format(code, y), ["pipeline/fetch_schoolinfo.py", "--types", "0,10,62", "--knd", "02,03", "--year", str(y), "--sgg", code])
+                step("schoolinfo {} {}".format(code, y), ["pipeline/fetch_schoolinfo.py", "--types", "0,10,62",
+                     "--knd", "02,03", "--year", str(y), "--sido", code[:2], "--sgg", code])
         if os.environ.get("SEOUL_KEY"):
             step("seoul apt", ["pipeline/fetch_seoul_apt.py"])
     step("build", ["pipeline/build.py"], must=True)

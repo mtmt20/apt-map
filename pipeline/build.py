@@ -562,6 +562,22 @@ def pack_summary(summary):
     return {"k": keys, "sub": {k: list(v) for k, v in PACK_SUB.items()}, "list": ["by_area"], "r": rows}
 
 
+SEOUL_GU = {"종로구", "중구", "용산구", "성동구", "광진구", "동대문구", "중랑구", "성북구", "강북구", "도봉구",
+            "노원구", "은평구", "서대문구", "마포구", "양천구", "강서구", "구로구", "금천구", "영등포구",
+            "동작구", "관악구", "서초구", "강남구", "송파구", "강동구"}
+
+
+def area_label(cs):
+    """메타의 지역 표기. 경기 출퇴근권이 들어오면 '서울 전체'라고 쓰면 거짓말이 된다."""
+    gus = {c["sgg"] for c in cs if c.get("sgg")}
+    seoul, gg = gus & SEOUL_GU, sorted(gus - SEOUL_GU)
+    if not gg:
+        return "서울 전체 ({}개 구)".format(len(seoul)) if len(seoul) > 3 else "서울 " + "·".join(sorted(seoul))
+    if len(seoul) >= 20:
+        return "서울 전체 + 경기 출퇴근권 {}곳".format(len(gg))
+    return "·".join(sorted(seoul) + gg)
+
+
 def load_auctions(cs):
     """fetch_auction.py 가 받아둔 온비드 공매 물건을 단지에 붙인다.
 
@@ -1006,6 +1022,21 @@ def main():
                 s["lines"] = ls
                 s["line"] = "·".join(ls)
                 s["color"] = subway["colors"].get(ls[0])
+        # OSM 의 station=subway 태그만으로는 수인분당선·경의중앙선 역이 많이 빠진다(서현·수내·영통 등).
+        # 노선 관계에서 만든 그래프 노드에는 그 역들이 좌표까지 들어 있으므로 없는 역만 채워 넣는다.
+        have = {norm_st(s["name"]) for s in stations}
+        added = 0
+        for name, lat, lng in (subway.get("graph") or {}).get("nodes", []):
+            key = norm_st(name)
+            if key in have:
+                continue
+            ls = subway["station_lines"].get(key, [])
+            stations.append({"name": key + "역", "line": "·".join(ls), "lines": ls,
+                             "lat": lat, "lng": lng, "color": subway["colors"].get(ls[0]) if ls else None})
+            have.add(key)
+            added += 1
+        if added:
+            print("지하철역 {}개 보강 (노선 그래프 기준) -> 총 {}개".format(added, len(stations)))
     else:
         stations = [{"name": n, "line": l, "lat": la, "lng": lo} for n, l, la, lo in demo_data.STATIONS]
         schools = [{"name": n, "lat": la, "lng": lo} for n, la, lo, _ in demo_data.ELEM_SCHOOLS]
@@ -1045,7 +1076,7 @@ def main():
             elif st.get("chg_pct") is not None and st["chg_pct"] <= -8:
                 c["cons"].append("배정 초등 학생 수 감소 (전년 대비 {}%)".format(st["chg_pct"]))
             if st.get("class_size") and st["class_size"] >= 24:
-                c["cons"].append("배정 초등 학급당 {}명 (서울 중앙값 18명)".format(st["class_size"]))
+                c["cons"].append("배정 초등 학급당 {}명 (수도권 중앙값 18명)".format(st["class_size"]))
             if rk and rk[0] <= max(3, rk[1] // 5):
                 c["pros"].append("배정 초등 전입 선호도 상위 (권역 {}위/{})".format(rk[0], rk[1]))
             c["pros"], c["cons"] = c["pros"][:5], c["cons"][:5]
@@ -1125,7 +1156,7 @@ def main():
         c["fee_top_pct"] = max(1, int(round((fee_vals.index(fm) + 1) / len(fee_vals) * 100)))
         man = round(fm / 10000)
         if c["fee_top_pct"] <= 10:
-            c["cons"].append("학원비 비싼 편 (1km 내 교과학원 월 중앙값 {}만원, 서울 상위 {}%)".format(man, c["fee_top_pct"]))
+            c["cons"].append("학원비 비싼 편 (1km 내 교과학원 월 중앙값 {}만원, 수도권 상위 {}%)".format(man, c["fee_top_pct"]))
         elif c["fee_top_pct"] >= 60 and (c.get("edu_score") or 0) >= 55:
             c["pros"].append("학군 대비 학원비 저렴 (월 중앙값 {}만원)".format(man))
             c["pros"] = c["pros"][:5]
@@ -1137,7 +1168,7 @@ def main():
             r_ = ks.index(c["kid"]["score"]) + 1
             c["kid"]["rank"], c["kid"]["top_pct"] = r_, max(1, int(round(r_ / len(ks) * 100)))
             if c["kid"]["top_pct"] <= 10:
-                c["pros"].insert(0, "아이 키우기 점수 {} (서울 상위 {}%)".format(c["kid"]["score"], c["kid"]["top_pct"]))
+                c["pros"].insert(0, "아이 키우기 점수 {} (수도권 상위 {}%)".format(c["kid"]["score"], c["kid"]["top_pct"]))
                 c["pros"] = c["pros"][:5]
     # 학원 밀집도 구내 백분위 (교과학원 기준)
     vals = sorted(c["edu"]["exam_1km"] for c in cs if c.get("edu"))
@@ -1337,7 +1368,7 @@ def main():
     dump("auctions.json", [a for a in aucs if "lat" in a])
     dump("meta.json", {
         "mode": mode, "built_at": dt.datetime.now().strftime("%Y-%m-%d %H:%M"),
-        "area": (("서울 전체 ({}개 구)".format(len({c["sgg"] for c in cs})) if len({c["sgg"] for c in cs}) > 3 else "서울 " + "·".join(sorted({c["sgg"] for c in cs if c.get("sgg")}))) if mode == "real" else "서울 마포구 (공덕·아현·염리 데모)"),
+        "area": (area_label(cs) if mode == "real" else "서울 마포구 (공덕·아현·염리 데모)"),
         "complexes": len(cs), "roads": len(roads),
         "center": [round(sum(c["lng"] for c in cs) / len(cs), 5), round(sum(c["lat"] for c in cs) / len(cs), 5)],
         "zone_note": zone_note, "stations": len(stations), "schools": len(schools), "academies": len(academies),

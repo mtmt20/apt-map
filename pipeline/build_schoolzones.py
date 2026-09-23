@@ -99,7 +99,7 @@ def zones_from(shp_path, sido, link, loc, tol):
     out = []
     for i, rec in enumerate(sf.iterRecords()):
         rec = dict(zip(fields, list(rec)))
-        if rec.get("SD_CD") != sido:
+        if rec.get("SD_CD") not in sido:
             continue
         shp = sf.shape(i)
         parts = list(shp.parts) + [len(shp.points)]
@@ -122,7 +122,7 @@ def zones_from(shp_path, sido, link, loc, tol):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--sido", default="11")
+    ap.add_argument("--sido", default="11", help="시도코드. 쉼표로 여럿 (11=서울, 41=경기)")
     ap.add_argument("--tol", type=float, default=0.00004, help="단순화 허용오차(도) ~4m")
     a = ap.parse_args()
     link = {}
@@ -136,11 +136,12 @@ def main():
         except ValueError:
             pass
         base = r.get("데이터기준일자", base)
-    elem = zones_from(os.path.join(D, "elem_zone", "elem_zone"), a.sido, link, loc, a.tol)
-    middle = zones_from(os.path.join(D, "middle_zone", "middle_zone"), a.sido, link, loc, a.tol)
+    sido = {x.strip() for x in a.sido.split(",") if x.strip()}
+    elem = zones_from(os.path.join(D, "elem_zone", "elem_zone"), sido, link, loc, a.tol)
+    middle = zones_from(os.path.join(D, "middle_zone", "middle_zone"), sido, link, loc, a.tol)
     hp = os.path.join(D, "high_zone", "high_zone")
-    high = zones_from(hp, a.sido, link, loc, a.tol) if os.path.exists(hp + ".shp") else []
-    out = {"base_date": base, "sido": a.sido, "elem": elem, "middle": middle, "high": high}
+    high = zones_from(hp, sido, link, loc, a.tol) if os.path.exists(hp + ".shp") else []
+    out = {"base_date": base, "sido": sorted(sido), "elem": elem, "middle": middle, "high": high}
     p = os.path.join(RAW, "schoolzones_seoul.json")
     json.dump(out, open(p, "w", encoding="utf-8"), ensure_ascii=False, separators=(",", ":"))
     pts = sum(len(r) for z in elem for r in z["rings"])

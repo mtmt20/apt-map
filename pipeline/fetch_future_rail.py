@@ -21,7 +21,7 @@ URLS = ["https://overpass-api.de/api/interpreter", "https://lz4.overpass-api.de/
         "https://overpass.private.coffee/api/interpreter"]
 HEADERS = {"User-Agent": "apt-map-mvp/0.1 (personal project)"}
 QUERY = """[out:json][timeout:250];
-way["railway"="construction"]["construction"~"^(rail|subway|light_rail|tram)$"](37.40,126.75,37.72,127.20)->.w;
+way["railway"="construction"]["construction"~"^(rail|subway|light_rail|tram)$"](37.13,126.55,37.85,127.35)->.w;
 .w out geom tags;
 (
   node(around.w:120)["railway"~"^(station|halt|stop|construction)$"];

@@ -20,7 +20,7 @@ OUT = os.path.join(HERE, "..", "data", "raw", "subway.json")
 URLS = ["https://overpass-api.de/api/interpreter", "https://overpass.private.coffee/api/interpreter",
         "https://lz4.overpass-api.de/api/interpreter"]
 HEADERS = {"User-Agent": "apt-map-mvp/0.1 (personal project)"}
-BBOX = (37.40, 126.75, 37.72, 127.20)          # 서울 + 경계 바깥 여유
+BBOX = (37.13, 126.55, 37.85, 127.35)          # 서울 + 출퇴근권 경기 (김포~남양주, 수원~의정부)
 KEEP = (37.42, 126.76, 37.71, 127.19)          # 이 박스에 걸친 선로만 남김
 
 # 앱 표시용 짧은 이름 (ref -> 라벨)

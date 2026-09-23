@@ -19,11 +19,12 @@ RAW = os.path.join(HERE, "..", "data", "raw")
 OUT = os.path.join(RAW, "geocode.json")
 URL = "https://dapi.kakao.com/v2/local/search/address.json"
 KW_URL = "https://dapi.kakao.com/v2/local/search/keyword.json"
-SGG_NAMES = {"11440": "마포구", "11410": "서대문구", "11170": "용산구", "11560": "영등포구", "11380": "은평구",
-             "11110": "종로구", "11140": "중구", "11305": "강북구", "11680": "강남구", "11650": "서초구", "11710": "송파구",
-             "11470": "양천구", "11530": "구로구", "11500": "강서구", "11590": "동작구", "11620": "관악구", "11215": "광진구",
-             "11200": "성동구", "11290": "성북구", "11350": "노원구", "11320": "도봉구", "11230": "동대문구", "11260": "중랑구",
-             "11545": "금천구", "11740": "강동구"}
+sys.path.insert(0, HERE)
+from seoul_sgg import SGG as _SEOUL          # noqa: E402
+from gyeonggi_sgg import GG_SGG as _GG       # noqa: E402
+
+SGG_NAMES = dict(_SEOUL, **_GG)
+SIDO_NAMES = {"11": "서울", "41": "경기"}     # 코드 앞 2자리로 시·도를 붙인다
 
 
 def load_env():
@@ -37,12 +38,26 @@ def load_env():
 
 
 def kakao(url, key, query):
-    r = requests.get(url, params={"query": query, "size": 1}, headers={"Authorization": "KakaoAK " + key}, timeout=15)
-    if r.status_code != 200:
-        print("  kakao {} {}: {}".format(r.status_code, query, r.text[:120]))
-        return None
-    docs = r.json().get("documents", [])
-    return docs[0] if docs else None
+    """네트워크가 한 번 끊겨도 전체가 죽지 않게 세 번까지 다시 시도한다."""
+    for attempt in range(3):
+        try:
+            r = requests.get(url, params={"query": query, "size": 1},
+                             headers={"Authorization": "KakaoAK " + key}, timeout=20)
+        except requests.RequestException as e:
+            if attempt == 2:
+                print("  kakao 연결 실패({}회): {} {}".format(attempt + 1, query, str(e)[:80]))
+                return None
+            time.sleep(2 * (attempt + 1))
+            continue
+        if r.status_code == 429:               # 초당 한도
+            time.sleep(1.5)
+            continue
+        if r.status_code != 200:
+            print("  kakao {} {}: {}".format(r.status_code, query, r.text[:120]))
+            return None
+        docs = r.json().get("documents", [])
+        return docs[0] if docs else None
+    return None
 
 
 def main():
@@ -64,8 +79,10 @@ def main():
     ok = fail = 0
     for i, k in enumerate(todo):
         umd, apt, jibun = k.split("|")
-        gu = SGG_NAMES.get(str(keys[k].get("sgg_cd", "")), a.sgg.split()[-1])
-        sgg = "서울 " + gu
+        code = str(keys[k].get("sgg_cd", ""))
+        gu = SGG_NAMES.get(code, a.sgg.split()[-1])
+        sido = SIDO_NAMES.get(code[:2], "서울")
+        sgg = "{} {}".format(sido, gu)
         q = "{} {} {}".format(sgg, umd, jibun)
         d = kakao(URL, key, q)
         src = "address"
