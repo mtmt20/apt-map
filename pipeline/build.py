@@ -1209,9 +1209,32 @@ def main():
     for z in zones:
         feats.append({"type": "Feature", "properties": {"name": z["name"], "kind": "zone", "note": zone_note, "shared": bool(z.get("shared"))},
                       "geometry": {"type": "Polygon", "coordinates": [z["ring"]]}})
+    # 초·중·고를 모두 올린다. 옆에 붙는 숫자는 학급당 평균 인원(학교알리미 공시).
+    # 학업성취도는 2017년 이후 비공개라 쓸 수 없고, 고교 진로 현황의 비율 필드는 전부 100%로
+    # 나와(졸업생 구성 합계) 진학률로 쓸 수 없었다. 학급당 인원이 유일하게 해석이 분명한 숫자다.
+    def cls_size(name):
+        st = (SCHOOL_STATS or {}).get(name) or {}
+        v = st.get("class_size")
+        return round(v, 1) if v else None
+
+    seen_school = set()
+
+    def add_school(name, lat, lng, level, extra=None):
+        if not name or not lat or not lng or name in seen_school:
+            return
+        seen_school.add(name)
+        props = {"name": name, "kind": "school", "level": level, "class_size": cls_size(name)}
+        props.update(extra or {})
+        feats.append({"type": "Feature", "properties": props, "geometry": {"type": "Point", "coordinates": [lng, lat]}})
+
     for sc in schools:
-        feats.append({"type": "Feature", "properties": {"name": sc["name"], "kind": "school"},
-                      "geometry": {"type": "Point", "coordinates": [sc["lng"], sc["lat"]]}})
+        add_school(sc["name"], sc.get("lat"), sc.get("lng"), "elem")
+    for m in middle:
+        add_school(m.get("name"), m.get("lat"), m.get("lng"), "middle",
+                   {"coedu": m.get("coedu", "")})
+    for h in (HIGH_SCHOOLS or {}).values():
+        add_school(h.get("name"), h.get("lat"), h.get("lng"), "high",
+                   {"coedu": h.get("coedu", ""), "hstype": h.get("type", "")})
     dump("schools.geojson", {"type": "FeatureCollection", "features": feats})
     nfeats = []
     for kind, d in NUISANCE.items():
@@ -1226,6 +1249,7 @@ def main():
     MART_BRANDS = ("이마트", "트레이더스", "홈플러스", "Homeplus", "롯데마트", "코스트코", "Costco",
                    "백화점", "스타필드", "타임스퀘어", "코엑스", "IFC", "더현대", "아울렛", "롯데월드몰")
     MAP_KINDS = {"park", "mart", "emergency", "university"}
+    BIG_ACADEMY = 300            # 정원 300명 이상 입시·보습 학원. 서울에 1,740곳.
 
     # "케이마트"·"오케이마트"가 "이마트"로 걸리지 않게 앞이 글자가 아닐 때만 인정한다.
     mart_re = re.compile(r"(?:^|[\s(\[/·\-])(" + "|".join(map(re.escape, MART_BRANDS)) + ")")
@@ -1249,6 +1273,22 @@ def main():
                            "geometry": {"type": "Point", "coordinates": [x["lng"], x["lat"]]}})
             if x.get("ring"):
                 afeats.append({"type": "Feature", "properties": {"kind": "park_area", "name": x.get("name", "")}, "geometry": {"type": "Polygon", "coordinates": [x["ring"]]}})
+    # 대형 입시학원도 랜드마크다. 대치동·중계동 학원가가 어디인지 지도에서 바로 보인다.
+    # 원격학원은 정원이 수십만으로 잡혀 있어 이름으로 걸러낸다(실제 건물이 아니다).
+    seen_ac = set()
+    for a_ in academies or []:
+        cap = a_.get("capacity") or 0
+        nm = a_.get("name") or ""
+        if not a_.get("lat") or nm in seen_ac or "원격" in nm:
+            continue
+        if a_.get("kind") != "학원" or (a_.get("realm") or "") != "입시.검정 및 보습":
+            continue
+        if not (BIG_ACADEMY <= cap <= 6000):
+            continue
+        seen_ac.add(nm)
+        afeats.append({"type": "Feature",
+                       "properties": {"kind": "academy", "label": "대형 입시학원", "name": nm, "cap": cap},
+                       "geometry": {"type": "Point", "coordinates": [a_["lng"], a_["lat"]]}})
     dump("amenities.geojson", {"type": "FeatureCollection", "features": afeats})
 
     # 구 경계 + 구별 통계 + 대장 아파트 (줌 아웃 뷰)

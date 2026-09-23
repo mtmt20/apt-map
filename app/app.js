@@ -170,12 +170,12 @@
     // 주요시설 (병원·마트·어린이집·도서관·공원·놀이터) + 선택 단지 반경 원
     map.addSource("amenity", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
     map.addSource("range", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
-    const AM_COLOR = ["match", ["get", "kind"], "hospital", "#dc2626", "emergency", "#b91c1c", "clinic_ped", "#f97316", "mart", "#2563eb", "kindergarten", "#f59e0b", "playground", "#eab308", "library", "#7c3aed", "park", "#16a34a", "university", "#0ea5e9", "police", "#334155", "#64748b"];
+    const AM_COLOR = ["match", ["get", "kind"], "hospital", "#dc2626", "emergency", "#b91c1c", "clinic_ped", "#f97316", "mart", "#2563eb", "kindergarten", "#f59e0b", "playground", "#eab308", "library", "#7c3aed", "park", "#16a34a", "university", "#0ea5e9", "academy", "#db2777", "police", "#334155", "#64748b"];
     map.addLayer({ id: "am-park", type: "fill", source: "amenity", filter: ["==", ["get", "kind"], "park_area"], layout: { visibility: "none" }, paint: { "fill-color": "#22c55e", "fill-opacity": 0.22 } });
     map.addLayer({ id: "range-fill", type: "fill", source: "range", layout: { visibility: "none" }, paint: { "fill-color": "#2563eb", "fill-opacity": ["case", ["==", ["get", "r"], 500], 0.10, 0.05] } });
     map.addLayer({ id: "range-line", type: "line", source: "range", layout: { visibility: "none" }, paint: { "line-color": "#2563eb", "line-width": 1.5, "line-dasharray": [3, 2] } });
     map.addLayer({ id: "am-point", type: "circle", source: "amenity", filter: ["all", ["==", ["geometry-type"], "Point"], ["!=", ["get", "kind"], "park_area"]], layout: { visibility: "none" }, minzoom: 12,
-      paint: { "circle-radius": ["interpolate", ["linear"], ["zoom"], 12, 3.5, 16, 8], "circle-color": AM_COLOR, "circle-stroke-color": "#fff", "circle-stroke-width": 1.5, "circle-opacity": 0.95 } });
+      paint: { "circle-radius": ["interpolate", ["linear"], ["zoom"], 12, ["case", ["==", ["get", "kind"], "academy"], 2.5, 3.5], 16, ["case", ["==", ["get", "kind"], "academy"], 6, 8]], "circle-color": AM_COLOR, "circle-stroke-color": "#fff", "circle-stroke-width": 1.5, "circle-opacity": 0.95 } });
     if (map.getStyle().glyphs) {
       map.addLayer({ id: "am-label", type: "symbol", source: "amenity", filter: ["all", ["==", ["geometry-type"], "Point"], ["!=", ["get", "kind"], "park_area"]], minzoom: 14.5, layout: { visibility: "none",
         "text-field": ["get", "name"], "text-font": ["Noto Sans Bold"], "text-size": ["interpolate", ["linear"], ["zoom"], 14.5, 12, 17, 15], "text-offset": [0, 1.1], "text-anchor": "top", "text-optional": true, "text-max-width": 8 },
@@ -293,9 +293,15 @@
       if (lat < bb.getSouth() - pad || lat > bb.getNorth() + pad || lng < bb.getWest() - pad || lng > bb.getEast() + pad) return;
       want.add(i);
       if (made.has(i)) return;
-      const el = document.createElement("div"); el.className = "mk school";
-      el.style.color = PALETTE[state.schoolNames.indexOf(f.properties.name) % PALETTE.length];
-      el.innerHTML = `🏫 ${esc(f.properties.name.replace("등학교", ""))}`;
+      const p = f.properties, lv = p.level || "elem";
+      const el = document.createElement("div"); el.className = "mk school lv-" + lv;
+      // 초등학교만 학구도 색을 따른다(배정 경계와 같은 색). 중·고는 고정 색.
+      if (lv === "elem") el.style.color = PALETTE[state.schoolNames.indexOf(p.name) % PALETTE.length];
+      const ICON = { elem: "🏫", middle: "🎒", high: "🎓" };
+      const nm = p.name.replace("등학교", "").replace("학교", "");
+      const num = p.class_size ? `<b>${p.class_size}</b>명` : "";
+      el.innerHTML = `${ICON[lv] || "🏫"} ${esc(nm)}${num ? " " + num : ""}`;
+      el.title = `${p.name}${p.class_size ? " · 학급당 " + p.class_size + "명" : ""}${p.hstype ? " · " + p.hstype : ""}${p.coedu && p.coedu !== "남여공학" ? " · " + p.coedu : ""}`;
       made.set(i, new maplibregl.Marker({ element: el, anchor: "center" }).setLngLat(f.geometry.coordinates).addTo(map));
     });
     made.forEach((m, i) => { if (!want.has(i)) { m.remove(); made.delete(i); } });
