@@ -538,10 +538,10 @@ def months_ago(d, n):
 # 요약 JSON 은 단지마다 같은 키 이름을 6,800번 반복해 파일의 절반이 키였다(6.6MB 중 3MB).
 # 키를 한 번만 적고 값은 순서대로 늘어놓는다. 앱이 받아서 원래 모양으로 되돌린다.
 PACK_SUB = {
-    "by_area": ("area", "latest", "latest_date", "count", "jeonse_ratio"),
-    "station": ("name", "walk_min", "dist", "lines"),
+    "by_area": ("area", "latest", "count", "jeonse_ratio"),
+    "station": ("name", "walk_min", "lines"),
     "school": ("elem", "elem_walk_min", "chopuma", "class_size"),
-    "terrain": ("elev", "station_dh", "slope_pct"),
+    "terrain": ("station_dh",),
 }
 
 
@@ -1215,10 +1215,11 @@ def main():
         sm["lat"], sm["lng"] = round(c["lat"], 5), round(c["lng"], 5)
         sm["pros"], sm["cons"] = c["pros"][:2], c["cons"][:1]
         ba = sorted(c["by_area"], key=lambda a: -a["count"])[:3]
-        sm["by_area"] = [{k: a.get(k) for k in ("area", "latest", "latest_date", "count", "jeonse_ratio")} for a in sorted(ba, key=lambda a: a["area"])]
-        sm["station"] = {k: c["station"].get(k) for k in ("name", "walk_min", "dist", "lines")}
-        if c.get("terrain"):
-            sm["terrain"] = {k: c["terrain"].get(k) for k in ("elev", "station_dh", "slope_pct")}
+        sm["by_area"] = [{k: a.get(k) for k in ("area", "latest", "count", "jeonse_ratio")} for a in sorted(ba, key=lambda a: a["area"])]
+        sm["station"] = {k: c["station"].get(k) for k in ("name", "walk_min", "lines")}
+        # 목록 카드는 terrain 중 station_dh(역 대비 고도차)만 쓴다. 나머지는 상세(c/<id>.json)에 있다.
+        if c.get("terrain") and c["terrain"].get("station_dh") is not None:
+            sm["terrain"] = {"station_dh": c["terrain"]["station_dh"]}
         sm["nz"] = sum(1 for v in c.get("nuisance", {}).values() if v["within"])
         sm["risk_n"], sm["up_n"] = len(c["signals"]["risk"]), len(c["signals"]["up"])
         sm["kid"] = c["kid"]["score"] if c.get("kid") else None
@@ -1237,7 +1238,38 @@ def main():
         json.dump(c, open(os.path.join(cdir, c["id"] + ".json"), "w", encoding="utf-8"), ensure_ascii=False, separators=(",", ":"))
     dump("complexes.json", pack_summary(summary))
     feats = []
+    # 학구도는 전국(서울+경기) 자료라 서비스 범위 밖 폴리곤까지 들어간다. 단지가 있는 곳
+    # 주변만 남기고, 지도에서 4m 단위 정밀도는 필요 없으므로 좌표도 성기게 줄인다.
+    # 5.6MB -> 1MB대. 첫 화면에서 받는 파일 중 제일 컸다.
+    def near_complex(ring):
+        step = max(1, len(ring) // 8)
+        for lng, lat in ring[::step]:
+            gy, gx = int(lat / 0.05), int(lng / 0.05)
+            for dy in (-1, 0, 1):
+                for dx in (-1, 0, 1):
+                    if (gy + dy, gx + dx) in complex_cells:
+                        return True
+        return False
+
+    def thin(ring, tol=0.00012):
+        """단순 거리 기반 솎아내기. 경계 모양은 유지하면서 점만 줄인다."""
+        if len(ring) <= 8:
+            return ring
+        out = [ring[0]]
+        for p_ in ring[1:-1]:
+            if abs(p_[0] - out[-1][0]) > tol or abs(p_[1] - out[-1][1]) > tol:
+                out.append(p_)
+        out.append(ring[-1])
+        return out if len(out) >= 4 else ring
+
+    complex_cells = {(int(c["lat"] / 0.05), int(c["lng"] / 0.05)) for c in cs}
+    kept = dropped = 0
     for z in zones:
+        if not near_complex(z["ring"]):
+            dropped += 1
+            continue
+        kept += 1
+        z = dict(z, ring=thin(z["ring"]))
         feats.append({"type": "Feature", "properties": {"name": z["name"], "kind": "zone", "note": zone_note, "shared": bool(z.get("shared"))},
                       "geometry": {"type": "Polygon", "coordinates": [z["ring"]]}})
     # 초·중·고를 모두 올린다. 옆에 붙는 숫자는 학급당 평균 인원(학교알리미 공시).
@@ -1266,7 +1298,13 @@ def main():
     for h in (HIGH_SCHOOLS or {}).values():
         add_school(h.get("name"), h.get("lat"), h.get("lng"), "high",
                    {"coedu": h.get("coedu", ""), "hstype": h.get("type", "")})
-    dump("schools.geojson", {"type": "FeatureCollection", "features": feats})
+    print("학구도 {}개 유지, 범위 밖 {}개 제외".format(kept, dropped))
+    # 학구도 폴리곤(수 MB)은 지도를 확대해야 보이는 정보다. 학교 점과 파일을 나눠서
+    # 첫 화면에서는 가벼운 점만 받고, 경계는 필요할 때 따로 받게 한다.
+    zone_feats = [f for f in feats if f["properties"].get("kind") == "zone"]
+    point_feats = [f for f in feats if f["properties"].get("kind") != "zone"]
+    dump("schools.geojson", {"type": "FeatureCollection", "features": point_feats})
+    dump("school_zones.geojson", {"type": "FeatureCollection", "features": zone_feats})
     nfeats = []
     for kind, d in NUISANCE.items():
         label = NUISANCE_KINDS.get(kind, (kind, 0))[0]

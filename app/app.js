@@ -80,17 +80,15 @@
 
   function addLayers() {
     // 학군
-    const names = [...new Set(state.schools.features.filter((f) => f.properties.kind === "zone").map((f) => f.properties.name))];
-    const matchExpr = ["match", ["get", "name"]];
-    names.forEach((n, i) => matchExpr.push(n, PALETTE[i % PALETTE.length]));
-    matchExpr.push("#94a3b8");
-    map.addSource("schools", { type: "geojson", data: state.schools });
-    map.addLayer({ id: "school-fill", type: "fill", source: "schools", filter: ["==", ["get", "kind"], "zone"],
-      paint: { "fill-color": matchExpr, "fill-opacity": 0.13 } });
-    map.addLayer({ id: "school-line", type: "line", source: "schools", filter: ["==", ["get", "kind"], "zone"],
-      paint: { "line-color": matchExpr, "line-width": 2, "line-dasharray": [3, 2], "line-opacity": 0.9 } });
+    // 학구도 경계(3MB대)는 확대해야 보이므로 파일을 나눠 두고 필요할 때 받는다.
+    // 색은 이름 해시로 정한다 - 폴리곤을 받기 전에도 칠할 수 있어야 하기 때문.
+    map.addSource("zones", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
+    map.addLayer({ id: "school-fill", type: "fill", source: "zones",
+      paint: { "fill-color": ["get", "color"], "fill-opacity": 0.13 } });
+    map.addLayer({ id: "school-line", type: "line", source: "zones",
+      paint: { "line-color": ["get", "color"], "line-width": 2, "line-dasharray": [3, 2], "line-opacity": 0.9 } });
     state.schoolFeats = state.schools.features.filter((f) => f.properties.kind === "school");
-    state.schoolNames = names;
+    state.schoolNames = [...new Set(state.schoolFeats.map((f) => f.properties.name))];
 
     // 지하철: 노선 경로(공식 색) + 역. 항상 강조해서 보여준다 (요청)
     map.addSource("subway-lines", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
@@ -274,6 +272,11 @@
       map.getSource(id).setData(gj);
       // 역 좌표를 따로 들고 있다가, 아파트 핀이 역 이름을 가리지 않게 자리를 비켜준다
       if (id === "stations") { state.stationPts = gj.features.map((f) => f.geometry.coordinates); renderMarkers(); }
+      if (id === "zones") {
+        const names = [...new Set(gj.features.map((f) => f.properties.name))];
+        gj.features.forEach((f) => { f.properties.color = PALETTE[names.indexOf(f.properties.name) % PALETTE.length]; });
+        map.getSource("zones").setData(gj);
+      }
     }).catch(() => { lazyLoaded[id] = false; });
   }
   const LINE_COLORS = { "1호선": "#004A85", "2호선": "#00A23F", "3호선": "#ED6C00", "4호선": "#009BCE", "5호선": "#794698", "6호선": "#7C4932",
@@ -314,7 +317,8 @@
   function applyCrowns() { const show = map.getZoom() < 13.3; state.crownMarkers.forEach((m) => m.getElement().style.display = show ? "" : "none"); }
   function applyLayers() {
     const v = (ids, on) => ids.forEach((id) => map.getLayer(id) && map.setLayoutProperty(id, "visibility", on ? "visible" : "none"));
-    v(["school-fill", "school-line"], state.layers.school);
+    v(["school-fill", "school-line"], state.layers.school && map.getZoom() >= 12.5);
+    if (state.layers.school && map.getZoom() >= 12.5) lazySource("zones", "data/school_zones.geojson");
     syncSchoolMarkers();
     v(["sub-line-case", "sub-line", "sub-dot", "sub-label", "fut-line", "fut-line-label", "fut-dot", "fut-label"], state.layers.subway);
     if (state.layers.subway) { lazySource("subway-lines", "data/subway_lines.geojson"); lazySource("stations", "data/stations.geojson"); lazySource("future-rail", "data/future_rail.geojson"); }
@@ -691,7 +695,7 @@
 
         <div class="section">
           <div class="atabs">${areas.map((a) => `<button class="atab ${bucket(a.area) === areaSel ? "on" : ""}" data-a="${bucket(a.area)}">${a.area}㎡ <span class="muted">${a.pyeong}평형</span></button>`).join("")}</div>
-          <div class="hero"><div class="big">${fmtPrice(rep.latest)}<small>최근 실거래 · ${rep.latest_date.slice(2).replace(/-/g, ".")}</small></div>
+          <div class="hero"><div class="big">${fmtPrice(rep.latest)}<small>최근 실거래${rep.latest_date ? " · " + rep.latest_date.slice(2).replace(/-/g, ".") : ""}</small></div>
             <div class="meta">평당 <b>${Math.round(rep.latest / (rep.area / PY)).toLocaleString()}만</b>1년 ${fmtChg(c.chg_1y)} · 거래 ${rep.count}건</div></div>
           ${rep.jeonse ? `<div class="jrow"><span>전세 <b>${fmtPrice(rep.jeonse)}</b></span><span>전세가율 <b class="${rep.jeonse_ratio >= 90 ? "up" : ""}">${rep.jeonse_ratio == null ? "-" : rep.jeonse_ratio + "%"}</b></span><span>갭 <b>${fmtPrice(rep.latest - rep.jeonse)}</b></span><span class="muted">최근 6개월 전세 ${rep.jeonse_n}건</span></div>` : ""}
           ${ask ? `<div class="gapbar"><div class="lbl"><span>실거래 <b>${fmtPrice(rep.latest)}</b></span><span>호가 <b>${fmtPrice(Math.round(askLow))} ~ ${fmtPrice(Math.round(askHigh))}</b></span></div>
