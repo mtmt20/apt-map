@@ -365,3 +365,18 @@ body:not(.more-lyr) .layers [data-more="1"] { display: none; }
 .grade.gD { background: #16a34a; }
 .grade.gE { background: #64748b; }
 .tag.school b { font-weight: 800; }
+
+/* 범례가 지도를 다 덮던 문제: 폰에서는 한 줄짜리 칩으로 접고 지도 아래쪽에 붙인다 */
+.legend-x {
+  position: absolute; top: 4px; right: 5px; width: 22px; height: 22px; line-height: 1;
+  border: 0; background: transparent; color: var(--muted); font-size: 14px; cursor: pointer;
+}
+@media (max-width: 899px) {
+  .legend.big {
+    left: 12px; right: 12px; top: auto; bottom: calc(var(--sheet-peek) + 10px);
+    display: flex; flex-wrap: wrap; gap: 4px 10px; padding: 8px 26px 8px 10px;
+    font-size: 12px; font-weight: 600; max-height: 30vh; overflow: auto;
+  }
+  .legend.big .d { width: 9px; height: 9px; margin-right: 5px; }
+  .legend.big .legend-note { flex-basis: 100%; font-size: 11px; line-height: 1.35; }
+}

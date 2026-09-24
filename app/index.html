@@ -30,7 +30,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="집콕맵">
 <link rel="stylesheet" href="vendor/maplibre-gl.css">
-<link rel="stylesheet" href="style.css?v=81">
+<link rel="stylesheet" href="style.css?v=82">
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"WebSite","name":"집콕맵","url":"https://jipkokmap.kr/","description":"서울 아파트 실거래가, 배정 초등학교와 학군, 지하철 출퇴근 시간, 예산 대비 학군을 지도 한 장에서 확인하는 서비스","inLanguage":"ko"}</script>
 <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-2024521419046920" crossorigin="anonymous"></script>
 </head>
@@ -99,10 +99,11 @@
 
 <div class="legend" id="terrainLegend" hidden style="top:auto;bottom:calc(var(--sheet-peek) + 12px)"><div>⛰️ 음영이 진할수록 경사·언덕</div><button class="btn" id="tiltBtn" style="margin-top:6px;padding:7px 10px;font-size:12px;width:100%">↗ 3D 기울이기</button></div>
 <div class="legend big" id="amLegend" hidden>
-  <div><i class="d" style="background:#16a34a"></i>큰 공원 (3만㎡ 이상)</div><div><i class="d" style="background:#2563eb"></i>대형마트·백화점</div>
-  <div><i class="d" style="background:#db2777"></i>대형 입시학원 (정원 300명↑)</div>
+  <button class="legend-x" id="amLegendClose" title="범례 닫기">✕</button>
+  <div><i class="d" style="background:#16a34a"></i>큰 공원</div><div><i class="d" style="background:#2563eb"></i>대형마트·백화점</div>
+  <div><i class="d" style="background:#db2777"></i>대형 입시학원</div>
   <div><i class="d" style="background:#dc2626"></i>응급실</div><div><i class="d" style="background:#0ea5e9"></i>대학교</div>
-  <div class="muted" style="margin-top:4px">동네를 가늠할 큰 시설만 표시합니다. 병원·어린이집·도서관 개수는 단지를 눌러 상세에서 보세요.</div>
+  <div class="muted legend-note">동네를 가늠할 큰 시설만 표시합니다. 병원·어린이집 개수는 단지를 눌러 상세에서 보세요.</div>
 </div>
 <div class="legend" id="legend" hidden>
   <div><i class="l major"></i>큰길 (차 많음)</div>
@@ -237,7 +238,7 @@
   </div>
 </div>
 <script src="config.js"></script>
-<script src="app.js?v=81"></script>
+<script src="app.js?v=82"></script>
 <script>if ("serviceWorker" in navigator && location.protocol === "https:") navigator.serviceWorker.register("sw.js").catch(() => {});</script>
 </body>
 </html>

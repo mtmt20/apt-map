@@ -315,6 +315,8 @@
     state.schoolMarkers = [...made.values()];
   }
   function applyCrowns() { const show = map.getZoom() < 13.3; state.crownMarkers.forEach((m) => m.getElement().style.display = show ? "" : "none"); }
+  // 범례를 한 번 닫으면 레이어를 다시 켜기 전까지 안 띄운다
+  let legendClosed = false;
   function applyLayers() {
     const v = (ids, on) => ids.forEach((id) => map.getLayer(id) && map.setLayoutProperty(id, "visibility", on ? "visible" : "none"));
     v(["school-fill", "school-line"], state.layers.school && map.getZoom() >= 12.5);
@@ -331,7 +333,7 @@
     if (state.layers.nuisance) lazySource("nuisance", "data/nuisance.geojson");
     v(["am-park", "am-point", "am-label", "range-fill", "range-line"], state.layers.amenity);
     if (state.layers.amenity) { lazySource("amenity", "data/amenities.geojson"); drawRange(); }
-    $("#amLegend").hidden = !state.layers.amenity;
+    $("#amLegend").hidden = !state.layers.amenity || legendClosed;
     $("#legend").hidden = !state.layers.road;
     state.aucMarkers.forEach((m) => state.layers.auction ? m.addTo(map) : m.remove());
     $$(".lyr[data-layer]").forEach((b) => b.classList.toggle("on", !!state.layers[b.dataset.layer]));
@@ -1122,7 +1124,12 @@
     $("#moreLyr").classList.toggle("on", on);
   });
 
-  $$(".lyr[data-layer]").forEach((b) => b.addEventListener("click", () => { state.layers[b.dataset.layer] = !state.layers[b.dataset.layer]; applyLayers(); }));
+  $$(".lyr[data-layer]").forEach((b) => b.addEventListener("click", () => {
+    state.layers[b.dataset.layer] = !state.layers[b.dataset.layer];
+    if (b.dataset.layer === "amenity") legendClosed = false;
+    applyLayers();
+  }));
+  if ($("#amLegendClose")) $("#amLegendClose").addEventListener("click", () => { legendClosed = true; $("#amLegend").hidden = true; });
   $("#locateBtn").addEventListener("click", () => {
     if (!navigator.geolocation) return toast("위치 정보를 지원하지 않는 브라우저예요.");
     navigator.geolocation.getCurrentPosition((p) => {
