@@ -30,7 +30,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="집콕맵">
 <link rel="stylesheet" href="vendor/maplibre-gl.css">
-<link rel="stylesheet" href="style.css?v=84">
+<link rel="stylesheet" href="style.css?v=86">
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"WebSite","name":"집콕맵","url":"https://jipkokmap.kr/","description":"서울 아파트 실거래가, 배정 초등학교와 학군, 지하철 출퇴근 시간, 예산 대비 학군을 지도 한 장에서 확인하는 서비스","inLanguage":"ko"}</script>
 <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-2024521419046920" crossorigin="anonymous"></script>
 </head>
@@ -43,6 +43,31 @@
     <svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M15.5 14h-.8l-.3-.3a6.5 6.5 0 1 0-.7.7l.3.3v.8l5 5 1.5-1.5-5-5zm-6 0a4.5 4.5 0 1 1 0-9 4.5 4.5 0 0 1 0 9z"/></svg>
     <input id="q" type="search" placeholder="단지명, 동 이름 검색" autocomplete="off">
     <span id="modeBadge" class="badge" hidden>데모</span>
+  </div>
+  <!-- 처음 온 사람에게 조건부터 물어본다. 기능이 리스트 안에 숨어 있어 안 쓰이던 문제(사용률 9%) -->
+  <div id="askBar" class="askbar" hidden>
+    <button class="askx" id="askClose" title="닫기">✕</button>
+    <div class="askstep" id="askStep1">
+      <span class="askq">우리 아이 몇 살인가요?</span>
+      <div class="askopts">
+        <button class="askopt" data-askage="baby">0~2세</button>
+        <button class="askopt" data-askage="pre">3~6세</button>
+        <button class="askopt" data-askage="elem">초등</button>
+        <button class="askopt" data-askage="mid">중등</button>
+        <button class="askopt" data-askage="high">고등</button>
+        <button class="askopt ghost" data-askage="none">아이 없어요</button>
+      </div>
+    </div>
+    <form class="askstep" id="askStep2" hidden autocomplete="off">
+      <span class="askq">회사가 어느 역인가요?</span>
+      <div class="askopts">
+        <input name="a" list="stationList" placeholder="예: 강남" required>
+        <input name="b" list="stationList" placeholder="배우자 (선택)">
+        <select name="max"><option value="30">30분</option><option value="40" selected>40분</option><option value="50">50분</option><option value="60">60분</option></select>
+        <button class="askopt go" type="submit">찾기</button>
+        <button class="askopt ghost" type="button" id="askSkip">건너뛰기</button>
+      </div>
+    </form>
   </div>
   <div class="chips" id="areaChips">
     <button class="chip on" data-area="all">전체 평형</button>
@@ -136,6 +161,16 @@
       </div>
       <div id="demoRow" class="demo-row">
         <div class="demo-title">내 조건으로 바로 찾기</div>
+        <div class="agerow">
+          <span class="agelabel">우리 아이</span>
+          <button class="age" data-age="">상관없음</button>
+          <button class="age" data-age="baby">0~2세</button>
+          <button class="age" data-age="pre">3~6세</button>
+          <button class="age" data-age="elem">초등</button>
+          <button class="age" data-age="mid">중등</button>
+          <button class="age" data-age="high">고등</button>
+        </div>
+        <div id="ageNote" class="agenote" hidden></div>
         <form id="quickCommute" class="quick" autocomplete="off">
           <span class="qi">🚉</span>
           <input name="a" list="stationList" placeholder="회사 역 (예: 종로3가)" required>
@@ -248,7 +283,7 @@
   </div>
 </div>
 <script src="config.js"></script>
-<script src="app.js?v=84"></script>
+<script src="app.js?v=86"></script>
 <script>if ("serviceWorker" in navigator && location.protocol === "https:") navigator.serviceWorker.register("sw.js").catch(() => {});</script>
 </body>
 </html>

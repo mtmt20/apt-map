@@ -380,3 +380,34 @@ body:not(.more-lyr) .layers [data-more="1"] { display: none; }
   .legend.big .d { width: 9px; height: 9px; margin-right: 5px; }
   .legend.big .legend-note { flex-basis: 100%; font-size: 11px; line-height: 1.35; }
 }
+
+/* 우리 아이 나이: 같은 동네라도 다섯 살과 고2에게 좋은 곳이 다르다 */
+.agerow { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; margin: 8px 0 4px; }
+.agelabel { font-size: 12.5px; font-weight: 800; color: var(--muted); margin-right: 2px; }
+.age {
+  border: 1.5px solid var(--line); background: var(--bg); color: var(--fg);
+  border-radius: 999px; padding: 6px 11px; font-size: 12.5px; font-weight: 700; cursor: pointer;
+}
+.age.on { background: var(--brand); border-color: var(--brand); color: #fff; }
+.agenote { font-size: 12px; color: var(--muted); line-height: 1.5; margin: 2px 0 4px; }
+.tag.fit { background: #eef2ff; color: #3730a3; font-weight: 800; }
+
+/* 첫 화면 질문 띠. 지도를 덮지 않고 검색줄 아래에 한 줄로 붙는다 */
+.askbar {
+  position: relative; margin-top: 8px; background: var(--bg); border-radius: 14px;
+  box-shadow: var(--shadow); padding: 10px 30px 10px 12px; border: 1.5px solid var(--brand);
+}
+.askx { position: absolute; top: 5px; right: 6px; width: 22px; height: 22px; border: 0;
+  background: transparent; color: var(--muted); font-size: 13px; cursor: pointer; }
+.askq { display: block; font-size: 13px; font-weight: 800; margin-bottom: 7px; }
+.askopts { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; }
+.askopt {
+  border: 1.5px solid var(--line); background: var(--bg); color: var(--fg);
+  border-radius: 999px; padding: 6px 11px; font-size: 12.5px; font-weight: 700; cursor: pointer;
+}
+.askopt.go { background: var(--brand); border-color: var(--brand); color: #fff; }
+.askopt.ghost { color: var(--muted); font-weight: 600; }
+.askopts input { flex: 1 1 96px; min-width: 0; border: 1.5px solid var(--line); border-radius: 999px;
+  padding: 6px 11px; font: inherit; font-size: 13px; background: var(--bg); color: var(--fg); }
+.askopts select { border: 1.5px solid var(--line); border-radius: 999px; padding: 6px 8px;
+  font: inherit; font-size: 12.5px; background: var(--bg); color: var(--fg); }

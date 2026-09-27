@@ -578,6 +578,10 @@ def area_label(cs):
     return "·".join(sorted(seoul) + gg)
 
 
+# 아이 키우기 점수의 6축. 앱의 나이별 가중치와 순서를 맞춰야 한다.
+KID_AXES = ("초등 접근", "학군", "보육·의료", "지형·보행", "환경·안전", "생활 편의")
+
+
 def load_auctions(cs):
     """fetch_auction.py 가 받아둔 온비드 공매 물건을 단지에 붙인다.
 
@@ -1223,6 +1227,10 @@ def main():
         sm["nz"] = sum(1 for v in c.get("nuisance", {}).values() if v["within"])
         sm["risk_n"], sm["up_n"] = len(c["signals"]["risk"]), len(c["signals"]["up"])
         sm["kid"] = c["kid"]["score"] if c.get("kid") else None
+        # 아이 나이별 맞춤 점수를 앱에서 계산하려면 6축 원점수가 필요하다.
+        # 다섯 살 부모에게 대형 입시학원이, 고2 부모에게 놀이터가 무슨 소용인가 - 나이마다
+        # 중요한 축이 다르므로 가중치만 바꿔 다시 합산한다. 순서는 KID_AXES 와 같다.
+        sm["kax"] = ([round(c["kid"]["axes"][k]) for k in KID_AXES] if c.get("kid") else None)
         sm["kid_pct"] = c["kid"].get("top_pct") if c.get("kid") else None
         sm["stn"] = c["station"]["name"]
         if c.get("future"):

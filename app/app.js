@@ -8,7 +8,7 @@
 
   const state = {
     complexes: [], auctions: [], schools: null, meta: null,
-    area: "all", sort: null, q: "",
+    area: "all", sort: null, q: "", age: localStorage.getItem("kidAge") || "",
     selected: null, markers: {}, aucMarkers: [], schoolMarkers: [], crownMarkers: [],
     layers: { school: true, subway: true, edumap: false, road: false, auction: false, terrain: false, nuisance: false, amenity: false },
     compare: JSON.parse(localStorage.getItem("compare") || "[]"), budget: null,
@@ -37,6 +37,39 @@
   // ---------- utils ----------
   // 서울 상위 %를 A~E 로. 학교 성적이 아니라 집콕맵 학군 지수(학원 밀집·초등 전입·중학교)의 서울 내 순위다.
   const eduGrade = (pct) => pct == null ? "" : pct <= 10 ? "A" : pct <= 25 ? "B" : pct <= 50 ? "C" : pct <= 75 ? "D" : "E";
+  // ---------- 우리 아이 나이별 맞춤 점수 ----------
+  // 축 순서는 build.py 의 KID_AXES 와 같다: 초등 접근 / 학군 / 보육·의료 / 지형·보행 / 환경·안전 / 생활 편의
+  // 다섯 살 부모에게 대형 입시학원이, 고2 부모에게 놀이터가 무슨 소용인가. 나이마다 비중을 바꾼다.
+  const AGE = {
+    baby: { name: "0~2세", w: [0.05, 0.00, 0.40, 0.20, 0.20, 0.15],
+            why: "아직 학교는 먼 얘기입니다. <b>소아과·병원, 평지, 기피시설 없는 조용함</b>을 크게 봤습니다." },
+    pre:  { name: "3~6세", w: [0.25, 0.05, 0.25, 0.15, 0.15, 0.15],
+            why: "곧 초등학교에 갑니다. <b>초품아 여부와 통학로</b>, 그리고 <b>소아과·공원</b>을 함께 봤습니다." },
+    elem: { name: "초등",  w: [0.35, 0.25, 0.10, 0.15, 0.08, 0.07],
+            why: "<b>배정 초등학교까지의 거리와 학급당 인원</b>이 가장 중요합니다. 통학로 안전도 함께 봤습니다." },
+    mid:  { name: "중등",  w: [0.08, 0.50, 0.05, 0.10, 0.12, 0.15],
+            why: "<b>배정 가능한 중학교와 학원가</b>가 중요해집니다. 초등 거리 비중은 낮췄습니다." },
+    high: { name: "고등",  w: [0.02, 0.65, 0.03, 0.05, 0.10, 0.15],
+            why: "<b>학원가 접근성</b>이 거의 전부입니다. 초품아·놀이터는 의미가 없어 뺐습니다." },
+  };
+  function fitScore(c) {
+    const a = AGE[state.age];
+    if (!a || !c.kax) return null;
+    let v = 0;
+    for (let i = 0; i < a.w.length; i++) v += (c.kax[i] || 0) * a.w[i];
+    // 나이별로 결정적인 조건에 가점·감점을 준다 (축만으로는 안 잡히는 것들)
+    if (state.age === "elem" || state.age === "pre") {
+      if (c.school && c.school.chopuma) v += 6;
+      if (c.school && c.school.class_size >= 24) v -= 6;
+    }
+    if (state.age === "mid" && c.mg) {
+      if (Math.min(c.mg[0], c.mg[1]) < 2) v -= 8;      // 아들·딸 중 한쪽이 갈 중학교가 1곳 이하
+    }
+    if ((state.age === "mid" || state.age === "high") && c.fee_pct != null) {
+      if (c.fee_pct <= 20) v -= 3;                      // 학원비 상위 20%는 유지비 부담
+    }
+    return Math.max(0, Math.min(100, Math.round(v)));
+  }
   const fmtPrice = (v) => v == null ? "-" : v >= 10000 ? (v / 10000).toFixed(v >= 1000000 ? 0 : 1).replace(/\.0$/, "") + "억" : v.toLocaleString() + "만";
   const fmtChg = (v) => v == null ? "" : `<span class="chg ${v >= 0 ? "up" : "down"}">${v >= 0 ? "+" : ""}${v}%</span>`;
   const bucket = (area) => area < 70 ? "59" : area < 100 ? "84" : "114";
@@ -514,6 +547,7 @@
     if (state.q) u.searchParams.set("q", state.q);
     if (state.sort && state.sort !== "budget") u.searchParams.set("sort", state.sort);
     if (state.area && state.area !== "all") u.searchParams.set("area", state.area);
+    if (state.age) u.searchParams.set("age", state.age);
     if (C) u.searchParams.set("cm", [C.a.name, C.b ? C.b.name : "", C.max].join(","));
     if (map) {
       const c = map.getCenter();
@@ -531,6 +565,7 @@
     if (state.commute) bits.push(`${state.commute.a.name}${state.commute.b ? "·" + state.commute.b.name : ""} ${state.commute.max}분 이내`);
     const SORT = { kid: "아이 키우기 좋은 순", edu: "학군순", eduvalue: "예산 대비 학군순", ppy: "평당가순",
                    chg: "상승률순", feelow: "학원비 싼 순", fav: "내 찜" };
+    if (AGE[state.age]) bits.push(AGE[state.age].name + " 맞춤");
     if (SORT[state.sort]) bits.push(SORT[state.sort]);
     if (state.area && state.area !== "all") bits.push(state.area + "㎡대");
     if (!bits.length) bits.push("서울 아파트 실거래·학군 지도");
@@ -575,7 +610,8 @@
       const bb = map.getBounds();
       list = list.filter((c) => c.lat > bb.getSouth() && c.lat < bb.getNorth() && c.lng > bb.getWest() && c.lng < bb.getEast());
     }
-    if (state.sort === "ppy") list.sort((a, b) => (b.ppy || 0) - (a.ppy || 0));
+    if (state.age && !state.sort) list = list.filter((c) => c.kax).sort((a, b) => fitScore(b) - fitScore(a));
+    else if (state.sort === "ppy") list.sort((a, b) => (b.ppy || 0) - (a.ppy || 0));
     else if (state.sort === "chg") list.sort((a, b) => (b.chg_1y || 0) - (a.chg_1y || 0));
     else if (state.sort === "school") list = list.filter((c) => c.school.chopuma).sort((a, b) => a.school.elem_dist - b.school.elem_dist);
     else if (state.sort === "gap") list = list.filter((c) => c.jeonse_ratio).sort((a, b) => b.jeonse_ratio - a.jeonse_ratio);
@@ -617,6 +653,7 @@
       const rep = (state.sort === "budget" && c._bRep) || repArea(c, state.area);
       const tags = [
         ...(commuteTag(c) ? [commuteTag(c)] : []),
+        ...((() => { const f = fitScore(c); return f == null ? [] : [`<span class="tag fit">${AGE[state.age].name} 맞춤 ${f}점</span>`]; })()),
         ...(feeTag(c) ? [feeTag(c)] : []),
         ...(c.mg && (c.mg[0] < 2 || c.mg[1] < 2) ? [`<span class="tag warn2">중학교 ${c.mg[0] < 2 ? "아들" : "딸"} 기준 ${Math.min(c.mg[0], c.mg[1])}곳</span>`] : []),
         ...(c.fut && c.fut.dist <= 800 ? [`<span class="tag fut">🚧 ${esc(c.fut.line)} ${esc(c.fut.name)} 예정 ${c.fut.walk_min}분</span>`] : []),
@@ -925,6 +962,59 @@
   $("#commuteModal").addEventListener("click", (e) => { if (e.target === $("#commuteModal")) $("#commuteModal").hidden = true; });
   $("#commuteShare").addEventListener("click", shareCommute);
   if ($("#shareBtn")) $("#shareBtn").addEventListener("click", (e) => { e.stopPropagation(); shareView(); });
+  // ---------- 첫 화면 질문 띠 ----------
+  // 기능(나이별 점수·맞벌이 출퇴근)이 리스트 안에 숨어 있어 방문자의 9%만 쓰고 있었다.
+  // 들어오자마자 두 가지만 물어보고 바로 결과로 보낸다. 한 번 답하거나 닫으면 다시 안 띄운다.
+  function initAskBar() {
+    const bar = $("#askBar");
+    if (!bar) return;
+    if (localStorage.getItem("asked") || state.age || state.commute) return;
+    bar.hidden = false;
+    hit("ask_show");
+    const done = (why) => { localStorage.setItem("asked", why); bar.hidden = true; };
+    $("#askClose").addEventListener("click", () => done("closed"));
+    $$("[data-askage]").forEach((b) => b.addEventListener("click", () => {
+      const v = b.dataset.askage;
+      if (v !== "none") { state.age = v; applyAge(); hit("ask_age"); }
+      $("#askStep1").hidden = true;
+      $("#askStep2").hidden = false;
+      setTimeout(() => { const el = $("#askStep2").a; if (el) el.focus(); }, 60);
+    }));
+    $("#askSkip").addEventListener("click", () => done("skip"));
+    $("#askStep2").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const f = e.target;
+      try {
+        await loadGraph();
+        const ia = findNode(f.a.value.trim());
+        if (ia < 0) { toast("그 역을 못 찾았어요. 역 이름만 적어보세요."); return; }
+        const ibRaw = f.b.value.trim();
+        const ib = ibRaw ? findNode(ibRaw) : null;
+        state.commute = { a: { idx: ia, name: graph.nodes[ia][0] },
+                          b: ib != null && ib >= 0 ? { idx: ib, name: graph.nodes[ib][0] } : null,
+                          max: +f.max.value, mode: "max" };
+        applyCommute(); syncCommuteUrl(); updateCommuteChip();
+        renderMarkers(); renderList(); setSheet("full");
+        hit("ask_commute"); done("answered");
+      } catch (_) { toast("지하철 정보를 불러오지 못했어요."); }
+    });
+  }
+
+  function applyAge() {
+    $$("[data-age]").forEach((b) => b.classList.toggle("on", b.dataset.age === state.age));
+    const note = $("#ageNote"), a = AGE[state.age];
+    if (note) {
+      note.hidden = !a;
+      if (a) note.innerHTML = `<b>${a.name}</b> 기준으로 다시 계산했습니다. ${a.why} 카드의 <b>맞춤 점수</b>가 그 결과입니다.`;
+    }
+    localStorage.setItem("kidAge", state.age || "");
+    renderMarkers(); renderList();
+  }
+  $$("[data-age]").forEach((b) => b.addEventListener("click", () => {
+    state.age = state.age === b.dataset.age ? "" : b.dataset.age;
+    if (state.age) { state.sort = null; $$("[data-sort]").forEach((x) => x.classList.remove("on")); hit("age"); }
+    applyAge();
+  }));
   $("#commuteClear").addEventListener("click", () => { state.commute = null; syncCommuteUrl(); $("#commuteModal").hidden = true; updateCommuteChip(); renderMarkers(); renderList(); });
   $("#commuteForm").addEventListener("submit", async (e) => {
     e.preventDefault();
@@ -1225,6 +1315,8 @@
         state.area = sa;
         $$("[data-area]").forEach((x) => x.classList.toggle("on", x.dataset.area === sa));
       }
+      const sage = P.get("age");
+      if (sage && AGE[sage]) state.age = sage;
       const ss = P.get("sort");
       if (ss && $$(`[data-sort="${ss}"]`).length) {
         state.sort = ss;
@@ -1240,6 +1332,8 @@
         applyCommute(); updateCommuteChip(); renderMarkers(); renderList(); setSheet("full");
       }).catch(() => {});
       // 리스트/마커는 지도 로드와 무관하게 바로, 레이어는 스타일 준비 후
+      applyAge();
+      initAskBar();
       renderMarkers(); renderList(); setSheet(innerWidth < 900 ? "peek" : "full");
       var tryAdd = () => { if (!state.schools || map.getSource("schools")) return; if (map.isStyleLoaded()) addLayers(); else setTimeout(tryAdd, 300); };
     })
