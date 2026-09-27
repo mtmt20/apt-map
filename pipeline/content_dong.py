@@ -74,7 +74,7 @@ def page_body(gu, umd, members, rank_table):
     hh = sum(c.get("households") or 0 for c in members)
     builts = [c["built"] for c in members if c.get("built")]
 
-    b = ['<h1>{} 아파트 시세·학군</h1>'.format(esc(umd))]
+    b = ['<h1>{} 학군지·아파트 시세</h1>'.format(esc(umd))]
     b.append('<p class="sub">{} {} · 단지 {}개 · {} 기준 실거래</p>'.format(esc(gu), esc(umd), len(members), today.isoformat()))
 
     p = ["{} {}에서 실거래가 확인되는 아파트 단지는 <b>{}개</b>, 합쳐서 <b>{:,}세대</b>입니다.".format(esc(gu), esc(umd), len(members), hh)]
@@ -119,6 +119,8 @@ def page_body(gu, umd, members, rank_table):
 
     b.append('<div class="card"><p style="margin:0"><b>🗺️ <a href="../?q={}">지도에서 {} 보기</a></b> — 단지를 누르면 실거래 추이, 학군, 출퇴근 시간이 나옵니다.</p></div>'.format(
         urllib.parse.quote(umd), esc(umd)))
+    b.append('<div class="card"><p style="margin:0"><b>🎓 <a href="../rank/{}-학군지.html">{} 학군지 순위</a></b> — 같은 구 안에서 이 동네가 몇 등인지 볼 수 있습니다.</p></div>'.format(
+        urllib.parse.quote(gu), esc(gu)))
     b.append('<div class="card"><p style="margin:0"><b>🏆 <a href="../rank/{}.html">{} 아파트 랭킹</a></b> · <b>📚 <a href="../rank/academy-fee.html">동네별 학원비</a></b> · <b>💰 <a href="../rank/budget-school.html">예산별 학군지</a></b></p></div>'.format(
         urllib.parse.quote(gu), esc(gu)))
     return "".join(b)
@@ -148,7 +150,7 @@ def pages(cs, shell, rank_table):
         ppys = sorted(c["ppy"] for c in members if c.get("ppy"))
         med = ppys[len(ppys) // 2] if ppys else 0
         out[path] = shell(
-            "{} 아파트 시세·학군·실거래가 | 집콕맵".format(umd),
+            "{} 학군지·아파트 시세·실거래가 | 집콕맵".format(umd),
             "{} {} 아파트 {}개 단지의 최근 실거래가, 평당가 중앙값 {:,}만원, 배정 초등학교, 학군 지수, 학원비, 지하철 도보 시간을 한 번에 정리했습니다.".format(
                 gu, umd, len(members), med),
             page_body(gu, umd, members, rank_table), path)

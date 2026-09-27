@@ -26,6 +26,7 @@ import content_school_budget  # noqa: E402
 import content_future_rail  # noqa: E402
 import content_academy_fee  # noqa: E402
 import content_dong  # noqa: E402
+import content_school_district  # noqa: E402
 load_env()
 BASE = (os.environ.get("SITE_BASE") or "https://jipkokmap.kr").rstrip("/")
 CONTACT = os.environ.get("CONTACT_EMAIL", "")
@@ -316,6 +317,7 @@ def rank_pages(cs):
     body.append('<div class="card"><p style="margin:0"><b>📚 <a href="academy-fee.html">서울 동네별 학원비</a></b> — 학군은 좋으면서 학원비가 싼 단지를 정리했습니다. 기존 앱에 없는 지표입니다.</p></div>')
     body.append('<div class="card"><p style="margin:0"><b>🚧 <a href="future-rail.html">공사 중 지하철 예정역 도보권 아파트</a></b> — 동북선·월곶판교선 예정역 근처 단지를 역별로 정리했습니다.</p></div>')
     body.append('<div class="card"><p style="margin:0"><b>💰 <a href="budget-school.html">예산별 학군지 가이드</a></b> — 내 예산으로 갈 수 있는 최고 학군을 가격 구간별로 정리했습니다.</p></div>')
+    body.append('<div class="card"><p style="margin:0"><b>🎓 <a href="school-district.html">수도권 학군지 순위</a></b> — 동네 422곳을 학군 지수로 줄 세웠습니다. 학군 좋은데 집값·학원비 싼 동네도 같이 정리했습니다.</p></div>')
     body.append('<div class="card"><p style="margin:0"><b>🏘️ <a href="../dong/index.html">서울 동네별 아파트 시세</a></b> — 법정동 단위로 평당가·학군·학원비를 정리했습니다.</p></div>')
     body.append("<h2>구별 랭킹 보기</h2><div class=\"card\"><div class=\"tags\">" + "".join('<a class="tag" href="{}.html" style="font-size:14px;padding:8px 12px">{}</a>'.format(esc(g), esc(g)) for g in sorted(by_gu)) + "</div></div>")
     body.append("<h2>👶 서울 아이 키우기 점수 상위 30</h2><div class=\"card\">" + rank_table(sorted([c for c in active if c.get("kid")], key=lambda c: -c["kid"]["score"])[:30],
@@ -365,6 +367,7 @@ def main():
         "교육청 공시 교습비로 계산한 서울 구별·단지별 월 학원비. 학군은 좋으면서 학원비가 싼 아파트 30곳을 정리했습니다.",
         content_academy_fee.page_body(cs, rank_table), "rank/academy-fee.html", og_head("og-academy-fee.png"))
     # 동(법정동) 페이지: 사람들은 "강서구 아파트"보다 "화곡동 아파트 시세"로 검색한다.
+    pages.update(content_school_district.pages(cs, shell, rank_table))
     pages.update(content_dong.pages(cs, shell, rank_table))
     for path, htm in pages.items():
         open(os.path.join(APP, path), "w", encoding="utf-8").write(htm)
