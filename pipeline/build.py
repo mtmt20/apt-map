@@ -1298,6 +1298,36 @@ def main():
     for h in (HIGH_SCHOOLS or {}).values():
         add_school(h.get("name"), h.get("lat"), h.get("lng"), "high",
                    {"coedu": h.get("coedu", ""), "hstype": h.get("type", "")})
+    # 동네별 학군 지도용 요약. 학군지를 모르는 사람도 "어디가 학군 좋은 동네인가"를
+    # 지도에서 바로 보게 하려고 만든다. 단지 3개 이상인 동만(표본이 적으면 오해를 준다).
+    dong = {}
+    for c in cs:
+        if c.get("edu_score") is None or not c.get("umd"):
+            continue
+        dong.setdefault((c["sgg"], c["umd"]), []).append(c)
+    dfeats = []
+    for (sgg_, umd_), members in dong.items():
+        if len(members) < 3:
+            continue
+        sc = sorted(x["edu_score"] for x in members)
+        med = sc[len(sc) // 2]
+        fees = sorted(x["edu"]["fee_med"] for x in members if (x.get("edu") or {}).get("fee_med"))
+        p84 = sorted(b["latest"] for x in members for b in x["by_area"] if 70 <= b["area"] < 100 and b.get("latest"))
+        dfeats.append({"type": "Feature", "properties": {
+            "sgg": sgg_, "umd": umd_, "edu": med, "n": len(members),
+            "fee": (fees[len(fees) // 2] if len(fees) >= 3 else None),
+            "p84": (p84[len(p84) // 2] if p84 else None),
+        }, "geometry": {"type": "Point", "coordinates": [
+            round(sum(x["lng"] for x in members) / len(members), 5),
+            round(sum(x["lat"] for x in members) / len(members), 5)]}})
+    # 서울 내 순위로 등급을 매긴다(A 상위10% ... E). 앱과 기준이 같아야 한다.
+    order = sorted(dfeats, key=lambda f: -f["properties"]["edu"])
+    for i, f in enumerate(order):
+        pct = max(1, round((i + 1) / len(order) * 100))   # 1위가 "상위 0%"로 나오면 이상하다
+        f["properties"]["pct"] = pct
+        f["properties"]["grade"] = "A" if pct <= 10 else "B" if pct <= 25 else "C" if pct <= 50 else "D" if pct <= 75 else "E"
+    dump("edu_dong.geojson", {"type": "FeatureCollection", "features": dfeats})
+    print("동네 학군 지도 {}개 동".format(len(dfeats)))
     print("학구도 {}개 유지, 범위 밖 {}개 제외".format(kept, dropped))
     # 학구도 폴리곤(수 MB)은 지도를 확대해야 보이는 정보다. 학교 점과 파일을 나눠서
     # 첫 화면에서는 가벼운 점만 받고, 경계는 필요할 때 따로 받게 한다.

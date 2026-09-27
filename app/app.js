@@ -10,7 +10,7 @@
     complexes: [], auctions: [], schools: null, meta: null,
     area: "all", sort: null, q: "",
     selected: null, markers: {}, aucMarkers: [], schoolMarkers: [], crownMarkers: [],
-    layers: { school: true, subway: true, road: false, auction: false, terrain: false, nuisance: false, amenity: false },
+    layers: { school: true, subway: true, edumap: false, road: false, auction: false, terrain: false, nuisance: false, amenity: false },
     compare: JSON.parse(localStorage.getItem("compare") || "[]"), budget: null,
   };
 
@@ -112,6 +112,35 @@
       layout: { "text-field": ["concat", ["get", "name"], " 예정"], "text-font": ["Noto Sans Bold"], "text-size": ["interpolate", ["linear"], ["zoom"], 12.5, 11, 17, 16],
                 "text-offset": [0, 1.0], "text-anchor": "top", "text-optional": true },
       paint: { "text-color": "#b45309", "text-halo-color": "#fff", "text-halo-width": 2 } });
+    // 동네별 학군 등급. 학군지를 모르는 사람이 지도만 보고도 감을 잡게 하는 게 목적이다.
+    const GRADE_COLOR = ["match", ["get", "grade"], "A", "#dc2626", "B", "#ea580c", "C", "#ca8a04", "D", "#16a34a", "#94a3b8"];
+    map.addSource("edudong", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
+    map.addLayer({ id: "edu-halo", type: "circle", source: "edudong",
+      paint: { "circle-radius": ["interpolate", ["linear"], ["zoom"], 9, 11, 13, 20, 16, 34],
+               "circle-color": GRADE_COLOR, "circle-opacity": 0.18 } });
+    map.addLayer({ id: "edu-dot", type: "circle", source: "edudong",
+      paint: { "circle-radius": ["interpolate", ["linear"], ["zoom"], 9, 7, 13, 13, 16, 20],
+               "circle-color": GRADE_COLOR, "circle-opacity": 0.92,
+               "circle-stroke-color": "#fff", "circle-stroke-width": 2 } });
+    if (map.getStyle().glyphs) {
+      map.addLayer({ id: "edu-label", type: "symbol", source: "edudong",
+        layout: { "text-field": ["format", ["get", "grade"], { "font-scale": 1.15 }, "\n", {}, ["get", "umd"], { "font-scale": 0.72 }],
+                  "text-font": ["Noto Sans Bold"], "text-size": ["interpolate", ["linear"], ["zoom"], 9, 10, 13, 13, 16, 16],
+                  "text-allow-overlap": false, "text-optional": true },
+        paint: { "text-color": "#fff", "text-halo-color": GRADE_COLOR, "text-halo-width": 1.6 } });
+    }
+    map.on("click", "edu-dot", (e) => {
+      const p = e.features[0].properties;
+      const bits = [`${p.sgg} ${p.umd}`, `학군 ${p.grade}등급 (${p.edu}점 · 상위 ${p.pct}%)`];
+      if (p.fee) bits.push(`학원비 월 ${Math.round(p.fee / 10000)}만원`);
+      if (p.p84) bits.push(`84㎡ ${fmtPrice(p.p84)}`);
+      bits.push(`단지 ${p.n}개`);
+      toast(bits.join(" · "));
+      $("#q").value = p.umd; state.q = p.umd; renderMarkers(); renderList(); setSheet("half");
+    });
+    map.on("mouseenter", "edu-dot", () => map.getCanvas().style.cursor = "pointer");
+    map.on("mouseleave", "edu-dot", () => map.getCanvas().style.cursor = "");
+
     map.addSource("stations", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
     map.addLayer({ id: "sub-dot", type: "circle", source: "stations", minzoom: 11,
       paint: { "circle-radius": ["interpolate", ["linear"], ["zoom"], 11, ["case", ["get", "transfer"], 5, 4], 14, ["case", ["get", "transfer"], 9, 7], 17, ["case", ["get", "transfer"], 13, 10]],
@@ -316,9 +345,12 @@
   }
   function applyCrowns() { const show = map.getZoom() < 13.3; state.crownMarkers.forEach((m) => m.getElement().style.display = show ? "" : "none"); }
   // 범례를 한 번 닫으면 레이어를 다시 켜기 전까지 안 띄운다
-  let legendClosed = false;
+  let legendClosed = false, eduLegendClosed = false;
   function applyLayers() {
     const v = (ids, on) => ids.forEach((id) => map.getLayer(id) && map.setLayoutProperty(id, "visibility", on ? "visible" : "none"));
+    v(["edu-halo", "edu-dot", "edu-label"], state.layers.edumap);
+    if (state.layers.edumap) lazySource("edudong", "data/edu_dong.geojson");
+    $("#eduLegend").hidden = !state.layers.edumap || eduLegendClosed;
     v(["school-fill", "school-line"], state.layers.school && map.getZoom() >= 12.5);
     if (state.layers.school && map.getZoom() >= 12.5) lazySource("zones", "data/school_zones.geojson");
     syncSchoolMarkers();
@@ -1127,9 +1159,11 @@
   $$(".lyr[data-layer]").forEach((b) => b.addEventListener("click", () => {
     state.layers[b.dataset.layer] = !state.layers[b.dataset.layer];
     if (b.dataset.layer === "amenity") legendClosed = false;
+    if (b.dataset.layer === "edumap") eduLegendClosed = false;
     applyLayers();
   }));
   if ($("#amLegendClose")) $("#amLegendClose").addEventListener("click", () => { legendClosed = true; $("#amLegend").hidden = true; });
+  if ($("#eduLegendClose")) $("#eduLegendClose").addEventListener("click", () => { eduLegendClosed = true; $("#eduLegend").hidden = true; });
   $("#locateBtn").addEventListener("click", () => {
     if (!navigator.geolocation) return toast("위치 정보를 지원하지 않는 브라우저예요.");
     navigator.geolocation.getCurrentPosition((p) => {

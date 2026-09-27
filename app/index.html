@@ -30,7 +30,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="집콕맵">
 <link rel="stylesheet" href="vendor/maplibre-gl.css">
-<link rel="stylesheet" href="style.css?v=82">
+<link rel="stylesheet" href="style.css?v=84">
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"WebSite","name":"집콕맵","url":"https://jipkokmap.kr/","description":"서울 아파트 실거래가, 배정 초등학교와 학군, 지하철 출퇴근 시간, 예산 대비 학군을 지도 한 장에서 확인하는 서비스","inLanguage":"ko"}</script>
 <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-2024521419046920" crossorigin="anonymous"></script>
 </head>
@@ -78,6 +78,9 @@
   <button class="lyr on" data-layer="subway" title="지하철역">
     <span class="ico">🚇</span><span>지하철</span>
   </button>
+  <button class="lyr" data-layer="edumap" title="동네별 학군 등급 (A~E)">
+    <span class="ico">🎓</span><span>학군지도</span>
+  </button>
   <button class="lyr" data-more="1" data-layer="road" title="큰길/골목/인도">
     <span class="ico">🛣️</span><span>도로</span>
   </button>
@@ -104,6 +107,13 @@
   <div><i class="d" style="background:#db2777"></i>대형 입시학원</div>
   <div><i class="d" style="background:#dc2626"></i>응급실</div><div><i class="d" style="background:#0ea5e9"></i>대학교</div>
   <div class="muted legend-note">동네를 가늠할 큰 시설만 표시합니다. 병원·어린이집 개수는 단지를 눌러 상세에서 보세요.</div>
+</div>
+<div class="legend big" id="eduLegend" hidden>
+  <button class="legend-x" id="eduLegendClose" title="범례 닫기">✕</button>
+  <div><i class="d" style="background:#dc2626"></i>A 상위10%</div><div><i class="d" style="background:#ea580c"></i>B 25%</div>
+  <div><i class="d" style="background:#ca8a04"></i>C 50%</div><div><i class="d" style="background:#16a34a"></i>D 75%</div>
+  <div><i class="d" style="background:#94a3b8"></i>E</div>
+  <div class="muted legend-note">동네별 <b>학군 지수</b> 등급입니다. 학원 밀집·초등 전입·중학교 여건으로 계산한 집콕맵 지수이고 <b>학교 성적이 아닙니다</b>. 동그라미를 누르면 그 동네 정보가 나옵니다.</div>
 </div>
 <div class="legend" id="legend" hidden>
   <div><i class="l major"></i>큰길 (차 많음)</div>
@@ -156,7 +166,7 @@
         <div id="dataStamp" class="stamp"></div>
       </div>
       <div class="note" style="margin-top:14px;text-align:center;line-height:2">
-        <a href="apt/index.html">🏢 서울 아파트 6,809개 단지 목록</a> · <a href="rank/academy-fee.html">📚 동네별 학원비</a> · <a href="rank/budget-school.html">💰 예산별 학군지</a> · <a href="rank/future-rail.html">🚧 공사 중 예정역 도보권</a><br>
+        <a href="dong/index.html">🏘️ 동네별 아파트 시세</a> · <a href="apt/index.html">🏢 아파트 단지 목록</a> · <a href="rank/academy-fee.html">📚 동네별 학원비</a> · <a href="rank/budget-school.html">💰 예산별 학군지</a> · <a href="rank/future-rail.html">🚧 공사 중 예정역 도보권</a><br>
         <a href="calc.html">🧮 계산기</a> · <a href="fund.html">💰 자금 마련</a> · <a href="rank/index.html">📊 구별 랭킹</a> · <a href="guide.html">지표 설명</a> · <a href="moving.html">이사 준비</a> · <a href="about.html">소개</a> · <a href="privacy.html">개인정보</a> · <a href="terms.html">이용약관</a>
       </div>
     </div>
@@ -238,7 +248,7 @@
   </div>
 </div>
 <script src="config.js"></script>
-<script src="app.js?v=82"></script>
+<script src="app.js?v=84"></script>
 <script>if ("serviceWorker" in navigator && location.protocol === "https:") navigator.serviceWorker.register("sw.js").catch(() => {});</script>
 </body>
 </html>

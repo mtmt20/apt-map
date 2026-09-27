@@ -64,6 +64,16 @@ li.good i{background:rgba(22,163,74,.12);color:var(--good)}li.bad i{background:r
 """
 
 
+def indexable(c):
+    """검색엔진에 올릴 값어치가 있는 단지인가.
+
+    거래가 1년에 1건 이하이고 100세대도 안 되는 단지는 페이지에 "미확인"만 가득해서,
+    검색으로 들어온 사람이 바로 나간다. 구글이 실제로 색인한 317개가 대부분 이런
+    페이지였다(2026-09-27 확인). 크롤링 예산을 좋은 페이지에 쓰도록 이런 건 뺀다.
+    """
+    return (c.get("trade_count_1y") or 0) >= 2 or (c.get("households") or 0) >= 100
+
+
 def page_html(c, base, all_by_umd):
     slug = slugify(c)
     areas = c.get("by_area") or []
@@ -86,12 +96,12 @@ def page_html(c, base, all_by_umd):
     }
     parts = []
     parts.append("""<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="color-scheme" content="light only"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>{t}</title><meta name="description" content="{d}"><link rel="canonical" href="{base}/apt/{slugq}.html">
+<title>{t}</title><meta name="description" content="{d}"><link rel="canonical" href="{base}/apt/{slugq}.html">{noidx}
 <meta property="og:title" content="{t}"><meta property="og:description" content="{d}"><meta property="og:type" content="article"><meta property="og:url" content="{base}/apt/{slugq}.html">
 <script type="application/ld+json">{ld}</script><link rel="stylesheet" href="page.css"><script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-2024521419046920" crossorigin="anonymous"></script></head><body><div class="wrap">
 <header class="top"><a class="logo" href="../index.html">🏠 집콕맵</a><a class="btn" href="../index.html?id={id}">지도에서 보기</a></header>
 <h1>{name}</h1><div class="sub">{addr} · {hh}{built}년 준공 ({age}년차){fl}{dong}</div>""".format(
-        t=esc(title), d=esc(desc), base=base, slug=slug, slugq=__import__("urllib.parse").parse.quote(slug), ld=json.dumps(ld, ensure_ascii=False), css=CSS, id=esc(c["id"]), name=esc(c["name"]), addr=esc(c["addr"]),
+        t=esc(title), d=esc(desc), base=base, slug=slug, slugq=__import__("urllib.parse").parse.quote(slug), noidx=("" if indexable(c) else '<meta name="robots" content="noindex,follow">'), ld=json.dumps(ld, ensure_ascii=False), css=CSS, id=esc(c["id"]), name=esc(c["name"]), addr=esc(c["addr"]),
         hh=("<b>{:,}세대</b> · ".format(c["households"]) if c.get("households") else ""), built=c["built"], age=age,
         fl=(" · 최고 {}층".format(c["max_floor"]) if c.get("max_floor") else ""), dong=(" · {}개동".format(c["dongs"]) if c.get("dongs") else "")))
 
@@ -213,6 +223,10 @@ def page_html(c, base, all_by_umd):
         parts.append('<tr><td>{}</td><td>{}㎡</td><td>{}층</td><td class="r"><b>{}</b></td></tr>'.format(t["date"], int(t["area"]), t["floor"], price(t["price"])))
     parts.append('</table><div class="note">출처: 국토교통부 실거래가 공개시스템 (신고 지연 최대 30일, 해제 거래 제외)</div></div>')
 
+    # 동 페이지로 올려보내는 링크. 크롤러가 동 페이지를 찾는 경로이기도 하다(색인 0건이었음).
+    if c.get("sgg") and c.get("umd"):
+        _dq = __import__("urllib.parse").parse.quote("{}-{}".format(c["sgg"], c["umd"]))
+        parts.append('<div class="card"><p style="margin:0"><b>🏘️ <a href="../dong/{}.html">{} 아파트 시세·학군 전체 보기</a></b> — 같은 동 단지들의 평당가, 배정 초등학교, 학원비를 한 표에서 비교합니다.</p></div>'.format(_dq, esc(c["umd"])))
     # 같은 동 단지
     if sib:
         parts.append('<h2>{} 다른 단지</h2><div class="card list">'.format(esc(c["umd"])))
@@ -284,8 +298,11 @@ def main():
     for c in cs:
         slug, h = page_html(c, base, by_umd)
         open(os.path.join(out, slug + ".html"), "w", encoding="utf-8").write(h)
-        urls.append("{}/apt/{}.html".format(base, __import__("urllib.parse").parse.quote(slug)))
+        if indexable(c):
+            urls.append("{}/apt/{}.html".format(base, __import__("urllib.parse").parse.quote(slug)))
     open(os.path.join(out, "index.html"), "w", encoding="utf-8").write(index_html(cs, base))
+    print("사이트맵에 넣은 단지 {}개 / 전체 {}개 (얇은 페이지 {}개는 noindex)".format(
+        len(urls), len(cs), len(cs) - len(urls)))
     today = dt.date.today().isoformat()
     # 사이트맵 분할: 허브/콘텐츠(core)를 단지(apt) 와 나눠 크롤링 우선순위를 준다
     def urlset(items):
