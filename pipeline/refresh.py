@@ -37,8 +37,9 @@ def main():
     log_path = os.path.join(LOGDIR, "refresh_{}.log".format(dt.datetime.now().strftime("%Y%m%d_%H%M")))
     log = io.open(log_path, "w", encoding="utf-8")
     failed = []
+    retryable = []          # (이름, 명령) - 국토부 서버가 잠깐 끊겨 실패한 수집 단계
 
-    def step(name, cmd, must=False):
+    def step(name, cmd, must=False, retry=False):
         t0 = time.time()
         log.write("\n=== {} ({})\n".format(name, " ".join(cmd)))
         log.flush()
@@ -50,15 +51,34 @@ def main():
         print("{:28s} exit={} {:.0f}s".format(name, r.returncode, time.time() - t0))
         if r.returncode != 0:
             failed.append(name)
+            if retry:
+                retryable.append((name, cmd))
             if must:
                 raise SystemExit("필수 단계 실패: {} (로그 {})".format(name, log_path))
         return r.returncode == 0
 
     for code, name in ALL_SGG.items():
-        step("trades " + name, ["pipeline/fetch_trades.py", "--lawd", code, "--months", "24"])
-        step("rent " + name, ["pipeline/fetch_rent.py", "--lawd", code, "--months", "12"])
+        step("trades " + name, ["pipeline/fetch_trades.py", "--lawd", code, "--months", "24"], retry=True)
+        step("rent " + name, ["pipeline/fetch_rent.py", "--lawd", code, "--months", "12"], retry=True)
         if a.full:
-            step("kapt " + name, ["pipeline/fetch_kapt.py", "--sgg", code])
+            step("kapt " + name, ["pipeline/fetch_kapt.py", "--sgg", code], retry=True)
+
+    # 국토부 서버가 잠깐 끊기면 몇 개 구가 실패하고 그 동네만 숫자가 하루 뒤처진다.
+    # (2026-09-28 강북구·노원구 전월세, 서대문구 실거래가 그렇게 빠졌다)
+    # 수집이 다 끝난 뒤 실패한 것만 두 번까지 다시 받는다. 서버가 회복될 시간을 준다.
+    for attempt in (1, 2):
+        if not retryable:
+            break
+        again, retryable = retryable, []
+        wait = 60 * attempt
+        print("실패한 {}건을 {}초 뒤 다시 받습니다 (시도 {}/2)".format(len(again), wait, attempt))
+        log.write("\n=== 재시도 {}회차: {}건, {}초 대기\n".format(attempt, len(again), wait))
+        log.flush()
+        time.sleep(wait)
+        for name, cmd in again:
+            if step(name + " (재시도 {})".format(attempt), cmd, retry=(attempt == 1)):
+                if name in failed:
+                    failed.remove(name)
     step("auction", ["pipeline/fetch_auction.py"])
     step("geocode", ["pipeline/geocode.py"])
     if not a.skip_poi:
