@@ -36,7 +36,8 @@
 
   // ---------- utils ----------
   // 서울 상위 %를 A~E 로. 학교 성적이 아니라 집콕맵 학군 지수(학원 밀집·초등 전입·중학교)의 서울 내 순위다.
-  const eduGrade = (pct) => pct == null ? "" : pct <= 10 ? "A" : pct <= 25 ? "B" : pct <= 50 ? "C" : pct <= 75 ? "D" : "E";
+  // S 상위 3%(대치·목동·중계·반포·수내 정도) · A 10% · B 25% · C 50% · D 75% · E 나머지
+  const eduGrade = (pct) => pct == null ? "" : pct <= 3 ? "S" : pct <= 10 ? "A" : pct <= 25 ? "B" : pct <= 50 ? "C" : pct <= 75 ? "D" : "E";
   // ---------- 우리 아이 나이별 맞춤 점수 ----------
   // 축 순서는 build.py 의 KID_AXES 와 같다: 초등 접근 / 학군 / 보육·의료 / 지형·보행 / 환경·안전 / 생활 편의
   // 다섯 살 부모에게 대형 입시학원이, 고2 부모에게 놀이터가 무슨 소용인가. 나이마다 비중을 바꾼다.
@@ -146,7 +147,7 @@
                 "text-offset": [0, 1.0], "text-anchor": "top", "text-optional": true },
       paint: { "text-color": "#b45309", "text-halo-color": "#fff", "text-halo-width": 2 } });
     // 동네별 학군 등급. 학군지를 모르는 사람이 지도만 보고도 감을 잡게 하는 게 목적이다.
-    const GRADE_COLOR = ["match", ["get", "grade"], "A", "#15803d", "B", "#4d7c0f", "C", "#ca8a04", "D", "#ea580c", "#b91c1c"];
+    const GRADE_COLOR = ["match", ["get", "grade"], "S", "#064e3b", "A", "#15803d", "B", "#4d7c0f", "C", "#ca8a04", "D", "#ea580c", "#b91c1c"];
     map.addSource("edudong", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
     map.addLayer({ id: "edu-halo", type: "circle", source: "edudong",
       paint: { "circle-radius": ["interpolate", ["linear"], ["zoom"], 9, 11, 13, 20, 16, 34],
@@ -713,7 +714,7 @@
       const best = e.dongs.get(dk);
       if (!best || (c.edu_score || 0) > best) e.dongs.set(dk, c.edu_score || 0);
     }
-    return ["A", "B", "C", "D", "E"].filter((k) => g[k]).map((k) => ({
+    return ["S", "A", "B", "C", "D", "E"].filter((k) => g[k]).map((k) => ({
       k, n: g[k].n, dn: g[k].dongs.size,
       top: [...g[k].dongs.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3).map((x) => x[0]),
     }));
@@ -725,12 +726,12 @@
     const best = st[0];
     return `<div class="gradebar">
       <div class="gbhead">💰 ${eok(B.max)}억${SIZE_NAME[B.size] ? " · " + SIZE_NAME[B.size] : ""}${state.commute ? " · " + esc(state.commute.a.name) + " " + state.commute.max + "분" : ""}으로 갈 수 있는 최고 학군은
-        <b class="grade g${best.k}">${best.k}</b>등급 <span class="muted">(${best.top.map(esc).join("·")})</span></div>
+        <b class="grade g${best.k}">${best.k}</b>등급 단지 <span class="muted">(${best.top.map(esc).join("·")} 등)</span></div>
       <div class="gbchips">
         <button class="gbc ${!B.grade ? "on" : ""}" data-grade="">전체</button>
         ${st.map((x) => `<button class="gbc ${B.grade === x.k ? "on" : ""}" data-grade="${x.k}"><b class="grade g${x.k}">${x.k}</b> ${x.dn}개 동 · ${x.n}단지</button>`).join("")}
       </div>
-      <div class="muted gbnote">학군 등급: A 상위 10% · B 25% · C 50% · D 75% · E 나머지 (집콕맵 학군 지수, 매일 새로 계산)</div>
+      <div class="muted gbnote">학군 등급: S 상위 3% · A 10% · B 25% · C 50% · D 75% · E 나머지. 단지마다 주변 1km 학원·배정 학교로 따로 매겨서 같은 동네 안에서도 다를 수 있습니다 (집콕맵 학군 지수, 매일 새로 계산)</div>
     </div>`;
   }
   // 예산 검색 결과가 '어떤 공식·순서로' 뽑혔는지 목록 위에 그대로 적는다 (사용자 요청 2026-09-28).
@@ -1172,9 +1173,10 @@
       e.preventDefault();
       const max = Math.round(parseFloat(e.target.max.value || "0") * 10000);
       if (!max) return;
-      // 하한 없이 두면 15억 예산에 1억짜리까지 섞인다. 빠른 입력은 예산의 절반까지만 본다.
-      state.budget = { max, min: Math.round(max * 0.5), gu: "", kid: true, gender: "", fam: true, pri: "eduvalue",
-                       size: e.target.size ? e.target.size.value : "" };
+      // 하한 없이 두면 15억 예산에 1억짜리까지 섞인다. 절반(7.5억)도 노원 8~9억대가 계속 섞여서
+      // '15억인데 노원이 많이 나온다'는 제보가 왔다(2026-09-28). 예산의 70%까지만 본다.
+      state.budget = { max, min: Math.round(max * 0.7), gu: "", kid: true, gender: "", fam: true, pri: "eduvalue",
+                       size: e.target.size ? e.target.size.value : "30" };
       state.sort = "budget";
       $$("[data-sort]").forEach((x) => x.classList.toggle("on", x.dataset.sort === "budget"));
       hit("ask_budget"); done("answered");
@@ -1385,8 +1387,8 @@
     e.preventDefault();
     const max = Math.round(parseFloat(qb.max.value || "0") * 10000);
     if (!max) return toast("예산을 억 단위로 넣어주세요.");
-    // 하한 없이 두면 15억 예산에 1억짜리까지 섞인다. 빠른 입력은 예산의 절반까지만 본다.
-    state.budget = { max, min: Math.round(max * 0.5), gu: "", kid: true, gender: "", fam: true, pri: "eduvalue" };
+    // 하한 = 예산의 70%, 평형은 30평대 기준 (평형을 섞으면 노원 45평과 목동 25평이 같은 줄에 선다)
+    state.budget = { max, min: Math.round(max * 0.7), gu: "", kid: true, gender: "", fam: true, pri: "eduvalue", size: "30" };
     state.sort = "budget";
     $$("[data-sort]").forEach((x) => x.classList.toggle("on", x.dataset.sort === "budget"));
     hit("budget");

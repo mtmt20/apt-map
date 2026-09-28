@@ -32,7 +32,7 @@ def man(v):
 
 
 def grade_of(pct):
-    return "A" if pct <= 10 else "B" if pct <= 25 else "C" if pct <= 50 else "D" if pct <= 75 else "E"
+    return "S" if pct <= 3 else "A" if pct <= 10 else "B" if pct <= 25 else "C" if pct <= 50 else "D" if pct <= 75 else "E"
 
 
 def badge(g):
@@ -91,7 +91,7 @@ COLS_BASE = [
 def page_body(cs, rank_table):
     ds = collect(cs)
     today = dt.date.today()
-    a_list = [d for d in ds if d["grade"] == "A"]
+    a_list = [d for d in ds if d["grade"] in ("S", "A")]
     med_all = statistics.median([d["edu"] for d in ds])
     b = ['<h1>서울·수도권 학군지 순위</h1>',
          '<p class="sub">동네 {}곳을 점수로 줄 세웠습니다 · {} 기준 실거래</p>'.format(len(ds), today.isoformat())]
@@ -109,21 +109,21 @@ def page_body(cs, rank_table):
 </div>'''.format(n=len(ds), med=int(med_all)))
 
     b.append('<div class="card"><p style="margin:0">등급은 전체 안에서의 순위입니다. '
-             '{A} 상위 10% · {B} 25% · {C} 50% · {D} 75% · {E} 그 아래.</p></div>'.format(
-                 A=badge("A"), B=badge("B"), C=badge("C"), D=badge("D"), E=badge("E")))
+             '{S} 상위 3% · {A} 10% · {B} 25% · {C} 50% · {D} 75% · {E} 그 아래.</p></div>'.format(
+                 S=badge("S"), A=badge("A"), B=badge("B"), C=badge("C"), D=badge("D"), E=badge("E")))
 
-    b.append('<h2>🥇 학군지 A등급 {}곳</h2>'.format(len(a_list)))
+    b.append('<h2>🥇 학군지 S·A등급 {}곳</h2>'.format(len(a_list)))
     b.append('<div class="card">{}</div>'.format(rank_table(a_list, COLS_BASE)))
 
     # 가성비: A·B 등급 중 84㎡ 가 싼 순. 이게 이 페이지의 핵심이다.
-    value = [d for d in ds if d["grade"] in ("A", "B") and d["p84"]]
+    value = [d for d in ds if d["grade"] in ("S", "A", "B") and d["p84"]]
     value.sort(key=lambda d: d["p84"])
     b.append('<h2>💰 학군 좋은데 집값 싼 동네 20</h2>')
-    b.append('<div class="card"><p class="note">A·B 등급(상위 25%) 중에서 84㎡ 실거래 중앙값이 낮은 순입니다. '
+    b.append('<div class="card"><p class="note">S·A·B 등급(상위 25%) 중에서 84㎡ 실거래 중앙값이 낮은 순입니다. '
              '같은 학군 등급이어도 동네에 따라 집값이 서너 배 차이 납니다.</p>{}</div>'.format(
                  rank_table(value[:20], COLS_BASE)))
 
-    cheap = [d for d in ds if d["grade"] in ("A", "B") and d["fee"]]
+    cheap = [d for d in ds if d["grade"] in ("S", "A", "B") and d["fee"]]
     cheap.sort(key=lambda d: d["fee"])
     b.append('<h2>📚 학군 좋은데 학원비 싼 동네 20</h2>')
     b.append('<div class="card"><p class="note">학원비는 교육청이 공시하는 학원별 교습비에서 계산한 '
@@ -139,13 +139,13 @@ def page_body(cs, rank_table):
         items.sort(key=lambda d: -d["edu"])
         gu_rows.append({"gu": gu, "med": statistics.median([d["edu"] for d in items]),
                         "top": items[0], "n": len(items),
-                        "a": sum(1 for d in items if d["grade"] in ("A", "B"))})
+                        "a": sum(1 for d in items if d["grade"] in ("S", "A", "B"))})
     gu_rows.sort(key=lambda r: -r["med"])
     gu_cols = [
         ("순위", lambda r: gu_rows.index(r) + 1),
         ("지역", lambda r: '<a href="{}.html">{}</a>'.format(urllib.parse.quote(r["gu"]), esc(r["gu"]))),
         ("학군 지수 중앙값", lambda r: "<b>{}</b>".format(int(r["med"]))),
-        ("A·B 등급 동네", lambda r: "{}곳".format(r["a"])),
+        ("S·A·B 등급 동네", lambda r: "{}곳".format(r["a"])),
         ("대표 동네", lambda r: "{} {}".format(esc(r["top"]["umd"]), badge(r["top"]["grade"]))),
     ]
     b.append('<h2>🏙️ 구·시별 학군지 순위</h2>')
@@ -179,7 +179,7 @@ def gu_page_body(gu, ds_all, rank_table):
         return None
     items.sort(key=lambda d: -d["edu"])
     med = statistics.median([d["edu"] for d in items])
-    ab = [d for d in items if d["grade"] in ("A", "B")]
+    ab = [d for d in items if d["grade"] in ("S", "A", "B")]
     fees = [d["fee"] for d in items if d["fee"]]
     p84 = [d["p84"] for d in items if d["p84"]]
     b = ['<h1>{} 학군지 순위</h1>'.format(esc(gu)),
@@ -187,7 +187,7 @@ def gu_page_body(gu, ds_all, rank_table):
     p = ["{}에서 아파트 실거래가 있는 동네는 <b>{}곳</b>이고, 학군 지수 중앙값은 <b>{}점</b>입니다.".format(
         esc(gu), len(items), int(med))]
     if ab:
-        p.append("수도권 상위 25%(A·B 등급)에 드는 동네는 <b>{}곳</b>이고, 가장 높은 곳은 <b>{} {}점</b>입니다.".format(
+        p.append("수도권 상위 25%(S·A·B 등급)에 드는 동네는 <b>{}곳</b>이고, 가장 높은 곳은 <b>{} {}점</b>입니다.".format(
             len(ab), esc(items[0]["umd"]), items[0]["edu"]))
     if fees:
         p.append("과목당 월 학원비 중앙값은 <b>{}</b>입니다.".format(man(statistics.median(fees))))
@@ -209,10 +209,10 @@ def gu_page_body(gu, ds_all, rank_table):
 def pages(cs, shell, rank_table):
     ds = collect(cs)
     out = {}
-    a_n = sum(1 for d in ds if d["grade"] == "A")
+    a_n = sum(1 for d in ds if d["grade"] in ("S", "A"))
     out["rank/school-district.html"] = shell(
         "서울·수도권 학군지 순위 {}곳 · 동네별 학군 등급 | 집콕맵".format(len(ds)),
-        "서울 25개 구와 경기 출퇴근권의 동네 {}곳을 학군 지수로 줄 세웠습니다. A등급 {}곳, "
+        "서울 25개 구와 경기 출퇴근권의 동네 {}곳을 학군 지수로 줄 세웠습니다. S·A등급 {}곳, "
         "학군 좋은데 집값 싼 동네, 학원비 싼 동네까지 실거래가와 함께 정리했습니다.".format(len(ds), a_n),
         page_body(cs, rank_table), "rank/school-district.html")
     for gu in sorted({d["sgg"] for d in ds}):

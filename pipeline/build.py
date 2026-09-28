@@ -183,6 +183,8 @@ def load_schoolinfo():
         return {}
     by_year = {}
     for fp in glob.glob(os.path.join(d, "*_*_*_*.json")):
+        if os.path.basename(fp).startswith("_"):   # 조사용 파일(_probe 등)은 건너뛴다
+            continue
         t, knd, sgg, yr = os.path.basename(fp)[:-5].split("_")
         for r in json.load(open(fp, encoding="utf-8")):
             rec = by_year.setdefault(r["SCHUL_NM"], {}).setdefault(int(yr), {"knd": knd})
@@ -1392,7 +1394,7 @@ def main():
     for i, f in enumerate(order):
         pct = max(1, round((i + 1) / len(order) * 100))   # 1위가 "상위 0%"로 나오면 이상하다
         f["properties"]["pct"] = pct
-        f["properties"]["grade"] = "A" if pct <= 10 else "B" if pct <= 25 else "C" if pct <= 50 else "D" if pct <= 75 else "E"
+        f["properties"]["grade"] = "S" if pct <= 3 else "A" if pct <= 10 else "B" if pct <= 25 else "C" if pct <= 50 else "D" if pct <= 75 else "E"
     dump("edu_dong.geojson", {"type": "FeatureCollection", "features": dfeats})
     print("동네 학군 지도 {}개 동".format(len(dfeats)))
     print("학구도 {}개 유지, 범위 밖 {}개 제외".format(kept, dropped))
