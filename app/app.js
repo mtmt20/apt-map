@@ -605,6 +605,51 @@
   const matchQ = (c) => !state.q || (c.name + c.umd + (c.addr || "") + (c.sgg || "")).toLowerCase().includes(state.q.toLowerCase());
 
   // ---------- list ----------
+  // 예산 검색은 "15억 이하 전부"를 학군순으로 주면 한 동네가 목록을 다 먹는다
+  // (15억으로 넣으면 150개 중 중계동이 30개였다). 가격 구간을 나눠 **각 구간의 최고**를
+  // 번갈아 올리고, 같은 동은 2개까지만 남긴다. 예산 안에서 선택지를 보여주는 게 목적이다.
+  const PRICE_BANDS = [30000, 50000, 70000, 90000, 110000, 130000, 150000, 200000, 300000, 1e9];
+  function bandLabel(v) {
+    const i = PRICE_BANDS.findIndex((x) => v <= x);
+    const lo = i <= 0 ? 0 : PRICE_BANDS[i - 1];
+    const hi = PRICE_BANDS[i];
+    const eok = (x) => (x / 10000).toFixed(0);
+    return hi >= 1e9 ? `${eok(lo)}억+` : lo ? `${eok(lo)}~${eok(hi)}억` : `${eok(hi)}억 이하`;
+  }
+  function bestByBand(sorted, B) {
+    const buckets = new Map();
+    for (const c of sorted) {
+      const p = (c._bRep && c._bRep.latest) || c.rep_price;
+      if (!p) continue;
+      const i = PRICE_BANDS.findIndex((x) => p <= x);
+      c._band = bandLabel(p);
+      if (!buckets.has(i)) buckets.set(i, []);
+      buckets.get(i).push(c);
+    }
+    const keys = [...buckets.keys()].sort((a, b) => a - b);
+    keys.forEach((k) => buckets.get(k).forEach((c, i) => { c._bandRank = i + 1; }));
+    const out = [], perDong = {};
+    let round = 0;
+    while (out.length < 150 && round < 200) {
+      let added = 0;
+      for (const k of keys) {
+        const arr = buckets.get(k);
+        while (arr.length) {
+          const c = arr.shift();
+          const key = c.sgg + c.umd;
+          if ((perDong[key] || 0) >= 2) continue;        // 같은 동은 2개까지
+          perDong[key] = (perDong[key] || 0) + 1;
+          out.push(c); added++;
+          break;
+        }
+        if (out.length >= 150) break;
+      }
+      if (!added) break;
+      round++;
+    }
+    return out;
+  }
+
   function visibleComplexes() {
     let list = state.complexes.filter((c) => areaMatch(c) && matchQ(c));
     if (!state.q && map.getZoom() >= 12 && state.sort !== "fav" && state.sort !== "budget" && !state.commute) {   // 검색어 없으면 지도 화면 안 단지만
@@ -635,6 +680,7 @@
         .sort((a, b) => (B.pri === "eduvalue" ? (a.edu_band_pct || 999) - (b.edu_band_pct || 999)
                        : B.pri === "edu" ? (b.edu_score || 0) - (a.edu_score || 0)
                        : (b.kid || 0) - (a.kid || 0)) || b.trade_count_1y - a.trade_count_1y);
+      list = bestByBand(list, B);
     }
     else if (state.commute) list.sort((a, b) => state.commute.mode === "sum"
       ? ((a._cmA ?? 999) + (a._cmB ?? 0)) - ((b._cmA ?? 999) + (b._cmB ?? 0))
@@ -656,6 +702,8 @@
       const tags = [
         ...(commuteTag(c) ? [commuteTag(c)] : []),
         ...((() => { const f = fitScore(c); return f == null ? [] : [`<span class="tag fit">${AGE[state.age].name} 맞춤 ${f}점</span>`]; })()),
+        ...(state.sort === "budget" && c._band && c._bandRank <= 3
+              ? [`<span class="tag fit">${esc(c._band)} ${c._bandRank}위</span>`] : []),
         ...(feeTag(c) ? [feeTag(c)] : []),
         ...(c.mg && (c.mg[0] < 2 || c.mg[1] < 2) ? [`<span class="tag warn2">중학교 ${c.mg[0] < 2 ? "아들" : "딸"} 기준 ${Math.min(c.mg[0], c.mg[1])}곳</span>`] : []),
         ...(c.fut && c.fut.dist <= 800 ? [`<span class="tag fut">🚧 ${esc(c.fut.line)} ${esc(c.fut.name)} 예정 ${c.fut.walk_min}분</span>`] : []),
