@@ -146,7 +146,7 @@
                 "text-offset": [0, 1.0], "text-anchor": "top", "text-optional": true },
       paint: { "text-color": "#b45309", "text-halo-color": "#fff", "text-halo-width": 2 } });
     // 동네별 학군 등급. 학군지를 모르는 사람이 지도만 보고도 감을 잡게 하는 게 목적이다.
-    const GRADE_COLOR = ["match", ["get", "grade"], "A", "#dc2626", "B", "#ea580c", "C", "#ca8a04", "D", "#16a34a", "#94a3b8"];
+    const GRADE_COLOR = ["match", ["get", "grade"], "A", "#15803d", "B", "#4d7c0f", "C", "#ca8a04", "D", "#ea580c", "#b91c1c"];
     map.addSource("edudong", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
     map.addLayer({ id: "edu-halo", type: "circle", source: "edudong",
       paint: { "circle-radius": ["interpolate", ["linear"], ["zoom"], 9, 11, 13, 20, 16, 34],
@@ -366,11 +366,12 @@
       if (lv === "elem") el.style.color = PALETTE[state.schoolNames.indexOf(p.name) % PALETTE.length];
       const ICON = { elem: "🏫", middle: "🎒", high: "🎓" };
       const nm = p.name.replace("등학교", "").replace("학교", "");
-      const HS = { "자율고": "자율", "특목고": "특목", "특성화고": "특성화" };
-      const num = lv === "high" && HS[p.hstype] ? `<b>${HS[p.hstype]}</b>`
-        : p.class_size ? `<b>${p.class_size}</b>명` : "";
+      const num = p.grade ? `<b class="sg sg${p.grade}">${p.grade}</b>` : "";
       el.innerHTML = `${ICON[lv] || "🏫"} ${esc(nm)}${num ? " " + num : ""}`;
-      el.title = `${p.name}${p.class_size ? " · 학급당 " + p.class_size + "명" : ""}${p.hstype ? " · " + p.hstype : ""}${p.coedu && p.coedu !== "남여공학" ? " · " + p.coedu : ""}`;
+      el.title = `${p.name}${p.grade ? " · " + p.grade + "등급" : ""}${p.why ? " (" + p.why + ")" : ""}`
+        + `${p.class_size ? " · 학급당 " + p.class_size + "명" : ""}${p.hstype ? " · " + p.hstype : ""}`
+        + `${p.coedu && p.coedu !== "남여공학" ? " · " + p.coedu : ""}`
+        + " — 성적이 아니라 전입·규모 기준입니다";
       made.set(i, new maplibregl.Marker({ element: el, anchor: "center" }).setLngLat(f.geometry.coordinates).addTo(map));
     });
     made.forEach((m, i) => { if (!want.has(i)) { m.remove(); made.delete(i); } });

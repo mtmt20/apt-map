@@ -1291,6 +1291,38 @@ def main():
     # 초·중·고를 모두 올린다. 옆에 붙는 숫자는 학급당 평균 인원(학교알리미 공시).
     # 학업성취도는 2017년 이후 비공개라 쓸 수 없고, 고교 진로 현황의 비율 필드는 전부 100%로
     # 나와(졸업생 구성 합계) 진학률로 쓸 수 없었다. 학급당 인원이 유일하게 해석이 분명한 숫자다.
+    # 학교별 등급. **성적이 아니다.** 학부모가 아이를 보내려고 전입하는 정도(순전입률)와
+    # 학교 규모를 본다. 학군지 명문교는 전입이 많고 규모가 크다는 관찰에 기댄 대리 지표다.
+    # 고등학교는 전입 개념이 약해 지정 유형(영재·과학·외고·국제·자사고)으로 대신한다.
+    _mv = sorted(v["net_move_pct"] for v in (SCHOOL_STATS or {}).values() if v.get("net_move_pct") is not None)
+    _sz = sorted(v["students"] for v in (SCHOOL_STATS or {}).values() if v.get("students"))
+    HS_RANK = {"영재학교": 98, "과학고": 96, "외고": 92, "국제고": 92, "자율고": 82, "특목고": 92, "특성화고": 40}
+
+    def school_grade(name, level, hstype=""):
+        """(등급, 점수, 근거) - 점수는 0~100, 등급은 A(상위10%)~E."""
+        if level == "high":
+            base = HS_RANK.get(hstype)
+            if base is None:
+                base = 55 if hstype == "일반고" else None
+            if base is None:
+                return None, None, ""
+            why = hstype or "일반고"
+            score = base
+        else:
+            st_ = (SCHOOL_STATS or {}).get(name) or {}
+            mv, sz = st_.get("net_move_pct"), st_.get("students")
+            if mv is None and not sz:
+                return None, None, ""
+            parts = []
+            if mv is not None:
+                parts.append((pct_rank(_mv, mv), 0.7))
+            if sz:
+                parts.append((pct_rank(_sz, sz), 0.3))
+            score = sum(v * w for v, w in parts) / sum(w for _, w in parts)
+            why = "순전입 {:+.1f}%".format(mv) if mv is not None else "학생 {}명".format(sz)
+        g = "A" if score >= 90 else "B" if score >= 75 else "C" if score >= 50 else "D" if score >= 25 else "E"
+        return g, round(score), why
+
     def cls_size(name):
         st = (SCHOOL_STATS or {}).get(name) or {}
         v = st.get("class_size")
@@ -1302,7 +1334,9 @@ def main():
         if not name or not lat or not lng or name in seen_school:
             return
         seen_school.add(name)
-        props = {"name": name, "kind": "school", "level": level, "class_size": cls_size(name)}
+        g, gs, why = school_grade(name, level, (extra or {}).get("hstype", ""))
+        props = {"name": name, "kind": "school", "level": level, "class_size": cls_size(name),
+                 "grade": g, "gscore": gs, "why": why}
         props.update(extra or {})
         feats.append({"type": "Feature", "properties": props, "geometry": {"type": "Point", "coordinates": [lng, lat]}})
 
