@@ -30,7 +30,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="집콕맵">
 <link rel="stylesheet" href="vendor/maplibre-gl.css">
-<link rel="stylesheet" href="style.css?v=94">
+<link rel="stylesheet" href="style.css?v=95">
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"WebSite","name":"집콕맵","url":"https://jipkokmap.kr/","description":"서울 아파트 실거래가, 배정 초등학교와 학군, 지하철 출퇴근 시간, 예산 대비 학군을 지도 한 장에서 확인하는 서비스","inLanguage":"ko"}</script>
 <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-2024521419046920" crossorigin="anonymous"></script>
 </head>
@@ -147,12 +147,20 @@
   <div><i class="d" style="background:#dc2626"></i>응급실</div><div><i class="d" style="background:#0ea5e9"></i>대학교</div>
   <div class="muted legend-note">동네를 가늠할 큰 시설만 표시합니다. 병원·어린이집 개수는 단지를 눌러 상세에서 보세요.</div>
 </div>
+<div class="legend big" id="schLegend" hidden>
+  <button class="legend-x" id="schLegendClose" title="범례 닫기">✕</button>
+  <div><b>학교 옆 글자 = 학교 선호도</b> <span class="muted">(학군 등급 S~E 와 다른 것)</span></div>
+  <div><i class="d" style="background:#15803d"></i>A 상위10% <i class="d" style="background:#4d7c0f"></i>B 25% <i class="d" style="background:#ca8a04"></i>C 50% <i class="d" style="background:#ea580c"></i>D 75% <i class="d" style="background:#b91c1c"></i>E</div>
+  <div class="muted legend-note"><b>초·중학교</b>: 학구로 전입해 오는 학생 비율 70% + 학생 수 30% (학교알리미). 사람들이 이사 와서 보내려는 학교일수록 높습니다.<br>
+  <b>고등학교</b>: 학교 유형 (영재·과학고·외고·국제고 A, 자율고 B, 일반고 C, 특성화고 D).<br>
+  <b>성적이 아닙니다.</b> 학교별 학업성취도 공시는 2016년에 끝났습니다. 진학률(특목고·대학) 공시를 받아오는 중입니다.</div>
+</div>
 <div class="legend big" id="eduLegend" hidden>
   <button class="legend-x" id="eduLegendClose" title="범례 닫기">✕</button>
   <div><i class="d" style="background:#064e3b"></i>S 상위3%</div><div><i class="d" style="background:#15803d"></i>A 10%</div><div><i class="d" style="background:#4d7c0f"></i>B 25%</div>
   <div><i class="d" style="background:#ca8a04"></i>C 50%</div><div><i class="d" style="background:#ea580c"></i>D 75%</div>
   <div><i class="d" style="background:#b91c1c"></i>E</div>
-  <div class="muted legend-note">동네별 <b>학군 지수</b> 등급입니다. 학원 밀집·초등 전입·중학교 여건으로 계산한 집콕맵 지수이고 <b>학교 성적이 아닙니다</b>. <b>초록일수록 좋고 빨강일수록 평범합니다.</b> 동그라미를 누르면 그 동네 정보가 나옵니다.</div>
+  <div class="muted legend-note">동네별 <b>학군 지수</b> 등급입니다. 1km 안 교과학원 수 45% + 대형 입시학원 10% + 배정 초등학교 전입률 30% + 배정 중학교 여건 15% 로 계산해 수도권 전체에서 줄 세운 집콕맵 지수이고 <b>학교 성적이 아닙니다</b>. <b>초록일수록 좋고 빨강일수록 평범합니다.</b> 동그라미를 누르면 그 동네 정보가 나옵니다.</div>
 </div>
 <div class="legend" id="legend" hidden>
   <div><i class="l major"></i>큰길 (차 많음)</div>
@@ -187,18 +195,26 @@
           <button class="age" data-age="high">고등</button>
         </div>
         <div id="ageNote" class="agenote" hidden></div>
-        <form id="quickCommute" class="quick" autocomplete="off">
-          <span class="qi">🚉</span>
-          <input name="a" list="stationList" placeholder="회사 역 (예: 종로3가)" required>
-          <input name="b" list="stationList" placeholder="배우자 회사 역 (선택)">
-          <select name="max"><option value="30">30분</option><option value="40" selected>40분</option><option value="50">50분</option><option value="60">60분</option></select>
-          <button type="submit" class="qbtn">찾기</button>
-        </form>
-        <form id="quickBudget" class="quick" autocomplete="off">
-          <span class="qi">💰</span>
-          <input name="max" type="number" step="0.5" min="1" placeholder="예산 (억)" required>
-          <span class="qlabel">이 예산에서 학군 좋은 곳</span>
-          <button type="submit" class="qbtn">찾기</button>
+        <!-- 찾기 버튼이 두 개(출퇴근·예산)였을 때 한쪽만 걸리고 앞 조건이 남아 결과가 이상했다(2026-09-29 제보).
+             한 폼, 한 버튼: 넣은 조건은 전부 걸고, 비운 조건은 푼다. -->
+        <form id="quickFind" class="quick quickfind" autocomplete="off">
+          <div class="qrow">
+            <span class="qi">🚉</span>
+            <input name="a" list="stationList" placeholder="회사 역 (예: 마곡)">
+            <input name="b" list="stationList" placeholder="배우자 회사 역 (선택)">
+            <select name="max"><option value="30">30분</option><option value="40" selected>40분</option><option value="50">50분</option><option value="60">60분</option></select>
+          </div>
+          <div class="qrow">
+            <span class="qi">💰</span>
+            <input name="budget" type="number" step="0.5" min="1" placeholder="예산 (억)">
+            <select name="size" title="평형">
+              <option value="30" selected>30평대</option>
+              <option value="20">20평대</option>
+              <option value="">평형 상관없음</option>
+            </select>
+          </div>
+          <button type="submit" class="qbtn qwide">이 조건으로 찾기</button>
+          <div class="qhint">회사 역·예산 중 하나만 넣어도 됩니다. 넣은 조건은 한꺼번에 걸립니다.</div>
         </form>
         <button class="demo wide" data-demo="fee">📚 학군 좋은데 <b>학원비 싼 동네</b> 지도에서 보기</button>
         <a class="cta" href="rank/academy-fee.html">
@@ -299,7 +315,7 @@
   </div>
 </div>
 <script src="config.js"></script>
-<script src="app.js?v=94"></script>
+<script src="app.js?v=95"></script>
 <script>if ("serviceWorker" in navigator && location.protocol === "https:") navigator.serviceWorker.register("sw.js").catch(() => {});</script>
 </body>
 </html>

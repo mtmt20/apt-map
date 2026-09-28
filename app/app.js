@@ -381,11 +381,14 @@
   function applyCrowns() { const show = map.getZoom() < 13.3; state.crownMarkers.forEach((m) => m.getElement().style.display = show ? "" : "none"); }
   // 범례를 한 번 닫으면 레이어를 다시 켜기 전까지 안 띄운다
   let legendClosed = false, eduLegendClosed = false;
+  // 학교 글자 설명: 학교 레이어는 기본으로 켜져 있어서 매번 뜨면 지도를 가린다. 처음 한 번만, 닫으면 기억.
+  let schLegendClosed = (() => { try { return !!localStorage.getItem("schLegendSeen"); } catch (e) { return false; } })();
   function applyLayers() {
     const v = (ids, on) => ids.forEach((id) => map.getLayer(id) && map.setLayoutProperty(id, "visibility", on ? "visible" : "none"));
     v(["edu-halo", "edu-dot", "edu-label"], state.layers.edumap);
     if (state.layers.edumap) lazySource("edudong", "data/edu_dong.geojson");
     $("#eduLegend").hidden = !state.layers.edumap || eduLegendClosed;
+    if ($("#schLegend")) $("#schLegend").hidden = !state.layers.school || schLegendClosed || state.layers.edumap;
     v(["school-fill", "school-line"], state.layers.school && map.getZoom() >= 12.5);
     if (state.layers.school && map.getZoom() >= 12.5) lazySource("zones", "data/school_zones.geojson");
     syncSchoolMarkers();
@@ -731,7 +734,7 @@
         <button class="gbc ${!B.grade ? "on" : ""}" data-grade="">전체</button>
         ${st.map((x) => `<button class="gbc ${B.grade === x.k ? "on" : ""}" data-grade="${x.k}"><b class="grade g${x.k}">${x.k}</b> ${x.dn}개 동 · ${x.n}단지</button>`).join("")}
       </div>
-      <div class="muted gbnote">학군 등급: S 상위 3% · A 10% · B 25% · C 50% · D 75% · E 나머지. 단지마다 주변 1km 학원·배정 학교로 따로 매겨서 같은 동네 안에서도 다를 수 있습니다 (집콕맵 학군 지수, 매일 새로 계산)</div>
+      <div class="muted gbnote">학군 등급: S 상위 3% · A 10% · B 25% · C 50% · D 75% · E 나머지. 계산 = 1km 안 교과학원 수 45% + 대형 입시학원 10% + 배정 초등학교 전입률 30% + 배정 중학교 여건 15%, 수도권 전체 줄 세우기. 단지마다 주변 1km 학원·배정 학교로 따로 매겨서 같은 동네 안에서도 다를 수 있습니다 (집콕맵 학군 지수, 매일 새로 계산)</div>
     </div>`;
   }
   // 예산 검색 결과가 '어떤 공식·순서로' 뽑혔는지 목록 위에 그대로 적는다 (사용자 요청 2026-09-28).
@@ -1376,27 +1379,43 @@
     if (first) map.flyTo({ center: [first.lng, first.lat], zoom: 12.5 });
     else toast("조건에 맞는 단지가 없어요. 시간을 늘려보세요.");
   }
-  const qc = $("#quickCommute");
-  if (qc) {
-    // 역 이름 자동완성 목록은 입력을 시작할 때 받아온다 (첫 로딩을 가볍게)
-    qc.querySelectorAll("input").forEach((el) => el.addEventListener("focus", () => loadGraph().catch(() => {}), { once: true }));
-    qc.addEventListener("submit", (e) => { e.preventDefault(); applyCommuteInput(qc.a.value, qc.b.value, qc.max.value); });
+  // 한 폼·한 버튼: 회사 역과 예산을 한 번에 건다. 비운 칸의 조건은 풀어서 예전 조건이 섞이지 않게 한다.
+  const qf = $("#quickFind");
+  if (qf) {
+    qf.querySelectorAll("input[list]").forEach((el) => el.addEventListener("focus", () => loadGraph().catch(() => {}), { once: true }));
+    qf.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const a = qf.a.value.trim(), b = qf.b.value.trim();
+      const max = Math.round(parseFloat(qf.budget.value || "0") * 10000);
+      if (!a && !max) return toast("회사 역이나 예산 중 하나는 넣어주세요.");
+      if (a) {
+        await loadGraph();
+        const ia = findNode(a), ib = b ? findNode(b) : null;
+        if (ia < 0) return toast(`'${a}' 역을 찾지 못했어요. 역 이름을 다시 확인해 주세요.`);
+        if (ib !== null && ib < 0) return toast(`'${b}' 역을 찾지 못했어요.`);
+        state.commute = { a: { idx: ia, name: graph.nodes[ia][0] }, b: ib !== null ? { idx: ib, name: graph.nodes[ib][0] } : null,
+                          max: +qf.max.value || 40, mode: "max" };
+        applyCommute(); hit("commute");
+      } else {
+        state.commute = null;
+      }
+      syncCommuteUrl(); updateCommuteChip();
+      if (max) {
+        // 하한 = 예산의 70%, 평형 기본 30평대 (섞으면 노원 45평과 목동 25평이 같은 줄에 선다)
+        state.budget = { max, min: Math.round(max * 0.7), gu: "", kid: true, gender: "", fam: true, pri: "eduvalue", size: qf.size.value };
+        state.sort = "budget";
+        hit("budget");
+      } else {
+        state.budget = null;
+        if (state.sort === "budget") state.sort = null;
+      }
+      $$("[data-sort]").forEach((x) => x.classList.toggle("on", x.dataset.sort === state.sort));
+      renderMarkers(); renderList(); setSheet("half");
+      const first = visibleComplexes()[0];
+      if (first) map.flyTo({ center: [first.lng, first.lat], zoom: 12.5 });
+      else toast("조건에 맞는 단지가 없어요. 시간이나 예산을 늘려보세요.");
+    });
   }
-  const qb = $("#quickBudget");
-  if (qb) qb.addEventListener("submit", (e) => {
-    e.preventDefault();
-    const max = Math.round(parseFloat(qb.max.value || "0") * 10000);
-    if (!max) return toast("예산을 억 단위로 넣어주세요.");
-    // 하한 = 예산의 70%, 평형은 30평대 기준 (평형을 섞으면 노원 45평과 목동 25평이 같은 줄에 선다)
-    state.budget = { max, min: Math.round(max * 0.7), gu: "", kid: true, gender: "", fam: true, pri: "eduvalue", size: "30" };
-    state.sort = "budget";
-    $$("[data-sort]").forEach((x) => x.classList.toggle("on", x.dataset.sort === "budget"));
-    hit("budget");
-    renderMarkers(); renderList(); setSheet("half");
-    const first = visibleComplexes()[0];
-    if (first) map.flyTo({ center: [first.lng, first.lat], zoom: 12.5 });
-    else toast("그 예산에 맞는 가족형 단지를 찾지 못했어요.");
-  });
   $$(".demo").forEach((b) => b.addEventListener("click", () => {
     state.sort = "feelow";
     $$("[data-sort]").forEach((x) => x.classList.toggle("on", x.dataset.sort === "feelow"));
@@ -1486,9 +1505,16 @@
     state.layers[b.dataset.layer] = !state.layers[b.dataset.layer];
     if (b.dataset.layer === "amenity") legendClosed = false;
     if (b.dataset.layer === "edumap") eduLegendClosed = false;
+    if (b.dataset.layer === "school" && state.layers.school) schLegendClosed = false;
     applyLayers();
   }));
   if ($("#amLegendClose")) $("#amLegendClose").addEventListener("click", () => { legendClosed = true; $("#amLegend").hidden = true; });
+  if ($("#schLegendClose")) $("#schLegendClose").addEventListener("click", () => {
+    schLegendClosed = true; $("#schLegend").hidden = true;
+    try { localStorage.setItem("schLegendSeen", "1"); } catch (e) {}
+  });
+  // applyLayers 는 첫 화면에서 안 불리므로 처음 한 번 직접 맞춘다
+  if ($("#schLegend")) $("#schLegend").hidden = !state.layers.school || schLegendClosed;
   if ($("#eduLegendClose")) $("#eduLegendClose").addEventListener("click", () => { eduLegendClosed = true; $("#eduLegend").hidden = true; });
   $("#locateBtn").addEventListener("click", () => {
     if (!navigator.geolocation) return toast("위치 정보를 지원하지 않는 브라우저예요.");
