@@ -785,6 +785,52 @@
       <text x="${L}" y="${H - 6}" font-size="10.5" fill="#94a3b8">최근 평당 ${Math.round(last.v).toLocaleString()}만</text></svg>`;
   }
 
+  // ---------- 월 실거주 비용 ----------
+  // 아실 같은 앱은 "집값"만 보여준다. 정작 사는 사람이 겪는 건 **매달 나가는 돈**이다.
+  // 같은 15억이어도 학원비 때문에 월 60만원이 갈린다. 학원비 자료가 있는 우리만 만들 수 있다.
+  const COST = JSON.parse(localStorage.getItem("costOpt") || "null") || {
+    ltv: 60, rate: 4.2, years: 30, kids: 1, subjects: 3,
+  };
+  function saveCost() { localStorage.setItem("costOpt", JSON.stringify(COST)); }
+
+  function monthlyCost(c, priceMan) {
+    if (!priceMan) return null;
+    const loan = priceMan * (COST.ltv / 100);                 // 만원
+    const r = COST.rate / 100 / 12, n = COST.years * 12;
+    const loanM = r === 0 ? loan / n : loan * r / (1 - Math.pow(1 + r, -n));
+    // 학원비: 과목당 월 교습비 × 과목 수 × 아이 수 (교육청 공시 교습비 중앙값)
+    const feeM = c.fee ? (c.fee / 10000) * COST.subjects * COST.kids : null;
+    // 관리비·수도·가스: K-apt 공용관리비 + 개별사용료. 아직 수집 전이면 null.
+    const mgmtM = c.mgmt != null ? c.mgmt / 10000 : null;
+    const total = loanM + (feeM || 0) + (mgmtM || 0);
+    return { loanM, feeM, mgmtM, total, loan };
+  }
+
+  function costPanel(c, rep_) {
+    const price = rep_ && rep_.latest;
+    const m = monthlyCost(c, price);
+    if (!m) return "";
+    const W = (v) => Math.round(v).toLocaleString() + "만";
+    const rows = [
+      ["🏦 대출 상환", W(m.loanM), `${(m.loan / 10000).toFixed(1)}억 · ${COST.rate}% · ${COST.years}년`],
+      ...(m.feeM != null ? [["📚 학원비", W(m.feeM), `아이 ${COST.kids}명 × ${COST.subjects}과목 × 과목당 ${Math.round(c.fee / 10000)}만`]] : []),
+      ...(m.mgmtM != null ? [["🏢 관리비·수도·가스", W(m.mgmtM), "K-apt 공시 기준"]] : []),
+    ];
+    return `<div class="section"><h4>💸 여기 살면 매달 얼마 <span class="r muted">${fmtPrice(price)} 기준</span></h4>
+      <div class="costbig">월 <b>${W(m.total)}</b>원</div>
+      <div class="costrows">${rows.map(([k, v, why]) =>
+        `<div class="costrow"><span>${k}</span><b>${v}</b><span class="why">${esc(why)}</span></div>`).join("")}</div>
+      ${m.mgmtM == null ? '<div class="note">관리비·수도·가스는 아직 수집 전이라 빠져 있습니다. 보통 월 20~35만원입니다.</div>' : ""}
+      <div class="costopt">
+        <label>대출 <input type="number" id="coLtv" value="${COST.ltv}" min="0" max="80" step="5">%</label>
+        <label>금리 <input type="number" id="coRate" value="${COST.rate}" min="0" max="15" step="0.1">%</label>
+        <label>아이 <input type="number" id="coKids" value="${COST.kids}" min="0" max="5" step="1">명</label>
+        <label>과목 <input type="number" id="coSub" value="${COST.subjects}" min="0" max="10" step="1">개</label>
+      </div>
+      <div class="note">${c.fee ? "학원비는 반경 1km 교과학원의 <b>과목당 월 교습비 중앙값</b>(교육청 공시)입니다. " : ""}대출은 원리금균등 기준 추정이고 실제 조건은 은행 심사에 따라 다릅니다.</div>
+      </div>`;
+  }
+
   function openDetail(id, sheetState) {
     const c0 = state.complexes.find((x) => x.id === id); if (!c0) return;
     if (!c0.trades) {                       // 요약만 있으면 상세 파일을 받아 합친 뒤 렌더
@@ -826,6 +872,8 @@
           <div style="margin-top:12px">${chartSVG(c.trades, areaSel)}</div>
           ${c.phase ? `<div class="note" style="margin-top:8px">📈 지금 국면: <b>${esc(c.phase)}</b></div>` : ""}
         </div>
+
+        ${costPanel(c, rep)}
 
         ${c.kid ? `<div class="section"><h4>👶 아이 키우기 점수 <span class="r muted">서울 상위 ${c.kid.top_pct}%</span></h4>
           <div style="display:flex;gap:10px;align-items:center">${radarSVG(c.kid.axes)}<div style="flex:1"><div class="big" style="font-size:34px">${c.kid.score}<small>/100</small></div>
@@ -918,6 +966,13 @@
         <div class="disclaim">${state.meta.mode === "demo" ? "⚠️ 지금은 데모 데이터입니다. 단지 위치·세대수는 대략값, 가격은 시세 흐름을 흉내낸 생성값이며 학군 경계도 예시입니다. 국토교통부 실거래가 API 키를 연결하면 실데이터로 바뀝니다." : "실거래가: 국토교통부 실거래가 공개시스템 (신고 지연 최대 30일). 학군: 학구도안내서비스 기준, 실제 배정은 교육청 공지를 확인하세요."}</div>`;
 
       if ($("#shareDetail")) $("#shareDetail").addEventListener("click", (e) => { e.stopPropagation(); shareView(); });
+      [["coLtv", "ltv"], ["coRate", "rate"], ["coKids", "kids"], ["coSub", "subjects"]].forEach(([id, key]) => {
+        const el = $("#" + id);
+        if (el) el.addEventListener("change", () => {
+          const v = parseFloat(el.value);
+          if (isFinite(v) && v >= 0) { COST[key] = v; saveCost(); render(); }
+        });
+      });
       $("#backBtn").onclick = closeDetail;
       $$(".atab").forEach((b) => b.onclick = () => { areaSel = b.dataset.a; render(); });
       if ($("#cmpBtn")) $("#cmpBtn").onclick = () => { toggleCompare(id); render(); };
