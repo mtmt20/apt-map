@@ -814,13 +814,14 @@
     const rows = [
       ["🏦 대출 상환", W(m.loanM), `${(m.loan / 10000).toFixed(1)}억 · ${COST.rate}% · ${COST.years}년`],
       ...(m.feeM != null ? [["📚 학원비", W(m.feeM), `아이 ${COST.kids}명 × ${COST.subjects}과목 × 과목당 ${Math.round(c.fee / 10000)}만`]] : []),
-      ...(m.mgmtM != null ? [["🏢 관리비·수도·가스", W(m.mgmtM), "K-apt 공시 기준"]] : []),
+      ...(m.mgmtM != null ? [["🏢 관리비·수도·가스", W(m.mgmtM), "K-apt 공시 · 경비·청소·인건비 + 수도·전기·가스"]] : []),
     ];
     return `<div class="section"><h4>💸 여기 살면 매달 얼마 <span class="r muted">${fmtPrice(price)} 기준</span></h4>
       <div class="costbig">월 <b>${W(m.total)}</b>원</div>
       <div class="costrows">${rows.map(([k, v, why]) =>
         `<div class="costrow"><span>${k}</span><b>${v}</b><span class="why">${esc(why)}</span></div>`).join("")}</div>
-      ${m.mgmtM == null ? '<div class="note">관리비·수도·가스는 아직 수집 전이라 빠져 있습니다. 보통 월 20~35만원입니다.</div>' : ""}
+      ${m.mgmtM == null ? '<div class="note">이 단지는 관리비를 아직 안 받아왔습니다. 매일 조금씩 채우는 중이라 며칠 뒤 표시됩니다. 참고로 수도권 중앙값은 세대당 월 20만원 안팎입니다.</div>'
+        : '<div class="note">관리비는 K-apt 공시 중 <b>금액이 큰 항목</b>(인건비·경비·청소·위탁수수료)과 <b>수도·전기·가스·난방</b>을 합한 값입니다. 전체 항목이 아니라 실제 고지서보다 적게 나옵니다.</div>'}
       <div class="costopt">
         <label>대출 <input type="number" id="coLtv" value="${COST.ltv}" min="0" max="80" step="5">%</label>
         <label>금리 <input type="number" id="coRate" value="${COST.rate}" min="0" max="15" step="0.1">%</label>

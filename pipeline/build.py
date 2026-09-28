@@ -297,6 +297,7 @@ def crosses_major_road(lat1, lng1, lat2, lng2, roads_idx):
 
 
 # 주유소·모텔은 서울 어디에나 있어 "여기만 그렇다"는 신호가 되지 못한다. 2026-09-23 제외.
+MGMT_COST = {}          # load_mgmt_cost() 결과 (main 에서 채움)
 NUISANCE_SKIP = {"fuel", "motel"}
 
 
@@ -418,9 +419,18 @@ def load_kapt():
     if not os.path.exists(p):
         return {}
     out = {}
-    for rec in json.load(open(p, encoding="utf-8")).values():
+    for code, rec in json.load(open(p, encoding="utf-8")).items():
+        rec = dict(rec, kapt_code=code)      # 관리비(mgmt_cost.json)와 잇는 열쇠
         out.setdefault(rec["norm"], []).append(rec)
     return out
+
+
+def load_mgmt_cost():
+    """K-apt 관리비 (fetch_mgmt_cost.py). 단지코드 -> 세대당 월 부담액(원)."""
+    p = os.path.join(RAW, "mgmt_cost.json")
+    if not os.path.exists(p):
+        return {}
+    return {k: v for k, v in json.load(open(p, encoding="utf-8")).items() if v.get("total_hh")}
 
 
 def kapt_lookup(kapt, apt, umd):
@@ -514,6 +524,9 @@ def load_real_complexes():
             "rents": sorted(rent.get(key, []), key=lambda r: r["date"]),
             "sale_type": (k or {}).get("sale_type", ""), "hall": (k or {}).get("hall", ""), "heat": (k or {}).get("heat", ""),
             "life": kpoi.get(key), "parking": (k or {}).get("parking", 0), "hh_by_area": (k or {}).get("hh_by_area"), "ask": None,
+            # 세대당 월 관리비(공용 주요항목 + 수도·전기·가스·난방). 아직 안 받은 단지는 None
+            "mgmt": (MGMT_COST.get((k or {}).get("kapt_code")) or {}).get("total_hh"),
+            "mgmt_ym": (MGMT_COST.get((k or {}).get("kapt_code")) or {}).get("ym"),
         })
     return out
 
@@ -1010,6 +1023,9 @@ def main():
         roads_path = os.path.join(OUT, "roads.geojson")
         roads = json.load(open(roads_path, encoding="utf-8"))["features"] if os.path.exists(roads_path) else []
 
+    # load_real_complexes() 가 단지마다 관리비를 찾아 붙이므로 그 전에 채워야 한다
+    global MGMT_COST
+    MGMT_COST = load_mgmt_cost()
     real = load_real_complexes()
     poi = load_poi() if real else None
     mode = "real" if real else "demo"
@@ -1234,6 +1250,7 @@ def main():
             sm["terrain"] = {"station_dh": c["terrain"]["station_dh"]}
         sm["nz"] = sum(1 for v in c.get("nuisance", {}).values() if v["within"])
         sm["risk_n"], sm["up_n"] = len(c["signals"]["risk"]), len(c["signals"]["up"])
+        sm["mgmt"] = c.get("mgmt")
         sm["kid"] = c["kid"]["score"] if c.get("kid") else None
         # 아이 나이별 맞춤 점수를 앱에서 계산하려면 6축 원점수가 필요하다.
         # 다섯 살 부모에게 대형 입시학원이, 고2 부모에게 놀이터가 무슨 소용인가 - 나이마다

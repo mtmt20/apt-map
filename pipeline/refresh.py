@@ -80,6 +80,8 @@ def main():
                 if name in failed:
                     failed.remove(name)
     step("auction", ["pipeline/fetch_auction.py"])
+    # 관리비는 단지당 8콜이라 하루 한도(1,000) 안에서 조금씩 채운다. 약 한 달이면 전체가 찬다.
+    step("mgmt cost", ["pipeline/fetch_mgmt_cost.py", "--budget", "700"])
     step("geocode", ["pipeline/geocode.py"])
     if not a.skip_poi:
         step("kakao poi", ["pipeline/fetch_kakao_poi.py"])
