@@ -647,6 +647,7 @@
     updateDemoRow();
     $("#compareBar").hidden = !state.compare.length;
     $("#compareBar").querySelector("span").textContent = `비교 ${state.compare.length}/3`;
+    renderCond();
     $("#listCount").textContent = state.commute && state.sort !== "fav" ? `출퇴근 ${state.commute.max}분 이내${state.sort === "budget" ? " + 예산" : ""} ${list.length >= 150 ? "150개+" : list.length + "개"}` : state.sort === "budget" ? `예산 조건 ${list.length}개` : state.sort === "fav" ? `찜한 단지 ${list.length}개` : (map.getZoom() >= 12 && !state.q ? `화면 안 단지 ${list.length}개` : `단지 ${list.length}개`);
     $("#alertBar").hidden = !(state.sort === "fav" && list.length && API);
     $("#list").innerHTML = list.map((c) => {
@@ -798,7 +799,7 @@
 
         <div class="section"><h4>배정 학군 <span class="r muted">${esc(state.meta.zone_note || "초등 통학구역 기준")}</span></h4>
           ${c.edu_score != null ? `<div class="jrow" style="margin:0 0 12px"><span>학군 등급 <b class="grade g${eduGrade(c.edu_top_pct)}">${eduGrade(c.edu_top_pct)}</b></span><span>지수 <b>${c.edu_score}</b>/100</span><span>${esc(areaShort())} <b>${c.edu_rank}위</b> · 상위 ${c.edu_top_pct}%</span></div>
-          <div class="note" style="margin:-6px 0 12px">A는 서울 상위 10%, B 25%, C 50%, D 75%, E 그 아래입니다. 학원 밀집 40 · 초등 전입 25 · 초등 증감 15 · 중학교 20 으로 계산한 <b>집콕맵 자체 지수</b>이고, 학교 성적이 아닙니다. 국가 학업성취도 학교별 공시는 2016년이 마지막이라 성적 등급은 어디서도 최신 자료를 구할 수 없습니다.</div>` : ""}
+          <div class="note" style="margin:-6px 0 12px">A는 서울 상위 10%, B 25%, C 50%, D 75%, E 그 아래입니다. 학원 밀집 45 · 대형 입시학원 10 · 초등 전입 30 · 중학교 15 으로 계산한 <b>집콕맵 자체 지수</b>이고, 학교 성적이 아닙니다. 국가 학업성취도 학교별 공시는 2016년이 마지막이라 성적 등급은 어디서도 최신 자료를 구할 수 없습니다.</div>` : ""}
           ${c.edu_band_pct != null ? `<div class="jrow" style="margin:0 0 12px"><span>같은 가격대 <b>${esc(c.budget_band)}</b></span><span>이 구간 ${c.edu_band_n}개 단지 중 학군 <b>상위 ${c.edu_band_pct}%</b></span><span class="muted">대표 실거래가로 가격대를 나눠, 비슷한 예산에서 학군이 어느 정도인지 비교합니다</span></div>` : ""}
           <div class="school-hero"><div class="ic">🏫</div><div><b>${esc(c.school.elem)}</b>${c.school.elem_official ? ` <span class="tag school" style="vertical-align:middle">공식 학구</span>` : ""}<div class="n">도보 ${c.school.elem_walk_min}분 (${c.school.elem_dist}m) ${c.school.chopuma ? "· <b style='color:#7c3aed'>초품아</b>" : ""}</div>
             ${c.school.elem_shared && c.school.elem_shared.length ? `<div class="n">공동통학구역: ${c.school.elem_shared.map(esc).join(" / ")} 중 선택 배정</div>` : ""}
@@ -980,7 +981,21 @@
       $("#askStep2").hidden = false;
       setTimeout(() => { const el = $("#askStep2").a; if (el) el.focus(); }, 60);
     }));
-    $("#askSkip").addEventListener("click", () => done("skip"));
+    $("#askSkip").addEventListener("click", () => { $("#askStep2").hidden = true; $("#askStep3").hidden = false; });
+    $("#askSkip2").addEventListener("click", () => { done("skip_budget"); setSheet("full"); });
+    $("#askStep3").addEventListener("submit", (e) => {
+      e.preventDefault();
+      const max = Math.round(parseFloat(e.target.max.value || "0") * 10000);
+      if (!max) return;
+      state.budget = { max, min: 0, gu: "", kid: true, gender: "", fam: true, pri: "eduvalue" };
+      state.sort = "budget";
+      $$("[data-sort]").forEach((x) => x.classList.toggle("on", x.dataset.sort === "budget"));
+      hit("ask_budget"); done("answered");
+      renderMarkers(); renderList(); setSheet("full");
+      const first = visibleComplexes()[0];
+      if (first) map.flyTo({ center: [first.lng, first.lat], zoom: 12.5 });
+      else toast("그 조건에 맞는 단지를 찾지 못했어요. 예산이나 시간을 늘려보세요.");
+    });
     $("#askStep2").addEventListener("submit", async (e) => {
       e.preventDefault();
       const f = e.target;
@@ -994,8 +1009,9 @@
                           b: ib != null && ib >= 0 ? { idx: ib, name: graph.nodes[ib][0] } : null,
                           max: +f.max.value, mode: "max" };
         applyCommute(); syncCommuteUrl(); updateCommuteChip();
-        renderMarkers(); renderList(); setSheet("full");
-        hit("ask_commute"); done("answered");
+        renderMarkers(); renderList();
+        hit("ask_commute");
+        $("#askStep2").hidden = true; $("#askStep3").hidden = false;
       } catch (_) { toast("지하철 정보를 불러오지 못했어요."); }
     });
   }
@@ -1196,6 +1212,35 @@
     $$("[data-sort]").forEach((x) => x.classList.toggle("on", x.dataset.sort === "feelow"));
     renderMarkers(); renderList(); setSheet("half");
   }));
+  // 지금 걸린 조건을 항상 보여준다. 조건이 안 보이니 "마곡 넣었는데 왜 노원이 나오지" 가 생겼다.
+  function renderCond() {
+    const bar = $("#condBar");
+    if (!bar) return;
+    const items = [];
+    if (state.age && AGE[state.age]) items.push(["age", `👶 ${AGE[state.age].name}`, ""]);
+    if (state.commute) {
+      const C = state.commute;
+      items.push(["commute", `🚉 ${esc(C.a.name)}${C.b ? " · " + esc(C.b.name) : ""} ${C.max}분`, ""]);
+    }
+    if (state.sort === "budget" && state.budget) {
+      items.push(["budget", `💰 ${(state.budget.max / 10000).toFixed(1).replace(/\.0$/, "")}억 이하`, ""]);
+      // 예산만 걸면 서울 전역에서 뽑히므로 엉뚱한 동네가 1등으로 온다. 그걸 미리 알려준다.
+      if (!state.commute) items.push(["none", "출퇴근 조건 없음 · 수도권 전체에서 찾는 중", "warn"]);
+    }
+    if (state.q) items.push(["q", `🔍 ${esc(state.q)}`, ""]);
+    bar.hidden = !items.length;
+    bar.innerHTML = items.map(([k, label, cls]) =>
+      `<span class="cond ${cls}">${label}${k === "none" ? "" : `<button data-cond="${k}" title="이 조건 빼기">✕</button>`}</span>`).join("");
+    $$("[data-cond]", bar).forEach((b) => b.addEventListener("click", () => {
+      const k = b.dataset.cond;
+      if (k === "age") { state.age = ""; applyAge(); return; }
+      if (k === "commute") { state.commute = null; syncCommuteUrl(); updateCommuteChip(); }
+      if (k === "budget") { state.budget = null; state.sort = null; $$("[data-sort]").forEach((x) => x.classList.remove("on")); }
+      if (k === "q") { state.q = ""; if ($("#q")) $("#q").value = ""; }
+      renderMarkers(); renderList();
+    }));
+  }
+
   function updateDemoRow() {
     const row = $("#demoRow");
     if (row) row.hidden = !!(state.commute || state.budget || state.sort || state.q);

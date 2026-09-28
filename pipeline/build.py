@@ -764,6 +764,9 @@ def enrich(c, roads, today, stations, schools, zones, middle=None, academies=Non
         near = [x for x in grid_near(_ACA_IDX[id(academies)], c["lng"], c["lat"]) if dist_m(c["lat"], c["lng"], x["lat"], x["lng"]) <= 1000]
         fees = [x["fee"] for x in near if x.get("fee") and "입시" in (x.get("realm") or "")]
         c["edu"] = {"aca_1km": len(near), "exam_1km": sum(1 for x in near if "입시" in (x.get("realm") or "")),
+                    # 정원 300명 이상 입시학원. 원격학원은 정원이 수십만이라 이름으로 뺀다.
+                    "big_1km": sum(1 for x in near if "입시" in (x.get("realm") or "") and x.get("kind") == "학원"
+                                   and 300 <= (x.get("capacity") or 0) <= 6000 and "원격" not in (x.get("name") or "")),
                     "art_1km": sum(1 for x in near if "예능" in (x.get("realm") or "")),
                     # 교습비는 공개한 학원만 집계돼 표본이 적으면 흔들린다 -> 5곳 미만이면 쓰지 않는다
                     "fee_med": int(statistics.median(fees)) if len(fees) >= 5 else None, "fee_n": len(fees)}
@@ -1091,6 +1094,7 @@ def main():
         below = sum(1 for x in vals if (x < v if higher_better else x > v))
         return below / max(1, len(vals) - 1) * 100
     ex_vals = [c["edu"]["exam_1km"] for c in cs if c.get("edu")]
+    bg_vals = [c["edu"].get("big_1km", 0) for c in cs if c.get("edu")]
     nm_vals = [c["school"]["elem_stats"]["net_move_pct"] for c in cs if c["school"].get("elem_stats") and c["school"]["elem_stats"].get("net_move_pct") is not None]
     ch_vals = [c["school"]["elem_stats"]["chg_pct"] for c in cs if c["school"].get("elem_stats") and c["school"]["elem_stats"].get("chg_pct") is not None]
     def mid_score(c):
@@ -1104,10 +1108,14 @@ def main():
     for c in cs:
         st = c["school"].get("elem_stats") or {}
         parts = [
-            (pct_rank(ex_vals, c["edu"]["exam_1km"]) if c.get("edu") else None, 0.40),
-            (pct_rank(nm_vals, st.get("net_move_pct")), 0.25),
-            (pct_rank(ch_vals, st.get("chg_pct")), 0.15),
-            (pct_rank(md_vals, mid_score(c)), 0.20),
+            # 2026-09-28 개편: 학생 증감(옛 15%)을 뺐다. 저출산으로 어디나 줄고, 대치·목동처럼
+            # 이미 꽉 찬 오래된 학군지일수록 감소폭이 커서 "학군이 나쁘다"로 뒤집히던 문제
+            # (중계동이 대치동보다 1위로 나왔다 - 1km 교과학원은 388 vs 1,107 인데도).
+            # 대신 대형 입시학원 수를 넣어 규모 차이를 반영한다.
+            (pct_rank(ex_vals, c["edu"]["exam_1km"]) if c.get("edu") else None, 0.45),
+            (pct_rank(bg_vals, c["edu"].get("big_1km", 0)) if c.get("edu") else None, 0.10),
+            (pct_rank(nm_vals, st.get("net_move_pct")), 0.30),
+            (pct_rank(md_vals, mid_score(c)), 0.15),
         ]
         avail = [(v, w) for v, w in parts if v is not None]
         if not avail:
