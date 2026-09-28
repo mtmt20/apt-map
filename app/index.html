@@ -30,7 +30,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="집콕맵">
 <link rel="stylesheet" href="vendor/maplibre-gl.css">
-<link rel="stylesheet" href="style.css?v=91">
+<link rel="stylesheet" href="style.css?v=93">
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"WebSite","name":"집콕맵","url":"https://jipkokmap.kr/","description":"서울 아파트 실거래가, 배정 초등학교와 학군, 지하철 출퇴근 시간, 예산 대비 학군을 지도 한 장에서 확인하는 서비스","inLanguage":"ko"}</script>
 <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-2024521419046920" crossorigin="anonymous"></script>
 </head>
@@ -73,6 +73,11 @@
       <div class="askopts">
         <input name="max" type="number" step="0.5" min="1" placeholder="예: 15" required>
         <span class="askunit">억 이하</span>
+        <select name="size" title="평형">
+          <option value="">평형 상관없음</option>
+          <option value="20">20평대 (59㎡) · 동네를 올려서</option>
+          <option value="30">30평대 (84㎡) · 넓게</option>
+        </select>
         <button class="askopt go" type="submit">결과 보기</button>
         <button class="askopt ghost" type="button" id="askSkip2">건너뛰기</button>
       </div>
@@ -169,6 +174,7 @@
         <button id="shareBtn" title="지금 보는 화면 그대로 링크로 공유">🔗 공유</button>
       </div>
       <div id="condBar" class="condbar" hidden></div>
+      <div id="rankHow" class="rankhow" hidden></div>
       <div id="demoRow" class="demo-row">
         <div class="demo-title">내 조건으로 바로 찾기</div>
         <div class="agerow">
@@ -293,7 +299,7 @@
   </div>
 </div>
 <script src="config.js"></script>
-<script src="app.js?v=91"></script>
+<script src="app.js?v=93"></script>
 <script>if ("serviceWorker" in navigator && location.protocol === "https:") navigator.serviceWorker.register("sw.js").catch(() => {});</script>
 </body>
 </html>

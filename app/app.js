@@ -608,6 +608,8 @@
   // 예산 검색은 "15억 이하 전부"를 학군순으로 주면 한 동네가 목록을 다 먹는다
   // (15억으로 넣으면 150개 중 중계동이 30개였다). 가격 구간을 나눠 **각 구간의 최고**를
   // 번갈아 올리고, 같은 동은 2개까지만 남긴다. 예산 안에서 선택지를 보여주는 게 목적이다.
+  const SIZE_RANGE = { "20": [50, 70], "30": [75, 100] };
+  const SIZE_NAME = { "20": "20평대(59㎡)", "30": "30평대(84㎡)" };
   const PRICE_BANDS = [30000, 50000, 70000, 90000, 110000, 130000, 150000, 200000, 300000, 1e9];
   function bandLabel(v) {
     const i = PRICE_BANDS.findIndex((x) => v <= x);
@@ -626,9 +628,12 @@
       if (!buckets.has(i)) buckets.set(i, []);
       buckets.get(i).push(c);
     }
-    const keys = [...buckets.keys()].sort((a, b) => a - b);
+    // 예산에 가까운 비싼 구간부터 돈다. 싼 구간부터 돌면 15억을 넣어도 1번이 '3억 이하 1등'이 되고
+    // 지도도 그리로 날아간다(2026-09-28 사용자 제보: 마곡·15억 -> 부천 2.9억 37년차).
+    const keys = [...buckets.keys()].sort((a, b) => b - a);
     keys.forEach((k) => buckets.get(k).forEach((c, i) => { c._bandRank = i + 1; }));
     const out = [], perDong = {};
+    const cap = B && B.grade ? 5 : 2;
     let round = 0;
     while (out.length < 150 && round < 200) {
       let added = 0;
@@ -637,7 +642,7 @@
         while (arr.length) {
           const c = arr.shift();
           const key = c.sgg + c.umd;
-          if ((perDong[key] || 0) >= 2) continue;        // 같은 동은 2개까지
+          if ((perDong[key] || 0) >= cap) continue;      // 같은 동은 2개까지 (등급을 골랐으면 5개)
           perDong[key] = (perDong[key] || 0) + 1;
           out.push(c); added++;
           break;
@@ -669,10 +674,14 @@
     else if (state.sort === "kid") list = list.filter((c) => c.kid != null).sort((a, b) => b.kid - a.kid || b.trade_count_1y - a.trade_count_1y);
     else if (state.sort === "budget" && state.budget) {
       const B = state.budget;
-      list = state.complexes.filter((c) => areaMatch(c) && (!B.gu || c.sgg === B.gu) && (!B.gender || !c.mg || c.mg[B.gender === "girl" ? 1 : 0] >= 2))
+      // 출퇴근 조건은 구간별 뽑기 **전에** 건다. 뒤에 걸면 수도권 전체에서 150개를 먼저 뽑고 나서
+      // 마곡 40분으로 거르는 꼴이라, 정작 마곡 근처 후보는 150개 안에 들지도 못하고 잘린다.
+      list = state.complexes.filter((c) => areaMatch(c) && (!state.commute || commuteOk(c)) && (!B.gu || c.sgg === B.gu) && (!B.gender || !c.mg || c.mg[B.gender === "girl" ? 1 : 0] >= 2))
         .map((c) => {
           // 가족형: 50㎡ 이상 평형 중 예산 안에 드는 것, 100세대 이상 단지만
-          const r = B.fam ? (c.households || 0) >= 100 && (c.by_area || []).filter((x) => x.area >= 50 && x.latest && x.latest <= B.max && x.latest >= B.min).sort((x, y) => y.count - x.count)[0]
+          // 20평대 = 전용 50~70㎡(59㎡형), 30평대 = 75~100㎡(84㎡형). '상급지 20평이냐 한 단계 아래 30평이냐'를 고르게 한다.
+          const [aLo, aHi] = SIZE_RANGE[B.size] || [50, 999];
+          const r = B.fam ? (c.households || 0) >= 100 && (c.by_area || []).filter((x) => x.area >= aLo && x.area < aHi && x.latest && x.latest <= B.max && x.latest >= B.min).sort((x, y) => y.count - x.count)[0]
                           : repArea(c, state.area);
           c._bRep = B.fam ? r || null : null;
           return r && r.latest <= B.max && r.latest >= B.min ? c : null;
@@ -680,6 +689,9 @@
         .sort((a, b) => (B.pri === "eduvalue" ? (a.edu_band_pct || 999) - (b.edu_band_pct || 999)
                        : B.pri === "edu" ? (b.edu_score || 0) - (a.edu_score || 0)
                        : (b.kid || 0) - (a.kid || 0)) || b.trade_count_1y - a.trade_count_1y);
+      // 이 예산(+출퇴근·평형)으로 갈 수 있는 곳을 학군 등급별로 센다. 등급을 고르면 그 등급만 남긴다.
+      state._gradeStats = gradeStats(list);
+      if (B.grade) list = list.filter((c) => eduGrade(c.edu_top_pct) === B.grade);
       list = bestByBand(list, B);
     }
     else if (state.commute) list.sort((a, b) => state.commute.mode === "sum"
@@ -689,12 +701,78 @@
     if (state.commute) list = list.filter(commuteOk);
     return list.slice(0, 150);
   }
+  // 등급별로 몇 단지·몇 동네인지, 그 등급에서 학군 좋은 동네 3곳
+  function gradeStats(cands) {
+    const g = {};
+    for (const c of cands) {
+      const k = eduGrade(c.edu_top_pct);
+      if (!k) continue;
+      const e = g[k] || (g[k] = { n: 0, dongs: new Map() });
+      e.n++;
+      const dk = c.umd;
+      const best = e.dongs.get(dk);
+      if (!best || (c.edu_score || 0) > best) e.dongs.set(dk, c.edu_score || 0);
+    }
+    return ["A", "B", "C", "D", "E"].filter((k) => g[k]).map((k) => ({
+      k, n: g[k].n, dn: g[k].dongs.size,
+      top: [...g[k].dongs.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3).map((x) => x[0]),
+    }));
+  }
+  function gradeBarHtml() {
+    const B = state.budget, st = state._gradeStats || [];
+    if (!st.length) return "";
+    const eok = (v) => (v / 10000).toFixed(1).replace(/\.0$/, "");
+    const best = st[0];
+    return `<div class="gradebar">
+      <div class="gbhead">💰 ${eok(B.max)}억${SIZE_NAME[B.size] ? " · " + SIZE_NAME[B.size] : ""}${state.commute ? " · " + esc(state.commute.a.name) + " " + state.commute.max + "분" : ""}으로 갈 수 있는 최고 학군은
+        <b class="grade g${best.k}">${best.k}</b>등급 <span class="muted">(${best.top.map(esc).join("·")})</span></div>
+      <div class="gbchips">
+        <button class="gbc ${!B.grade ? "on" : ""}" data-grade="">전체</button>
+        ${st.map((x) => `<button class="gbc ${B.grade === x.k ? "on" : ""}" data-grade="${x.k}"><b class="grade g${x.k}">${x.k}</b> ${x.dn}개 동 · ${x.n}단지</button>`).join("")}
+      </div>
+      <div class="muted gbnote">학군 등급: A 상위 10% · B 25% · C 50% · D 75% · E 나머지 (집콕맵 학군 지수, 매일 새로 계산)</div>
+    </div>`;
+  }
+  // 예산 검색 결과가 '어떤 공식·순서로' 뽑혔는지 목록 위에 그대로 적는다 (사용자 요청 2026-09-28).
+  function renderRankHow(list) {
+    const el = $("#rankHow");
+    if (!el) return;
+    const B = state.budget;
+    if (state.sort !== "budget" || !B) { el.hidden = true; return; }
+    const eok = (v) => (v / 10000).toFixed(1).replace(/\.0$/, "");
+    const cond = [
+      state.commute ? `${esc(state.commute.a.name)}${state.commute.b ? "·" + esc(state.commute.b.name) : ""} ${state.commute.max}분 이내` : null,
+      `실거래 ${B.min ? eok(B.min) + "~" : ""}${eok(B.max)}억`,
+      B.fam ? `${SIZE_NAME[B.size] || "전용 50㎡ 이상"} · 100세대 이상` : null,
+      B.gu ? esc(B.gu) : null,
+      B.grade ? `학군 ${B.grade}등급만` : null,
+    ].filter(Boolean).join(" · ");
+    const pri = B.pri === "eduvalue" ? "같은 가격대 안 학군 순위(상위 %가 작을수록 먼저)"
+              : B.pri === "edu" ? "학군 지수 높은 순" : "아이 키우기 점수 높은 순";
+    const bands = [...new Set(list.map((c) => c._band).filter(Boolean))];
+    el.innerHTML = gradeBarHtml() + `<b>이렇게 골랐어요</b>
+      <ol>
+        <li><b>거르기</b> — ${cond}</li>
+        <li><b>가격대 나누기</b> — ${bands.length ? bands.map(esc).join(" → ") : "-"} <span class="muted">(예산에 가까운 비싼 구간부터)</span></li>
+        <li><b>구간 안 순서</b> — ${pri}, 같으면 1년 거래 많은 순</li>
+        <li><b>섞기</b> — 구간마다 1등 → 2등 … 번갈아, 한 동네는 ${B.grade ? 5 : 2}개까지</li>
+      </ol>`;
+    el.hidden = false;
+    el.querySelectorAll(".gbc").forEach((b) => b.addEventListener("click", () => {
+      state.budget.grade = b.dataset.grade || "";
+      hit("grade_" + (state.budget.grade || "all"));
+      renderMarkers(); renderList();
+      const first = visibleComplexes()[0];
+      if (first) map.flyTo({ center: [first.lng, first.lat], zoom: 12.5 });
+    }));
+  }
   function renderList() {
     const list = visibleComplexes();
     updateDemoRow();
     $("#compareBar").hidden = !state.compare.length;
     $("#compareBar").querySelector("span").textContent = `비교 ${state.compare.length}/3`;
     renderCond();
+    renderRankHow(list);
     $("#listCount").textContent = state.commute && state.sort !== "fav" ? `출퇴근 ${state.commute.max}분 이내${state.sort === "budget" ? " + 예산" : ""} ${list.length >= 150 ? "150개+" : list.length + "개"}` : state.sort === "budget" ? `예산 조건 ${list.length}개` : state.sort === "fav" ? `찜한 단지 ${list.length}개` : (map.getZoom() >= 12 && !state.q ? `화면 안 단지 ${list.length}개` : `단지 ${list.length}개`);
     $("#alertBar").hidden = !(state.sort === "fav" && list.length && API);
     $("#list").innerHTML = list.map((c) => {
@@ -704,6 +782,8 @@
         ...((() => { const f = fitScore(c); return f == null ? [] : [`<span class="tag fit">${AGE[state.age].name} 맞춤 ${f}점</span>`]; })()),
         ...(state.sort === "budget" && c._band && c._bandRank <= 3
               ? [`<span class="tag fit">${esc(c._band)} ${c._bandRank}위</span>`] : []),
+        ...(state.sort === "budget" && eduGrade(c.edu_top_pct)
+              ? [`<span class="tag school">학군 <b class="grade g${eduGrade(c.edu_top_pct)}">${eduGrade(c.edu_top_pct)}</b></span>`] : []),
         ...(feeTag(c) ? [feeTag(c)] : []),
         ...(c.mg && (c.mg[0] < 2 || c.mg[1] < 2) ? [`<span class="tag warn2">중학교 ${c.mg[0] < 2 ? "아들" : "딸"} 기준 ${Math.min(c.mg[0], c.mg[1])}곳</span>`] : []),
         ...(c.fut && c.fut.dist <= 800 ? [`<span class="tag fut">🚧 ${esc(c.fut.line)} ${esc(c.fut.name)} 예정 ${c.fut.walk_min}분</span>`] : []),
@@ -1092,7 +1172,9 @@
       e.preventDefault();
       const max = Math.round(parseFloat(e.target.max.value || "0") * 10000);
       if (!max) return;
-      state.budget = { max, min: 0, gu: "", kid: true, gender: "", fam: true, pri: "eduvalue" };
+      // 하한 없이 두면 15억 예산에 1억짜리까지 섞인다. 빠른 입력은 예산의 절반까지만 본다.
+      state.budget = { max, min: Math.round(max * 0.5), gu: "", kid: true, gender: "", fam: true, pri: "eduvalue",
+                       size: e.target.size ? e.target.size.value : "" };
       state.sort = "budget";
       $$("[data-sort]").forEach((x) => x.classList.toggle("on", x.dataset.sort === "budget"));
       hit("ask_budget"); done("answered");
@@ -1303,7 +1385,8 @@
     e.preventDefault();
     const max = Math.round(parseFloat(qb.max.value || "0") * 10000);
     if (!max) return toast("예산을 억 단위로 넣어주세요.");
-    state.budget = { max, min: 0, gu: "", kid: true, gender: "", fam: true, pri: "eduvalue" };
+    // 하한 없이 두면 15억 예산에 1억짜리까지 섞인다. 빠른 입력은 예산의 절반까지만 본다.
+    state.budget = { max, min: Math.round(max * 0.5), gu: "", kid: true, gender: "", fam: true, pri: "eduvalue" };
     state.sort = "budget";
     $$("[data-sort]").forEach((x) => x.classList.toggle("on", x.dataset.sort === "budget"));
     hit("budget");
@@ -1328,7 +1411,8 @@
       items.push(["commute", `🚉 ${esc(C.a.name)}${C.b ? " · " + esc(C.b.name) : ""} ${C.max}분`, ""]);
     }
     if (state.sort === "budget" && state.budget) {
-      items.push(["budget", `💰 ${(state.budget.max / 10000).toFixed(1).replace(/\.0$/, "")}억 이하`, ""]);
+      const eok = (v) => (v / 10000).toFixed(1).replace(/\.0$/, "");
+      items.push(["budget", state.budget.min ? `💰 ${eok(state.budget.min)}~${eok(state.budget.max)}억${SIZE_NAME[state.budget.size] ? " · " + SIZE_NAME[state.budget.size] : ""}` : `💰 ${eok(state.budget.max)}억 이하`, ""]);
       // 예산만 걸면 서울 전역에서 뽑히므로 엉뚱한 동네가 1등으로 온다. 그걸 미리 알려준다.
       if (!state.commute) items.push(["none", "출퇴근 조건 없음 · 수도권 전체에서 찾는 중", "warn"]);
     }
