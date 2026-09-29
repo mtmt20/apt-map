@@ -471,6 +471,7 @@ body:not(.more-lyr) .layers [data-more="1"] { display: none; }
 .verdict .vblock { border-radius: 12px; padding: 10px 12px; margin-bottom: 8px; }
 .verdict .vbad { background: rgba(220,38,38,.07); }
 .verdict .vgood { background: rgba(21,128,61,.07); }
+.verdict .vman { background: rgba(37,99,235,.08); border: 1px solid rgba(37,99,235,.25); }
 .verdict .vh { font-weight: 800; font-size: 12.5px; margin-bottom: 6px; }
 .verdict .vrow { display: flex; gap: 8px; font-size: 13px; line-height: 1.55; margin: 4px 0; }
 .verdict .vrow b { flex: 0 0 58px; }

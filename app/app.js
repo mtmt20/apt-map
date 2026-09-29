@@ -894,15 +894,20 @@
   // 단점을 먼저 보여준다. 남의 영상은 링크로 보내서 조회수가 그쪽에 가게 한다.
   function verdictPanel(c) {
     const v = c.verdict;
-    if (!v) return "";
+    if (!v || (!v.weak.length && !v.strong.length && !v.manual)) return "";
     const yt = `https://www.youtube.com/results?search_query=${encodeURIComponent(c.name + " " + (c.umd || "") + " 아파트")}`;
     return `<div class="section verdict">
       <h4>🗣️ 솔직 평가 <span class="r muted">집콕맵 데이터 기준</span></h4>
+      ${v.manual ? `<div class="vblock vman"><div class="vh">👤 직접 확인한 것 <span class="muted">· ${esc(v.manual.src)}</span></div>
+        ${(v.manual.bad || []).map((t) => `<div class="vrow"><b>아쉬움</b><span>${esc(t)}</span></div>`).join("")}
+        ${(v.manual.good || []).map((t) => `<div class="vrow"><b>좋음</b><span>${esc(t)}</span></div>`).join("")}
+        <div class="muted" style="font-size:11.5px;margin-top:6px">숫자로는 안 잡히는 것(밤 주차, 실제 언덕, 소음, 공사)을 사람이 보고 적은 내용입니다.</div></div>` : ""}
       ${v.weak.length ? `<div class="vblock vbad"><div class="vh">먼저 단점부터</div>
         ${v.weak.map((w) => `<div class="vrow"><b>${esc(w.k)}</b><span>${esc(w.t)}</span></div>`).join("")}</div>` : ""}
       ${v.strong.length ? `<div class="vblock vgood"><div class="vh">그래도 이런 점은</div>
         ${v.strong.map((t) => `<div class="vrow"><span>${esc(t)}</span></div>`).join("")}</div>` : ""}
-      <div class="note">사람이 쓴 후기가 아니라 <b>이 단지의 공공데이터 숫자에서 자동으로 뽑은 문장</b>입니다.
+      <div class="note">${v.manual ? "위 파란 칸은 사람이 직접 확인해 적은 것이고, 아래 칸은" : "이 글은"}
+        <b>이 단지의 공공데이터 숫자에서 자동으로 뽑은 문장</b>입니다.
         실제로 살아보신 분의 이야기는 아래 '의견 보내기'로 알려주시면 반영합니다.</div>
       <a class="ytlink" href="${yt}" target="_blank" rel="noopener nofollow">▶ 유튜브에서 이 단지 임장 영상 찾기</a>
     </div>`;

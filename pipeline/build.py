@@ -10,6 +10,8 @@
   app/data/complexes.json, schools.geojson, auctions.json, meta.json
 """
 import datetime as dt
+import csv
+import io
 import glob
 import json
 import math
@@ -1014,6 +1016,35 @@ def enrich(c, roads, today, stations, schools, zones, middle=None, academies=Non
     return c
 
 
+def load_manual_notes():
+    """data/manual/notes.csv - 사람이 직접 확인해 적은 단지 메모.
+
+    자동 생성 문장은 공공데이터 숫자만 본다. 그래서 '밤에 주차 자리 없다', '실제로 언덕이다',
+    '공사 소음' 같은 건 절대 못 잡는다(2026-09-29 월드컵현대 실거주 후기와 대조해 확인).
+    그건 사람이 직접 보고 적어야 한다. 이 파일이 그 자리다.
+
+    칸: id, 단지명, 구, 동, 세대수, 1년거래, 좋은점, 아쉬운점, 출처
+      - 좋은점/아쉬운점: 여러 개면 ; 로 나눈다. 빈 칸이면 그 단지는 그냥 넘어간다.
+      - **출처는 반드시 적는다.** 직접 가봄 / 유튜브 채널명 / 카페글 등.
+        출처 없는 줄은 싣지 않는다 - 확인 못 할 말을 우리 이름으로 내보내지 않기 위해서다.
+    """
+    p = os.path.join(os.path.dirname(RAW), "manual", "notes.csv")
+    if not os.path.exists(p):
+        return {}
+    out = {}
+    with io.open(p, encoding="utf-8-sig", newline="") as f:
+        for row in csv.DictReader(f):
+            good = [x.strip() for x in (row.get("좋은점") or "").split(";") if x.strip()]
+            bad = [x.strip() for x in (row.get("아쉬운점") or "").split(";") if x.strip()]
+            src = (row.get("출처") or "").strip()
+            if not (good or bad) or not src:
+                continue
+            out[(row.get("id") or "").strip()] = {"good": good[:3], "bad": bad[:3], "src": src[:60]}
+    if out:
+        print("직접 확인 메모 {}개 단지".format(len(out)))
+    return out
+
+
 def verdict(c):
     """단지 '솔직 평가' - 유튜브 대본을 베끼는 대신 우리 숫자로 직접 쓴다.
 
@@ -1056,6 +1087,24 @@ def verdict(c):
     if sch.get("chopuma") is False and (sch.get("elem_walk_min") or 0) >= 10:
         weak.append(("통학", "배정 초등학교까지 도보 {}분입니다. 저학년은 데려다줘야 하는 거리입니다.".format(sch["elem_walk_min"])))
 
+    # 소음: 실거주 후기에서 가장 많이 나오는 불만인데 처음엔 안 쓰고 있었다.
+    # nuisance 의 within 은 100m 기준이라 "안 걸림"으로 나오지만, 철도·대로 소음은 그보다 멀리 간다.
+    rd = c.get("road") or {}
+    nz_ = c.get("nuisance") or {}
+    rail = nz_.get("rail") or {}
+    if rail.get("dist") is not None and rail["dist"] <= 300:
+        weak.append(("소음", "{} 철길이 {}m 거리입니다. 창을 열어두는 계절에는 열차 소리가 들어옵니다."
+                     .format(rail.get("name") or "지상", rail["dist"])))
+    if rd.get("roadside") and (rd.get("major_dist") or 999) <= 60:
+        weak.append(("소음", "{}에 바로 붙어 있습니다(약 {}m). 도로 쪽 동·저층은 차 소리를 감안하세요."
+                     .format(rd.get("major_name") or "큰길", rd["major_dist"])))
+    pw = nz_.get("powerline") or {}
+    if pw.get("dist") is not None and pw["dist"] <= 150:
+        weak.append(("송전선", "고압 송전선이 {}m 거리입니다. 조망과 심리적 거부감에서 불리하게 보는 사람이 많습니다.".format(pw["dist"])))
+    lf_ = c.get("life") or {}
+    if (lf_.get("mart") or 0) == 0 and (lf_.get("convenience") or 0) <= 1:
+        weak.append(("생활", "700m 안에 마트가 없습니다. 장보기는 차로 나가야 합니다."))
+
     # --- 강점
     if c.get("edu_band_pct") is not None and c["edu_band_pct"] <= 20:
         strong.append("이 가격대에서 학군이 상위 {}%입니다. 돈 대비 학군만 보면 드문 자리입니다.".format(c["edu_band_pct"]))
@@ -1074,7 +1123,7 @@ def verdict(c):
         return None
     line = ("{} 대신 {}".format(strong[0].split(".")[0], weak[0][1].split(".")[0].lower())
             if strong and weak else (strong[0].split(".")[0] if strong else weak[0][1].split(".")[0]))
-    return {"head": line[:60], "weak": [{"k": k, "t": t} for k, t in weak[:3]], "strong": strong[:3]}
+    return {"head": line[:60], "weak": [{"k": k, "t": t} for k, t in weak[:5]], "strong": strong[:3]}
 
 
 def main():
@@ -1278,8 +1327,14 @@ def main():
             c["cons"].append("주변 교과학원 적음 (1km 내 {}개)".format(v))
             c["cons"] = c["cons"][:4]
 
+    manual = load_manual_notes()
     for c in cs:
         c["verdict"] = verdict(c)
+        m = manual.get(c["id"])
+        if m and c["verdict"]:
+            c["verdict"]["manual"] = m
+        elif m:
+            c["verdict"] = {"head": "", "weak": [], "strong": [], "manual": m}
 
     aucs = load_auctions(cs)
     by_id = {c["id"]: c for c in cs}
