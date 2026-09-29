@@ -1014,6 +1014,69 @@ def enrich(c, roads, today, stations, schools, zones, middle=None, academies=Non
     return c
 
 
+def verdict(c):
+    """단지 '솔직 평가' - 유튜브 대본을 베끼는 대신 우리 숫자로 직접 쓴다.
+
+    원칙 세 가지. 지키지 않으면 남 얘기 옮긴 것과 다를 바 없어진다.
+      1. 모든 문장은 이 단지의 숫자 하나에서 나온다. 인상·소문·'~라고 한다' 금지.
+      2. 단점을 먼저 말한다. 장점부터 늘어놓으면 광고문이 된다.
+      3. 사람을 분류하지 않는다. 임대 세대·거주자 구성으로 단지를 깎지 않는다
+         (사실은 notes 에 중립적으로 이미 있다).
+    """
+    weak, strong = [], []
+    age = c.get("built") and (dt.date.today().year - c["built"])
+    hh = c.get("households") or 0
+    st = c.get("station") or {}
+    tr = c.get("terrain") or {}
+    park = c.get("parking_per_hh")
+
+    # --- 약점 (센 것부터)
+    if c.get("edu_band_pct") is not None and c["edu_band_pct"] >= 60:
+        weak.append(("학군", "이 가격대({}) 단지들 중 학군은 하위 {}%입니다. 같은 돈으로 학군 좋은 곳이 많습니다."
+                     .format(c.get("budget_band") or "비슷한 가격", 100 - c["edu_band_pct"])))
+    if (c.get("trade_count_1y") or 0) <= 2 and hh >= 100:
+        weak.append(("환금성", "최근 1년 거래가 {}건뿐입니다. 팔고 싶을 때 바로 팔리기 어렵고, 시세도 흐릿합니다."
+                     .format(c.get("trade_count_1y") or 0)))
+    if tr.get("station_dh") is not None and tr["station_dh"] >= 25:
+        weak.append(("언덕", "역보다 {}m 높습니다. 지도 위 도보 {}분은 평지 기준이라 실제로는 더 걸립니다."
+                     .format(tr["station_dh"], st.get("walk_min") or "?")))
+    if park is not None and park < 1:
+        weak.append(("주차", "세대당 주차 {}대입니다. 맞벌이로 차 두 대면 밤마다 자리 싸움입니다.".format(park)))
+    if age and age >= 30:
+        weak.append(("연식", "준공 {}년차입니다. 재건축 기대가 값에 섞여 있는 만큼, 그 사이 배관·주차·단열은 감수해야 합니다.".format(age)))
+    elif age and age >= 20 and (park is None or park < 1.2):
+        weak.append(("연식", "준공 {}년차라 요즘 단지 기준의 주차·커뮤니티는 기대하기 어렵습니다.".format(age)))
+    if hh and hh < 300:
+        weak.append(("단지 규모", "{}세대 소단지입니다. 세대수가 적으면 세대당 관리비가 올라가고 커뮤니티 시설도 없습니다.".format(hh)))
+    if (c.get("jeonse_ratio") or 0) >= 85:
+        weak.append(("전세", "전세가율 {}%입니다. 집값이 조금만 빠져도 보증금이 위태로워지는 구간입니다.".format(c["jeonse_ratio"])))
+    if (st.get("walk_min") or 0) >= 15:
+        weak.append(("교통", "가장 가까운 역까지 걸어서 {}분입니다. 매일이면 버스나 차를 쓰게 됩니다.".format(st["walk_min"])))
+    sch = c.get("school") or {}
+    if sch.get("chopuma") is False and (sch.get("elem_walk_min") or 0) >= 10:
+        weak.append(("통학", "배정 초등학교까지 도보 {}분입니다. 저학년은 데려다줘야 하는 거리입니다.".format(sch["elem_walk_min"])))
+
+    # --- 강점
+    if c.get("edu_band_pct") is not None and c["edu_band_pct"] <= 20:
+        strong.append("이 가격대에서 학군이 상위 {}%입니다. 돈 대비 학군만 보면 드문 자리입니다.".format(c["edu_band_pct"]))
+    if sch.get("chopuma"):
+        strong.append("단지 안에서 초등학교로 붙습니다({}). 저학년 두면 이것 하나로 다른 단점이 덮이기도 합니다.".format(sch.get("elem", "")))
+    if (st.get("walk_min") or 99) <= 5:
+        strong.append("{} 도보 {}분입니다. 역세권 프리미엄은 값이 빠질 때 가장 늦게 빠집니다.".format(st.get("name", "역"), st["walk_min"]))
+    if hh >= 1000:
+        strong.append("{:,}세대 대단지라 거래가 꾸준하고 관리비·커뮤니티에서 유리합니다.".format(hh))
+    if age is not None and age <= 10:
+        strong.append("{}년차 신축입니다. 주차·커뮤니티·단열에서 구축과 체감 차이가 큽니다.".format(age))
+    if park is not None and park >= 1.3:
+        strong.append("세대당 주차 {}대로 넉넉합니다.".format(park))
+
+    if not weak and not strong:
+        return None
+    line = ("{} 대신 {}".format(strong[0].split(".")[0], weak[0][1].split(".")[0].lower())
+            if strong and weak else (strong[0].split(".")[0] if strong else weak[0][1].split(".")[0]))
+    return {"head": line[:60], "weak": [{"k": k, "t": t} for k, t in weak[:3]], "strong": strong[:3]}
+
+
 def main():
     today = dt.date.today()
     raw_roads = sorted(glob.glob(os.path.join(RAW, "roads_*.json")))
@@ -1214,6 +1277,9 @@ def main():
         elif v <= 2:
             c["cons"].append("주변 교과학원 적음 (1km 내 {}개)".format(v))
             c["cons"] = c["cons"][:4]
+
+    for c in cs:
+        c["verdict"] = verdict(c)
 
     aucs = load_auctions(cs)
     by_id = {c["id"]: c for c in cs}

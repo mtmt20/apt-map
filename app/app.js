@@ -890,6 +890,23 @@
     return { loanM, feeM, mgmtM, total, loan };
   }
 
+  // 단지 '솔직 평가'. 유튜브 대본을 옮겨오는 게 아니라 우리 숫자로 직접 쓴 것이고,
+  // 단점을 먼저 보여준다. 남의 영상은 링크로 보내서 조회수가 그쪽에 가게 한다.
+  function verdictPanel(c) {
+    const v = c.verdict;
+    if (!v) return "";
+    const yt = `https://www.youtube.com/results?search_query=${encodeURIComponent(c.name + " " + (c.umd || "") + " 아파트")}`;
+    return `<div class="section verdict">
+      <h4>🗣️ 솔직 평가 <span class="r muted">집콕맵 데이터 기준</span></h4>
+      ${v.weak.length ? `<div class="vblock vbad"><div class="vh">먼저 단점부터</div>
+        ${v.weak.map((w) => `<div class="vrow"><b>${esc(w.k)}</b><span>${esc(w.t)}</span></div>`).join("")}</div>` : ""}
+      ${v.strong.length ? `<div class="vblock vgood"><div class="vh">그래도 이런 점은</div>
+        ${v.strong.map((t) => `<div class="vrow"><span>${esc(t)}</span></div>`).join("")}</div>` : ""}
+      <div class="note">사람이 쓴 후기가 아니라 <b>이 단지의 공공데이터 숫자에서 자동으로 뽑은 문장</b>입니다.
+        실제로 살아보신 분의 이야기는 아래 '의견 보내기'로 알려주시면 반영합니다.</div>
+      <a class="ytlink" href="${yt}" target="_blank" rel="noopener nofollow">▶ 유튜브에서 이 단지 임장 영상 찾기</a>
+    </div>`;
+  }
   function costPanel(c, rep_) {
     const price = rep_ && rep_.latest;
     const m = monthlyCost(c, price);
@@ -957,6 +974,8 @@
           <div style="margin-top:12px">${chartSVG(c.trades, areaSel)}</div>
           ${c.phase ? `<div class="note" style="margin-top:8px">📈 지금 국면: <b>${esc(c.phase)}</b></div>` : ""}
         </div>
+
+        ${verdictPanel(c)}
 
         ${costPanel(c, rep)}
 
