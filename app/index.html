@@ -30,7 +30,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="집콕맵">
 <link rel="stylesheet" href="vendor/maplibre-gl.css">
-<link rel="stylesheet" href="style.css?v=97">
+<link rel="stylesheet" href="style.css?v=98">
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"WebSite","name":"집콕맵","url":"https://jipkokmap.kr/","description":"서울 아파트 실거래가, 배정 초등학교와 학군, 지하철 출퇴근 시간, 예산 대비 학군을 지도 한 장에서 확인하는 서비스","inLanguage":"ko"}</script>
 <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-2024521419046920" crossorigin="anonymous"></script>
 </head>
@@ -120,6 +120,9 @@
   <button class="lyr" data-layer="edumap" title="동네별 학군 등급 (S~E)">
     <span class="ico">🎓</span><span>학군지도</span>
   </button>
+  <button class="lyr" data-layer="heatmap" title="동네별 지금 시장 온도 (신고가 비율)">
+    <span class="ico">🌡️</span><span>시장온도</span>
+  </button>
   <button class="lyr" data-more="1" data-layer="road" title="큰길/골목/인도">
     <span class="ico">🛣️</span><span>도로</span>
   </button>
@@ -155,6 +158,15 @@
   <b>고등학교</b>: 학교 유형 (영재·과학고·외고·국제고 A, 자율고 B, 일반고 C, 특성화고 D).<br>
   <b>성적이 아닙니다.</b> 학교별 학업성취도 공시는 2016년에 끝났습니다. 진학률(특목고·대학) 공시를 받아오는 중입니다.</div>
 </div>
+<div class="legend big" id="heatLegend" hidden>
+  <button class="legend-x" id="heatLegendClose" title="범례 닫기">✕</button>
+  <div><b>🌡 지금 이 동네 시장 온도</b></div>
+  <div><i class="d" style="background:#b91c1c"></i>60%+ <i class="d" style="background:#f97316"></i>45% <i class="d" style="background:#fcd34d"></i>30% <i class="d" style="background:#7dd3fc"></i>15% <i class="d" style="background:#2563eb"></i>그 아래</div>
+  <div class="muted legend-note">최근 4개월 실거래 중 <b>신고가(그 평형 역대 최고가) 비율</b>입니다. 같은 단지·같은 평형끼리만 비교합니다.
+  빨강일수록 신고가가 많이 나오는 동네입니다.<br>
+  <b>실거래는 계약 후 30일 안에 신고</b>하므로 최근 3~4주 거래는 아직 덜 들어와 있습니다.
+  거래 20건이 안 되는 동네는 판단을 보류하고 표시하지 않습니다.</div>
+</div>
 <div class="legend big" id="eduLegend" hidden>
   <button class="legend-x" id="eduLegendClose" title="범례 닫기">✕</button>
   <div><i class="d" style="background:#064e3b"></i>S 상위3%</div><div><i class="d" style="background:#15803d"></i>A 10%</div><div><i class="d" style="background:#4d7c0f"></i>B 25%</div>
@@ -181,6 +193,7 @@
         <span id="areaLabel" class="muted">서울 마포구</span>
         <button id="shareBtn" title="지금 보는 화면 그대로 링크로 공유">🔗 공유</button>
       </div>
+      <div id="hoodBar" class="hoodbar" hidden></div>
       <div id="condBar" class="condbar" hidden></div>
       <div id="rankHow" class="rankhow" hidden></div>
       <div id="demoRow" class="demo-row">
@@ -315,7 +328,7 @@
   </div>
 </div>
 <script src="config.js"></script>
-<script src="app.js?v=97"></script>
+<script src="app.js?v=98"></script>
 <script>if ("serviceWorker" in navigator && location.protocol === "https:") navigator.serviceWorker.register("sw.js").catch(() => {});</script>
 </body>
 </html>

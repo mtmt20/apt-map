@@ -10,7 +10,7 @@
     complexes: [], auctions: [], schools: null, meta: null,
     area: "all", sort: null, q: "", age: localStorage.getItem("kidAge") || "",
     selected: null, markers: {}, aucMarkers: [], schoolMarkers: [], crownMarkers: [],
-    layers: { school: true, subway: true, edumap: false, road: false, auction: false, terrain: false, nuisance: false, amenity: false },
+    layers: { school: true, subway: true, edumap: false, heatmap: false, road: false, auction: false, terrain: false, nuisance: false, amenity: false },
     compare: JSON.parse(localStorage.getItem("compare") || "[]"), budget: null,
   };
 
@@ -105,7 +105,15 @@
   map.once("error", (e) => { if (!map.isStyleLoaded()) { console.warn("basemap fallback", e && e.error); map.setStyle(OSM_RASTER); } });
   setTimeout(() => { if (!map.isStyleLoaded()) { console.warn("basemap timeout -> OSM raster"); map.setStyle(OSM_RASTER); } }, 10000);
   // 스타일이 (다시) 로드될 때마다 오버레이 레이어를 붙인다 (폴백 setStyle 포함)
-  map.on("style.load", () => { if (state.schools && !map.getSource("schools")) addLayers(); });
+  // 베이스맵이 폴백되면 setStyle 로 스타일이 교체돼 소스가 빈 채로 다시 생긴다.
+  // lazyLoaded 플래그가 남아 있으면 데이터를 다시 안 받아 학군지도·시장온도가 안 보였다(2026-09-29).
+  map.on("style.load", () => {
+    if (state.schools && !map.getSource("schools")) {
+      for (const k of Object.keys(lazyLoaded)) delete lazyLoaded[k];
+      addLayers();
+      applyLayers();
+    }
+  });
   // 탭 전환/창 크기 변경 후 캔버스 크기 재계산
   document.addEventListener("visibilitychange", () => { if (!document.hidden) setTimeout(() => map.resize(), 50); });
   map.addControl(new maplibregl.AttributionControl({ compact: true }), "top-left");
@@ -174,6 +182,37 @@
     });
     map.on("mouseenter", "edu-dot", () => map.getCanvas().style.cursor = "pointer");
     map.on("mouseleave", "edu-dot", () => map.getCanvas().style.cursor = "");
+
+    // 시장 온도(신고가 비율). 홍콩 CCL·Zillow Heat Index 처럼 "지금 어디가 뜨거운가"를 한 장으로.
+    // 색은 신고가율 그대로. 거래가 적은 동(20건 미만)은 애초에 데이터에 없다 - 억지로 칠하지 않는다.
+    const HEAT_COLOR = ["step", ["get", "hi"], "#2563eb", 15, "#7dd3fc", 30, "#fcd34d", 45, "#f97316", 60, "#b91c1c"];
+    map.addSource("heatdong", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
+    map.addLayer({ id: "heat-halo", type: "circle", source: "heatdong",
+      paint: { "circle-radius": ["interpolate", ["linear"], ["zoom"], 9, 12, 13, 22, 16, 36],
+               "circle-color": HEAT_COLOR, "circle-opacity": 0.2 } });
+    map.addLayer({ id: "heat-dot", type: "circle", source: "heatdong",
+      paint: { "circle-radius": ["interpolate", ["linear"], ["zoom"], 9, 8, 13, 14, 16, 21],
+               "circle-color": HEAT_COLOR, "circle-opacity": 0.92,
+               "circle-stroke-color": "#fff", "circle-stroke-width": 2 } });
+    if (map.getStyle().glyphs) {
+      map.addLayer({ id: "heat-label", type: "symbol", source: "heatdong",
+        layout: { "text-field": ["format", ["concat", ["to-string", ["get", "hi"]], "%"], { "font-scale": 1.1 }, "\n", {}, ["get", "umd"], { "font-scale": 0.7 }],
+                  "text-font": ["Noto Sans Bold"], "text-size": ["interpolate", ["linear"], ["zoom"], 9, 10, 13, 13, 16, 16],
+                  "text-allow-overlap": false, "text-optional": true },
+        paint: { "text-color": "#fff", "text-halo-color": HEAT_COLOR, "text-halo-width": 1.6 } });
+    }
+    map.on("click", "heat-dot", (e) => {
+      const p = e.features[0].properties;
+      const [w] = heatWord(p.hi);
+      const bits = [`${p.sgg} ${p.umd} · ${w}`,
+                    `최근 거래 ${p.n}건 중 신고가 ${p.hi}%`,
+                    `오른 거래 ${p.up}% · 내린 거래 ${p.dn}%`];
+      if (p.chg != null && p.chg !== "") bits.push(`직전 4개월보다 ${p.chg >= 0 ? "+" : ""}${p.chg}%p`);
+      toast(bits.join(" · "));
+      $("#q").value = p.umd; state.q = p.umd; renderMarkers(); renderList(); setSheet("half");
+    });
+    map.on("mouseenter", "heat-dot", () => map.getCanvas().style.cursor = "pointer");
+    map.on("mouseleave", "heat-dot", () => map.getCanvas().style.cursor = "");
 
     map.addSource("stations", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
     map.addLayer({ id: "sub-dot", type: "circle", source: "stations", minzoom: 11,
@@ -378,15 +417,22 @@
     made.forEach((m, i) => { if (!want.has(i)) { m.remove(); made.delete(i); } });
     state.schoolMarkers = [...made.values()];
   }
-  function applyCrowns() { const show = map.getZoom() < 13.3; state.crownMarkers.forEach((m) => m.getElement().style.display = show ? "" : "none"); }
+  // 시장온도 지도를 켜면 인기단지 크라운도 숨긴다 (동 점을 가린다)
+  function applyCrowns() {
+    const show = map.getZoom() < 13.3 && !(state.layers.heatmap && !state.selected && !state.q);
+    state.crownMarkers.forEach((m) => m.getElement().style.display = show ? "" : "none");
+  }
   // 범례를 한 번 닫으면 레이어를 다시 켜기 전까지 안 띄운다
-  let legendClosed = false, eduLegendClosed = false;
+  let legendClosed = false, eduLegendClosed = false, heatLegendClosed = false;
   // 학교 글자 설명: 학교 레이어는 기본으로 켜져 있어서 매번 뜨면 지도를 가린다. 처음 한 번만, 닫으면 기억.
   let schLegendClosed = (() => { try { return !!localStorage.getItem("schLegendSeen"); } catch (e) { return false; } })();
   function applyLayers() {
     const v = (ids, on) => ids.forEach((id) => map.getLayer(id) && map.setLayoutProperty(id, "visibility", on ? "visible" : "none"));
     v(["edu-halo", "edu-dot", "edu-label"], state.layers.edumap);
     if (state.layers.edumap) lazySource("edudong", "data/edu_dong.geojson");
+    v(["heat-halo", "heat-dot", "heat-label"], state.layers.heatmap);
+    if (state.layers.heatmap) lazySource("heatdong", "data/heat_dong.geojson");
+    if ($("#heatLegend")) $("#heatLegend").hidden = !state.layers.heatmap || heatLegendClosed;
     $("#eduLegend").hidden = !state.layers.edumap || eduLegendClosed;
     if ($("#schLegend")) $("#schLegend").hidden = !state.layers.school || schLegendClosed || state.layers.edumap;
     v(["school-fill", "school-line"], state.layers.school && map.getZoom() >= 12.5);
@@ -412,6 +458,12 @@
   // ---------- markers ----------
   function renderMarkers() {
     const z = map.getZoom();
+    // 시장온도 지도를 켜면 가격 핀을 숨긴다. 둘을 같이 띄우면 핀이 동 점을 다 가려서
+    // '한눈에'가 안 된다(2026-09-29 확인). 단지를 고른 상태면 그건 그대로 둔다.
+    if (state.layers.heatmap && !state.selected && !state.q) {
+      for (const k of Object.keys(state.markers)) { state.markers[k].remove(); delete state.markers[k]; }
+      return;
+    }
     const compact = z < 14.8;
     const W = compact ? 76 : 122, H = compact ? 40 : 54;   // 핀 대략 크기(px), 겹침 판정용
     const byZoom = (c) => !(z < 11.8 || (z < 12.6 && c.trade_count_1y < 40) || (z < 13.2 && c.trade_count_1y < 20) || (z < 14 && c.trade_count_1y < 10) || (z < 14.8 && c.trade_count_1y < 4));
@@ -667,6 +719,7 @@
     }
     if (state.age && !state.sort) list = list.filter((c) => c.kax).sort((a, b) => fitScore(b) - fitScore(a));
     else if (state.sort === "ppy") list.sort((a, b) => (b.ppy || 0) - (a.ppy || 0));
+    else if (state.sort === "ppylow") list = list.filter((c) => c.ppy).sort((a, b) => a.ppy - b.ppy);
     else if (state.sort === "chg") list.sort((a, b) => (b.chg_1y || 0) - (a.chg_1y || 0));
     else if (state.sort === "school") list = list.filter((c) => c.school.chopuma).sort((a, b) => a.school.elem_dist - b.school.elem_dist);
     else if (state.sort === "gap") list = list.filter((c) => c.jeonse_ratio).sort((a, b) => b.jeonse_ratio - a.jeonse_ratio);
@@ -770,12 +823,113 @@
       if (first) map.flyTo({ center: [first.lng, first.lat], zoom: 12.5 });
     }));
   }
+  // ---------- 동네 한눈에 ----------
+  // 30일간 607명이 왔는데 기능 클릭은 66회(11%)였다. 89%는 지도만 보고 나간다.
+  // 그래서 **누르지 않아도** 지금 보고 있는 동네가 어떤 곳인지 목록 맨 위에 띄운다.
+  // 누르면 더 나오는 건 그 다음 단계(액션 -> +@).
+  let HEAT = null, heatTried = false;
+  async function loadHeat() {
+    if (HEAT || heatTried) return HEAT;
+    heatTried = true;
+    try {
+      const [a, b] = await Promise.all([
+        fetch("data/heat.json").then((r) => r.json()),
+        fetch("data/heat_dong.geojson").then((r) => r.json()),
+      ]);
+      HEAT = { all: a, dong: new Map(b.features.map((f) => [f.properties.sgg + "|" + f.properties.umd, f.properties])) };
+    } catch (e) { HEAT = null; }
+    return HEAT;
+  }
+  const heatWord = (hi) => hi >= 50 ? ["뜨거움", "hot3"] : hi >= 30 ? ["따뜻함", "hot2"] : hi >= 15 ? ["보통", "hot1"] : ["차가움", "hot0"];
+
+  function hoodOf(list) {
+    // 화면에 보이는 단지들이 가장 많이 속한 동
+    const cnt = new Map();
+    for (const c of list.slice(0, 60)) {
+      const k = c.sgg + "|" + c.umd;
+      cnt.set(k, (cnt.get(k) || 0) + 1);
+    }
+    let best = null, bn = 0;
+    for (const [k, n] of cnt) if (n > bn) { best = k; bn = n; }
+    return best;
+  }
+
+  function renderHood(list) {
+    const bar = $("#hoodBar");
+    if (!bar) return;
+    if (state.selected || !list.length || state.sort === "budget" || state.sort === "fav") { bar.hidden = true; return; }
+    const key = hoodOf(list);
+    if (!key) { bar.hidden = true; return; }
+    const [sgg, umd] = key.split("|");
+    const here = list.filter((c) => c.sgg + "|" + c.umd === key);
+    const med = (arr) => { const v = arr.filter((x) => x != null).sort((a, b) => a - b); return v.length ? v[Math.floor(v.length / 2)] : null; };
+    const p84 = med(here.map((c) => (c.by_area || []).filter((a) => a.area >= 70 && a.area < 100).map((a) => a.latest)[0]));
+    const edu = med(here.map((c) => c.edu_score));
+    const gr = med(here.map((c) => c.edu_top_pct));
+    const fee = med(here.map((c) => c.fee));
+    const h = HEAT && HEAT.dong.get(key);
+    const chips = [];
+    if (h) {
+      const [w, cls] = heatWord(h.hi);
+      chips.push(`<b class="hchip ${cls}">🌡 ${w} · 신고가 ${h.hi}%${h.chg != null ? ` <small>${h.chg >= 0 ? "▲" : "▼"}${Math.abs(h.chg)}%p</small>` : ""}</b>`);
+    }
+    if (gr != null) chips.push(`<span class="hchip">🏫 학군 <b class="grade g${eduGrade(gr)}">${eduGrade(gr)}</b>${edu != null ? " " + edu + "점" : ""}</span>`);
+    if (p84) chips.push(`<span class="hchip">🏠 84㎡ ${fmtPrice(p84)}</span>`);
+    if (fee) chips.push(`<span class="hchip">📚 학원비 월 ${Math.round(fee / 10000)}만</span>`);
+    chips.push(`<span class="hchip">🏘 단지 ${here.length}개</span>`);
+    bar.innerHTML = `<div class="hoodtop"><b>${esc(umd)}</b> <span class="muted">${esc(sgg)} · 지금 보는 동네</span>
+        <button id="hoodMore">자세히 ▾</button></div>
+      <div class="hchips">${chips.join("")}</div>
+      <div id="hoodMoreBox" hidden></div>`;
+    bar.hidden = false;
+    $("#hoodMore").addEventListener("click", () => {
+      const box = $("#hoodMoreBox");
+      box.hidden = !box.hidden;
+      $("#hoodMore").textContent = box.hidden ? "자세히 ▾" : "접기 ▴";
+      if (!box.hidden) {
+        hit("hood_more");
+        box.innerHTML = hoodDetail(sgg, umd, here, h);
+        // 액션 -> +@ : 누른 것에 맞는 정보를 그 자리에서 더 준다
+        $$(".hact", box).forEach((b) => b.addEventListener("click", () => {
+          const a = b.dataset.hact;
+          hit("hood_" + a);
+          if (a === "edu") { state.layers.edumap = true; applyLayers(); setSheet("peek"); toast(`${umd} 학군 등급을 지도에 켰어요.`); }
+          if (a === "heat") { state.layers.heatmap = true; state.layers.edumap = false; applyLayers(); setSheet("peek"); toast("수도권 신고가 지도를 켰어요. 빨강일수록 신고가가 많은 동네예요."); }
+          if (a === "cheap") { state.q = umd; $("#q").value = umd; state.sort = "ppylow"; renderMarkers(); renderList(); }
+        }));
+      }
+    });
+  }
+
+  function hoodDetail(sgg, umd, here, h) {
+    const rows = [];
+    if (h) rows.push([`🌡 이 동네 시장`, `최근 거래 ${h.n}건 중 신고가 ${h.hi}% · 오른 거래 ${h.up}% · 내린 거래 ${h.dn}%`]);
+    const chop = here.filter((c) => c.school && c.school.chopuma).length;
+    if (chop) rows.push(["🏫 초품아", `${chop}개 단지가 단지 안에서 초등학교로 붙습니다`]);
+    const big = here.filter((c) => (c.households || 0) >= 1000).length;
+    if (big) rows.push(["🏘 대단지", `1,000세대 이상 ${big}개`]);
+    const news = here.filter((c) => c.built && (new Date().getFullYear() - c.built) <= 10).length;
+    if (news) rows.push(["✨ 신축", `10년 이내 ${news}개 단지`]);
+    const st = here.map((c) => c.station).filter((s) => s && s.walk_min != null).sort((a, b) => a.walk_min - b.walk_min)[0];
+    if (st) rows.push(["🚇 가까운 역", `${st.name} 도보 ${st.walk_min}분`]);
+    const jr = here.map((c) => c.jeonse_ratio).filter((x) => x).sort((a, b) => b - a)[0];
+    if (jr) rows.push(["🔑 전세가율", `최고 ${jr}%${jr >= 85 ? " (깡통전세 주의 구간)" : ""}`]);
+    return `<div class="hoodrows">${rows.map(([k, v]) => `<div class="hoodrow"><b>${k}</b><span>${esc(v)}</span></div>`).join("")}</div>
+      <div class="hoodacts">
+        <button class="hact" data-hact="edu">이 동네 학군 자세히</button>
+        <button class="hact" data-hact="heat">수도권 온도 지도</button>
+        <button class="hact" data-hact="cheap">이 동네 싼 단지순</button>
+      </div>`;
+  }
+  loadHeat().then(() => { if (!state.selected) renderList(); });
+
   function renderList() {
     const list = visibleComplexes();
     updateDemoRow();
     $("#compareBar").hidden = !state.compare.length;
     $("#compareBar").querySelector("span").textContent = `비교 ${state.compare.length}/3`;
     renderCond();
+    renderHood(list);
     renderRankHow(list);
     $("#listCount").textContent = state.commute && state.sort !== "fav" ? `출퇴근 ${state.commute.max}분 이내${state.sort === "budget" ? " + 예산" : ""} ${list.length >= 150 ? "150개+" : list.length + "개"}` : state.sort === "budget" ? `예산 조건 ${list.length}개` : state.sort === "fav" ? `찜한 단지 ${list.length}개` : (map.getZoom() >= 12 && !state.q ? `화면 안 단지 ${list.length}개` : `단지 ${list.length}개`);
     $("#alertBar").hidden = !(state.sort === "fav" && list.length && API);
@@ -1529,6 +1683,8 @@
     state.layers[b.dataset.layer] = !state.layers[b.dataset.layer];
     if (b.dataset.layer === "amenity") legendClosed = false;
     if (b.dataset.layer === "edumap") eduLegendClosed = false;
+    if (b.dataset.layer === "heatmap") { heatLegendClosed = false; state.layers.edumap = false; }
+    if (b.dataset.layer === "heatmap") { renderMarkers(); applyCrowns(); }
     if (b.dataset.layer === "school" && state.layers.school) schLegendClosed = false;
     applyLayers();
   }));
@@ -1539,6 +1695,7 @@
   });
   // applyLayers 는 첫 화면에서 안 불리므로 처음 한 번 직접 맞춘다
   if ($("#schLegend")) $("#schLegend").hidden = !state.layers.school || schLegendClosed;
+  if ($("#heatLegendClose")) $("#heatLegendClose").addEventListener("click", () => { heatLegendClosed = true; $("#heatLegend").hidden = true; });
   if ($("#eduLegendClose")) $("#eduLegendClose").addEventListener("click", () => { eduLegendClosed = true; $("#eduLegend").hidden = true; });
   $("#locateBtn").addEventListener("click", () => {
     if (!navigator.geolocation) return toast("위치 정보를 지원하지 않는 브라우저예요.");

@@ -1126,6 +1126,102 @@ def verdict(c):
     return {"head": line[:60], "weak": [{"k": k, "t": t} for k, t in weak[:5]], "strong": strong[:3]}
 
 
+def market_heat(cs):
+    """'지금 수도권 시장 온도' - 동네별 신고가 비율.
+
+    왜 이 지표인가:
+      미국(Zillow)·홍콩(CCL)은 매물 정보가 사기업 소유라 회귀모형으로 '추정'한다.
+      한국은 **모든 실거래가 공개**되므로 추정 없이 셀 수 있다. 거래 하나하나에 대해
+      "같은 단지·같은 평형의 직전 거래보다 올랐나", "그 평형 역대 최고가인가"를 직접 센다.
+      주식의 상승/하락 종목 수(market breadth)와 같은 개념이다.
+
+    **신고 지연**: 계약 후 30일 안에 신고한다. 그래서 최근 3~4주는 거래가 덜 들어와 있다.
+    '지금'이라고 쓰면 거짓말이 되므로, 마지막 신고일을 같이 내보내 화면에 적는다.
+
+    거래가 적은 동은 계산하지 않는다(MIN_N). 표본 5건으로 '이 동네 뜨겁다'고 하면 안 된다.
+    """
+    MIN_N = 20
+    WIN, PREV = 4, 8          # 최근 4개월 / 직전 4개월(비교용)
+
+    def month_add(ym, k):
+        y, m = int(ym[:4]), int(ym[5:7])
+        t = y * 12 + (m - 1) + k
+        return "{:04d}-{:02d}".format(t // 12, t % 12 + 1)
+
+    last = ""
+    for c in cs:
+        for t in (c.get("trades") or []):
+            if t.get("date") and t["date"] > last:
+                last = t["date"]
+    if not last:
+        return None, []
+    cur_from = month_add(last[:7], -(WIN - 1))
+    prev_from, prev_to = month_add(last[:7], -(PREV - 1)), cur_from
+
+    def blank():
+        return {"n": 0, "up": 0, "dn": 0, "hi": 0, "pn": 0, "phi": 0}
+    dong, tot = {}, blank()
+    for c in cs:
+        key = (c.get("sgg"), c.get("umd"))
+        if not key[1]:
+            continue
+        by = {}
+        for t in sorted(c.get("trades") or [], key=lambda x: x.get("date") or ""):
+            a = round(t.get("area") or 0)
+            if a and t.get("price") and t.get("date"):
+                by.setdefault(a, []).append(t)
+        g = dong.setdefault(key, blank())
+        for a, ts in by.items():
+            peak = prev = None
+            for t in ts:
+                p_, m = t["price"], t["date"][:7]
+                if prev is not None:
+                    newhi = peak is not None and p_ > peak
+                    if m >= cur_from:
+                        for d in (g, tot):
+                            d["n"] += 1
+                            if p_ > prev * 1.005:
+                                d["up"] += 1
+                            elif p_ < prev * 0.995:
+                                d["dn"] += 1
+                            if newhi:
+                                d["hi"] += 1
+                    elif prev_from <= m < prev_to:
+                        for d in (g, tot):
+                            d["pn"] += 1
+                            if newhi:
+                                d["phi"] += 1
+                peak = p_ if peak is None else max(peak, p_)
+                prev = p_
+
+    def pack(g):
+        if g["n"] < MIN_N:
+            return None
+        hi = round(100 * g["hi"] / g["n"])
+        prev_hi = round(100 * g["phi"] / g["pn"]) if g["pn"] >= MIN_N else None
+        return {"n": g["n"], "hi": hi, "up": round(100 * g["up"] / g["n"]),
+                "dn": round(100 * g["dn"] / g["n"]),
+                "prev_hi": prev_hi, "chg": (hi - prev_hi) if prev_hi is not None else None}
+
+    pos = {}
+    for c in cs:
+        k = (c.get("sgg"), c.get("umd"))
+        if k[1] and c.get("lat"):
+            pos.setdefault(k, []).append(c)
+    feats = []
+    for k, g in dong.items():
+        v = pack(g)
+        if not v or k not in pos:
+            continue
+        ms = pos[k]
+        v.update(sgg=k[0], umd=k[1])
+        feats.append({"type": "Feature", "properties": v, "geometry": {"type": "Point", "coordinates": [
+            round(sum(x["lng"] for x in ms) / len(ms), 5), round(sum(x["lat"] for x in ms) / len(ms), 5)]}})
+    overall = pack(tot) or {}
+    overall.update(last_trade=last, window_from=cur_from + "-01", dongs=len(feats), min_n=MIN_N)
+    return overall, feats
+
+
 def main():
     today = dt.date.today()
     raw_roads = sorted(glob.glob(os.path.join(RAW, "roads_*.json")))
@@ -1517,6 +1613,13 @@ def main():
         f["properties"]["pct"] = pct
         f["properties"]["grade"] = "S" if pct <= 3 else "A" if pct <= 10 else "B" if pct <= 25 else "C" if pct <= 50 else "D" if pct <= 75 else "E"
     dump("edu_dong.geojson", {"type": "FeatureCollection", "features": dfeats})
+
+    heat, hfeats = market_heat(cs)
+    if heat:
+        dump("heat.json", heat)
+        dump("heat_dong.geojson", {"type": "FeatureCollection", "features": hfeats})
+        print("시장 온도: 신고가율 {}% (거래 {:,}건, {}개 동, 최종 신고 {})".format(
+            heat["hi"], heat["n"], len(hfeats), heat["last_trade"]))
     print("동네 학군 지도 {}개 동".format(len(dfeats)))
     print("학구도 {}개 유지, 범위 밖 {}개 제외".format(kept, dropped))
     # 학구도 폴리곤(수 MB)은 지도를 확대해야 보이는 정보다. 학교 점과 파일을 나눠서

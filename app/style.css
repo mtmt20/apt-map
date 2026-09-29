@@ -476,3 +476,21 @@ body:not(.more-lyr) .layers [data-more="1"] { display: none; }
 .verdict .vrow { display: flex; gap: 8px; font-size: 13px; line-height: 1.55; margin: 4px 0; }
 .verdict .vrow b { flex: 0 0 58px; }
 .ytlink { display: inline-block; margin-top: 6px; font-size: 12.5px; color: var(--brand); text-decoration: none; }
+
+/* 동네 한눈에 (누르지 않아도 보이는 요약) */
+.hoodbar { margin: 4px 0 10px; padding: 10px 12px; border-radius: 14px; background: var(--card, #f6f7f9); border: 1px solid rgba(0,0,0,.06); }
+.hoodtop { display: flex; align-items: center; gap: 6px; font-size: 14px; margin-bottom: 7px; }
+.hoodtop b { font-size: 16px; }
+.hoodtop button { margin-left: auto; border: 1px solid rgba(0,0,0,.12); background: #fff; border-radius: 999px; padding: 4px 9px; font-size: 12px; cursor: pointer; }
+.hchips { display: flex; flex-wrap: wrap; gap: 5px; }
+.hchip { display: inline-flex; align-items: center; gap: 4px; background: #fff; border: 1px solid rgba(0,0,0,.1); border-radius: 999px; padding: 4px 9px; font-size: 12.5px; }
+.hchip small { opacity: .75; }
+.hchip.hot3 { background: #b91c1c; color: #fff; border-color: #b91c1c; }
+.hchip.hot2 { background: #ea580c; color: #fff; border-color: #ea580c; }
+.hchip.hot1 { background: #fef3c7; border-color: #fcd34d; }
+.hchip.hot0 { background: #dbeafe; border-color: #93c5fd; }
+.hoodrows { margin-top: 8px; }
+.hoodrow { display: flex; gap: 8px; font-size: 12.5px; line-height: 1.5; margin: 3px 0; }
+.hoodrow b { flex: 0 0 82px; }
+.hoodacts { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px; }
+.hact { border: 1px solid var(--brand); color: var(--brand); background: #fff; border-radius: 999px; padding: 5px 10px; font-size: 12.5px; cursor: pointer; }
