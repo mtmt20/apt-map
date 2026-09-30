@@ -494,3 +494,6 @@ body:not(.more-lyr) .layers [data-more="1"] { display: none; }
 .hoodrow b { flex: 0 0 82px; }
 .hoodacts { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px; }
 .hact { border: 1px solid var(--brand); color: var(--brand); background: #fff; border-radius: 999px; padding: 5px 10px; font-size: 12.5px; cursor: pointer; }
+
+/* 학군 + 시장온도를 같이 켰을 때: 온도 범례를 아래쪽으로 내려 학군 범례와 안 겹치게 */
+.legend.big.stk { top: auto; bottom: calc(var(--sheet-peek) + 12px); max-height: 42vh; overflow: auto; }

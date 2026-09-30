@@ -432,7 +432,16 @@
     if (state.layers.edumap) lazySource("edudong", "data/edu_dong.geojson");
     v(["heat-halo", "heat-dot", "heat-label"], state.layers.heatmap);
     if (state.layers.heatmap) lazySource("heatdong", "data/heat_dong.geojson");
-    if ($("#heatLegend")) $("#heatLegend").hidden = !state.layers.heatmap || heatLegendClosed;
+    // 학군과 온도는 같은 동 중심에 점을 찍으므로 둘 다 켜면 정확히 겹친다.
+    // 같이 보고 싶다는 요청(2026-09-30) -> 온도 점만 위로 띄워서 나란히 보이게 한다.
+    const both = state.layers.heatmap && state.layers.edumap;
+    const off = both ? [0, -26] : [0, 0];
+    ["heat-halo", "heat-dot"].forEach((id) => map.getLayer(id) && map.setPaintProperty(id, "circle-translate", off));
+    if (map.getLayer("heat-label")) map.setPaintProperty("heat-label", "text-translate", off);
+    if ($("#heatLegend")) {
+      $("#heatLegend").hidden = !state.layers.heatmap || heatLegendClosed;
+      $("#heatLegend").classList.toggle("stk", both);   // 범례 두 개가 같은 자리에 겹치지 않게
+    }
     $("#eduLegend").hidden = !state.layers.edumap || eduLegendClosed;
     if ($("#schLegend")) $("#schLegend").hidden = !state.layers.school || schLegendClosed || state.layers.edumap;
     v(["school-fill", "school-line"], state.layers.school && map.getZoom() >= 12.5);
@@ -1683,7 +1692,7 @@
     state.layers[b.dataset.layer] = !state.layers[b.dataset.layer];
     if (b.dataset.layer === "amenity") legendClosed = false;
     if (b.dataset.layer === "edumap") eduLegendClosed = false;
-    if (b.dataset.layer === "heatmap") { heatLegendClosed = false; state.layers.edumap = false; }
+    if (b.dataset.layer === "heatmap") heatLegendClosed = false;
     if (b.dataset.layer === "heatmap") { renderMarkers(); applyCrowns(); }
     if (b.dataset.layer === "school" && state.layers.school) schLegendClosed = false;
     applyLayers();
