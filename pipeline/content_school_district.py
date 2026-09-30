@@ -11,10 +11,31 @@
 """
 import datetime as dt
 import html
+import io
 import statistics
 import urllib.parse
 
 MIN_COMPLEXES = 3
+
+# 시장 온도(신고가 비율). build.py 가 만든 heat_dong.geojson 을 읽어 쓴다.
+# 학군 페이지가 1,000자대로 얇아 색인이 안 잡혔다(2026-09-30 확인) - 같은 동 얘기를 한 겹 더 쌓는다.
+HEAT = {}
+
+
+def load_heat(out_dir):
+    import json
+    import os
+    p = os.path.join(out_dir, "heat_dong.geojson")
+    if not os.path.exists(p):
+        return
+    try:
+        gj = json.load(io.open(p, encoding="utf-8"))
+    except Exception:
+        return
+    for f in gj.get("features", []):
+        pr = f.get("properties") or {}
+        if pr.get("sgg") and pr.get("umd"):
+            HEAT[(pr["sgg"], pr["umd"])] = pr
 
 
 def esc(x):
@@ -68,6 +89,12 @@ def collect(cs):
             "p84": p84[len(p84) // 2] if p84 else None,
             "chop": chop, "stations": stations,
             "hh": sum(x.get("households") or 0 for x in members),
+            "built_med": (sorted(x["built"] for x in members if x.get("built")) or [None])[len(
+                [x for x in members if x.get("built")]) // 2] if any(x.get("built") for x in members) else None,
+            "big": sum(1 for x in members if (x.get("households") or 0) >= 1000),
+            "walk": min([x["station"]["walk_min"] for x in members
+                         if (x.get("station") or {}).get("walk_min") is not None] or [None]),
+            "heat": HEAT.get((sgg, umd)),
         })
     out.sort(key=lambda d: -d["edu"])
     for i, d in enumerate(out):
@@ -75,6 +102,16 @@ def collect(cs):
         d["pct"] = max(1, round((i + 1) / len(out) * 100))
         d["grade"] = grade_of(d["pct"])
     return out
+
+
+def josa(word, pair="은는"):
+    """받침에 따라 조사를 고른다. '대치동 는' 같은 문장이 나오면 자동 생성 티가 난다."""
+    if not word:
+        return pair[1]
+    ch = word[-1]
+    if not ("가" <= ch <= "힣"):
+        return pair[1]
+    return pair[0] if (ord(ch) - 0xAC00) % 28 else pair[1]
 
 
 COLS_BASE = [
@@ -197,6 +234,61 @@ def gu_page_body(gu, ds_all, rank_table):
     b.append('<p class="note">학원 밀집·대형 입시학원·초등 전입·중학교 여건으로 계산한 <b>집콕맵 학군 지수</b>입니다. '
              '학교 성적이 아닙니다(학교별 학업성취도 공시는 2016년이 마지막).</p></div>')
     b.append('<div class="card">{}</div>'.format(rank_table(items, COLS_BASE)))
+
+    # --- 동네별 한 줄 설명. 표만 있으면 본문이 1,000자대라 검색엔진이 얇은 페이지로 본다.
+    b.append('<h2>{} 동네별로 보면</h2>'.format(esc(gu)))
+    b.append('<div class="card">')
+    for d in items[:12]:
+        bits = ["<b>{}</b>{} {} 학군 {}등급({}점)으로 {}개 동 중 <b>{}위</b>입니다.".format(
+            esc(d["umd"]), josa(d["umd"]), esc(gu), d["grade"], d["edu"], len(items),
+            items.index(d) + 1)]
+        if d["p84"]:
+            bits.append("84㎡ 실거래 중앙값은 {}입니다.".format(price(d["p84"])))
+        if d["fee"]:
+            bits.append("주변 교과학원 과목당 월 교습비 중앙값은 {}입니다.".format(man(d["fee"])))
+        if d["chop"]:
+            bits.append("단지 안에서 초등학교로 붙는 이른바 초품아가 {}개 단지입니다.".format(d["chop"]))
+        if d.get("big"):
+            bits.append("1,000세대 이상 대단지가 {}개 있습니다.".format(d["big"]))
+        if d.get("walk") is not None and d.get("stations"):
+            bits.append("가장 가까운 역은 {}이고 도보 {}분 거리 단지가 있습니다.".format(
+                esc(d["stations"][0]), d["walk"]))
+        h = d.get("heat")
+        if h:
+            word = "뜨거운" if h["hi"] >= 50 else "따뜻한" if h["hi"] >= 30 else "보통인" if h["hi"] >= 15 else "차가운"
+            bits.append("최근 4개월 실거래 {}건 가운데 신고가가 {}%로 시장 온기는 {} 편이고, "
+                        "오른 거래가 {}% 내린 거래가 {}%입니다.".format(h["n"], h["hi"], word, h["up"], h["dn"]))
+        b.append('<p style="margin:0 0 10px">{}</p>'.format(" ".join(bits)))
+    b.append('</div>')
+
+    # --- 이 구에서 가성비 좋은 동네
+    val = [d for d in items if d["p84"] and d["grade"] in ("S", "A", "B")]
+    if val:
+        val.sort(key=lambda d: d["p84"])
+        b.append('<h2>{} 안에서 학군 대비 집값이 낮은 동네</h2>'.format(esc(gu)))
+        b.append('<div class="card"><p class="note">같은 구 안에서도 학군 등급이 상위 25%(S·A·B)인 동네끼리 '
+                 '84㎡ 실거래 중앙값이 얼마나 차이 나는지 본 것입니다.</p>{}</div>'.format(
+                     rank_table(val[:8], COLS_BASE)))
+
+    # --- 자주 묻는 것 (검색 질의와 그대로 맞물리는 자리)
+    top = items[0]
+    b.append('<h2>{} 학군지 자주 묻는 것</h2><div class="card">'.format(esc(gu)))
+    b.append('<p><b>{} 학군지는 어디인가요?</b><br>집콕맵 학군 지수 기준으로는 <b>{}</b>{} {}점으로 가장 높고, '
+             '그다음이 {}입니다. 다만 이건 학교 성적이 아니라 학원 밀집도와 초등학생 전입을 중심으로 계산한 '
+             '동네 교육환경 점수입니다.</p>'.format(
+                 esc(gu), esc(top["umd"]), josa(top["umd"], "이가"), top["edu"],
+                 ", ".join(esc(d["umd"]) for d in items[1:4]) or "-"))
+    if fees:
+        lo = min(items, key=lambda d: d["fee"] or 10 ** 9)
+        b.append('<p><b>{} 학원비는 얼마인가요?</b><br>과목당 월 교습비 중앙값이 {}입니다. '
+                 '동네별로는 {}{} {}으로 가장 낮습니다. 교습비를 공시한 학원만 집계한 값입니다.</p>'.format(
+                     esc(gu), man(statistics.median(fees)), esc(lo["umd"]), josa(lo["umd"], "이가"), man(lo["fee"])))
+    if p84:
+        b.append('<p><b>{} 84㎡ 아파트값은 얼마인가요?</b><br>실거래 중앙값이 {}입니다. '
+                 '계약 후 30일 안에 신고하는 자료라 최근 며칠 거래는 아직 안 들어와 있을 수 있습니다.</p>'.format(
+                     esc(gu), price(statistics.median(p84))))
+    b.append('</div>')
+
     b.append('<div class="card"><p style="margin:0">'
              '<b>🏆 <a href="{gq}.html">{gu} 아파트 랭킹</a></b> · '
              '<b>🎓 <a href="school-district.html">수도권 전체 학군지 순위</a></b> · '

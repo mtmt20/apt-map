@@ -367,6 +367,7 @@ def main():
         "교육청 공시 교습비로 계산한 서울 구별·단지별 월 학원비. 학군은 좋으면서 학원비가 싼 아파트 30곳을 정리했습니다.",
         content_academy_fee.page_body(cs, rank_table), "rank/academy-fee.html", og_head("og-academy-fee.png"))
     # 동(법정동) 페이지: 사람들은 "강서구 아파트"보다 "화곡동 아파트 시세"로 검색한다.
+    content_school_district.load_heat(os.path.join(APP, "data"))   # 학군 페이지에 시장 온도를 같이 싣는다
     pages.update(content_school_district.pages(cs, shell, rank_table))
     pages.update(content_dong.pages(cs, shell, rank_table))
     for path, htm in pages.items():
