@@ -1,0 +1,1793 @@
+/* 집콕맵 MVP - 실거래·호가·학군·도로·경매 */
+(function () {
+  "use strict";
+  const $ = (s, el) => (el || document).querySelector(s);
+  const $$ = (s, el) => Array.from((el || document).querySelectorAll(s));
+  const PY = 3.3058;
+  const dark = false;   // 항상 밝은 화면 (사용자 요청: 너무 어둡다)
+
+  const state = {
+    complexes: [], auctions: [], schools: null, meta: null,
+    area: "all", sort: null, q: "", age: localStorage.getItem("kidAge") || "",
+    selected: null, markers: {}, aucMarkers: [], schoolMarkers: [], crownMarkers: [],
+    layers: { school: true, subway: true, edumap: false, heatmap: false, road: false, auction: false, terrain: false, nuisance: false, amenity: false },
+    compare: JSON.parse(localStorage.getItem("compare") || "[]"), budget: null,
+  };
+
+  // ---------- API / 찜 ----------
+  const API = (window.APT_CONFIG && window.APT_CONFIG.API_BASE) || "";
+  const api = (path, opt) => API ? fetch(API + path, opt).then((r) => r.json()) : Promise.reject(new Error("no api"));
+  const favs = { ids: new Set(JSON.parse(localStorage.getItem("favs") || "[]")), code: localStorage.getItem("favCode") || "" };
+  function saveFavs() {
+    localStorage.setItem("favs", JSON.stringify([...favs.ids]));
+    if (favs.code) api("/favs", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ code: favs.code, ids: [...favs.ids] }) }).catch(() => {});
+  }
+  function toggleFav(id) { if (favs.ids.has(id)) favs.ids.delete(id); else favs.ids.add(id); saveFavs(); renderList(); $$(".fav").forEach((b) => { if (b.dataset.id === id) b.classList.toggle("on", favs.ids.has(id)); }); }
+  const gBadge = (coedu) => coedu === "남" ? `<span class="gb boy">남</span>` : coedu === "여" ? `<span class="gb girl">여</span>` : `<span class="gb co">공학</span>`;
+  document.addEventListener("click", (e) => {
+    const b = e.target.closest(".cb-copy");
+    if (!b) return;
+    const t = b.dataset.addr || "";
+    const done = () => { const o = b.textContent; b.textContent = "복사됨"; setTimeout(() => (b.textContent = o), 1500); };
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(t).then(done).catch(() => {});
+    else { const ta = document.createElement("textarea"); ta.value = t; document.body.appendChild(ta); ta.select(); try { document.execCommand("copy"); done(); } catch (err) {} document.body.removeChild(ta); }
+  });
+  const favBtn = (id) => `<button class="fav ${favs.ids.has(id) ? "on" : ""}" data-id="${esc(id)}" title="찜" aria-label="찜">♥</button>`;
+
+  // ---------- utils ----------
+  // 서울 상위 %를 A~E 로. 학교 성적이 아니라 집콕맵 학군 지수(학원 밀집·초등 전입·중학교)의 서울 내 순위다.
+  // S 상위 3%(대치·목동·중계·반포·수내 정도) · A 10% · B 25% · C 50% · D 75% · E 나머지
+  const eduGrade = (pct) => pct == null ? "" : pct <= 3 ? "S" : pct <= 10 ? "A" : pct <= 25 ? "B" : pct <= 50 ? "C" : pct <= 75 ? "D" : "E";
+  // ---------- 우리 아이 나이별 맞춤 점수 ----------
+  // 축 순서는 build.py 의 KID_AXES 와 같다: 초등 접근 / 학군 / 보육·의료 / 지형·보행 / 환경·안전 / 생활 편의
+  // 다섯 살 부모에게 대형 입시학원이, 고2 부모에게 놀이터가 무슨 소용인가. 나이마다 비중을 바꾼다.
+  const AGE = {
+    baby: { name: "0~2세", w: [0.05, 0.00, 0.40, 0.20, 0.20, 0.15],
+            why: "아직 학교는 먼 얘기입니다. <b>소아과·병원, 평지, 기피시설 없는 조용함</b>을 크게 봤습니다." },
+    pre:  { name: "3~6세", w: [0.25, 0.05, 0.25, 0.15, 0.15, 0.15],
+            why: "곧 초등학교에 갑니다. <b>초품아 여부와 통학로</b>, 그리고 <b>소아과·공원</b>을 함께 봤습니다." },
+    elem: { name: "초등",  w: [0.35, 0.25, 0.10, 0.15, 0.08, 0.07],
+            why: "<b>배정 초등학교까지의 거리와 학급당 인원</b>이 가장 중요합니다. 통학로 안전도 함께 봤습니다." },
+    mid:  { name: "중등",  w: [0.08, 0.50, 0.05, 0.10, 0.12, 0.15],
+            why: "<b>배정 가능한 중학교와 학원가</b>가 중요해집니다. 초등 거리 비중은 낮췄습니다." },
+    high: { name: "고등",  w: [0.02, 0.65, 0.03, 0.05, 0.10, 0.15],
+            why: "<b>학원가 접근성</b>이 거의 전부입니다. 초품아·놀이터는 의미가 없어 뺐습니다." },
+  };
+  function fitScore(c) {
+    const a = AGE[state.age];
+    if (!a || !c.kax) return null;
+    let v = 0;
+    for (let i = 0; i < a.w.length; i++) v += (c.kax[i] || 0) * a.w[i];
+    // 나이별로 결정적인 조건에 가점·감점을 준다 (축만으로는 안 잡히는 것들)
+    if (state.age === "elem" || state.age === "pre") {
+      if (c.school && c.school.chopuma) v += 6;
+      if (c.school && c.school.class_size >= 24) v -= 6;
+    }
+    if (state.age === "mid" && c.mg) {
+      if (Math.min(c.mg[0], c.mg[1]) < 2) v -= 8;      // 아들·딸 중 한쪽이 갈 중학교가 1곳 이하
+    }
+    if ((state.age === "mid" || state.age === "high") && c.fee_pct != null) {
+      if (c.fee_pct <= 20) v -= 3;                      // 학원비 상위 20%는 유지비 부담
+    }
+    return Math.max(0, Math.min(100, Math.round(v)));
+  }
+  const fmtPrice = (v) => v == null ? "-" : v >= 10000 ? (v / 10000).toFixed(v >= 1000000 ? 0 : 1).replace(/\.0$/, "") + "억" : v.toLocaleString() + "만";
+  const fmtChg = (v) => v == null ? "" : `<span class="chg ${v >= 0 ? "up" : "down"}">${v >= 0 ? "+" : ""}${v}%</span>`;
+  const bucket = (area) => area < 70 ? "59" : area < 100 ? "84" : "114";
+  const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  function toast(msg) {
+    const t = document.createElement("div"); t.className = "toast"; t.textContent = msg; document.body.appendChild(t);
+    setTimeout(() => t.remove(), 2200);
+  }
+  const areaShort = () => (state.meta && state.meta.area.startsWith("서울 전체") ? "서울" : (state.meta ? state.meta.area.split(" ").pop() : ""));
+  function repArea(c, area) {
+    const list = c.by_area || [];
+    if (area !== "all") return list.find((a) => bucket(a.area) === area) || null;
+    return list.find((a) => bucket(a.area) === "84") || list.slice().sort((a, b) => b.count - a.count)[0] || null;
+  }
+  function areaMatch(c) { return state.area === "all" || (c.by_area || []).some((a) => bucket(a.area) === state.area); }
+
+  // ---------- map ----------
+  // 베이스맵: OpenFreeMap (키 불필요, 벡터). 실패 시 OSM 래스터로 폴백
+  // glyphs 가 없으면 text-field 를 쓰는 심볼 레이어(구 이름·편의시설·지하철역 라벨)가 전부 죽는다
+  const OSM_RASTER = { version: 8, glyphs: "https://tiles.openfreemap.org/fonts/{fontstack}/{range}.pbf",
+    sources: { osm: { type: "raster", tileSize: 256, attribution: "© OpenStreetMap contributors",
+    tiles: ["https://tile.openstreetmap.org/{z}/{x}/{y}.png"] } }, layers: [{ id: "osm", type: "raster", source: "osm" }] };
+  const map = new maplibregl.Map({
+    container: "map",
+    style: dark ? "https://tiles.openfreemap.org/styles/dark" : "https://tiles.openfreemap.org/styles/positron",
+    center: [126.9515, 37.5505], zoom: 14.6, attributionControl: false, maxZoom: 19,
+  });
+  window.__app = { map, state };
+  const HOME = { center: [126.9515, 37.5505], zoom: 13.6 };   // 뒤로가기 2번 눌렀을 때 돌아갈 화면
+  let mapReady = false;
+  map.once("load", () => { mapReady = true; });
+  map.once("error", (e) => { if (!map.isStyleLoaded()) { console.warn("basemap fallback", e && e.error); map.setStyle(OSM_RASTER); } });
+  setTimeout(() => { if (!map.isStyleLoaded()) { console.warn("basemap timeout -> OSM raster"); map.setStyle(OSM_RASTER); } }, 10000);
+  // 스타일이 (다시) 로드될 때마다 오버레이 레이어를 붙인다 (폴백 setStyle 포함)
+  // 베이스맵이 폴백되면 setStyle 로 스타일이 교체돼 소스가 빈 채로 다시 생긴다.
+  // lazyLoaded 플래그가 남아 있으면 데이터를 다시 안 받아 학군지도·시장온도가 안 보였다(2026-09-29).
+  map.on("style.load", () => {
+    if (state.schools && !map.getSource("schools")) {
+      for (const k of Object.keys(lazyLoaded)) delete lazyLoaded[k];
+      addLayers();
+      applyLayers();
+    }
+  });
+  // 탭 전환/창 크기 변경 후 캔버스 크기 재계산
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) setTimeout(() => map.resize(), 50); });
+  map.addControl(new maplibregl.AttributionControl({ compact: true }), "top-left");
+
+  const PALETTE = ["#7c3aed", "#0ea5e9", "#f59e0b", "#10b981", "#ec4899", "#f97316", "#14b8a6", "#6366f1"];
+
+  function addLayers() {
+    // 학군
+    // 학구도 경계(3MB대)는 확대해야 보이므로 파일을 나눠 두고 필요할 때 받는다.
+    // 색은 이름 해시로 정한다 - 폴리곤을 받기 전에도 칠할 수 있어야 하기 때문.
+    map.addSource("zones", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
+    map.addLayer({ id: "school-fill", type: "fill", source: "zones",
+      paint: { "fill-color": ["get", "color"], "fill-opacity": 0.13 } });
+    map.addLayer({ id: "school-line", type: "line", source: "zones",
+      paint: { "line-color": ["get", "color"], "line-width": 2, "line-dasharray": [3, 2], "line-opacity": 0.9 } });
+    state.schoolFeats = state.schools.features.filter((f) => f.properties.kind === "school");
+    state.schoolNames = [...new Set(state.schoolFeats.map((f) => f.properties.name))];
+
+    // 지하철: 노선 경로(공식 색) + 역. 항상 강조해서 보여준다 (요청)
+    map.addSource("subway-lines", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
+    map.addLayer({ id: "sub-line-case", type: "line", source: "subway-lines", layout: { "line-cap": "round", "line-join": "round" },
+      paint: { "line-color": "#fff", "line-opacity": 0.85, "line-width": ["interpolate", ["linear"], ["zoom"], 9, 2.5, 13, 5, 17, 10] } });
+    map.addLayer({ id: "sub-line", type: "line", source: "subway-lines", layout: { "line-cap": "round", "line-join": "round" },
+      paint: { "line-color": ["get", "color"], "line-opacity": 0.9, "line-width": ["interpolate", ["linear"], ["zoom"], 9, 1.5, 13, 3, 17, 6] } });
+    // 공사 중 노선: 점선 + 예정역 (OSM 기준, 개통 시기·역 위치 변동 가능)
+    map.addSource("future-rail", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
+    map.addLayer({ id: "fut-line", type: "line", source: "future-rail", filter: ["==", ["geometry-type"], "MultiLineString"],
+      layout: { "line-cap": "butt", "line-join": "round" },
+      paint: { "line-color": ["get", "color"], "line-opacity": 0.85, "line-dasharray": [2, 1.6],
+               "line-width": ["interpolate", ["linear"], ["zoom"], 9, 1.5, 13, 3, 17, 5] } });
+    map.addLayer({ id: "fut-line-label", type: "symbol", source: "future-rail", filter: ["==", ["geometry-type"], "MultiLineString"], minzoom: 11.5,
+      layout: { "symbol-placement": "line", "text-field": ["concat", ["get", "name"], " (공사 중)"], "text-font": ["Noto Sans Bold"], "text-size": 12, "symbol-spacing": 400 },
+      paint: { "text-color": ["get", "color"], "text-halo-color": "#fff", "text-halo-width": 2 } });
+    map.addLayer({ id: "fut-dot", type: "circle", source: "future-rail", filter: ["==", ["get", "kind"], "station"], minzoom: 11,
+      paint: { "circle-radius": ["interpolate", ["linear"], ["zoom"], 11, 4, 14, 7, 17, 10], "circle-color": "#fff",
+               "circle-stroke-color": "#f59e0b", "circle-stroke-width": ["interpolate", ["linear"], ["zoom"], 11, 2, 17, 3.5] } });
+    map.addLayer({ id: "fut-label", type: "symbol", source: "future-rail", filter: ["==", ["get", "kind"], "station"], minzoom: 12.5,
+      layout: { "text-field": ["concat", ["get", "name"], " 예정"], "text-font": ["Noto Sans Bold"], "text-size": ["interpolate", ["linear"], ["zoom"], 12.5, 11, 17, 16],
+                "text-offset": [0, 1.0], "text-anchor": "top", "text-optional": true },
+      paint: { "text-color": "#b45309", "text-halo-color": "#fff", "text-halo-width": 2 } });
+    // 동네별 학군 등급. 학군지를 모르는 사람이 지도만 보고도 감을 잡게 하는 게 목적이다.
+    const GRADE_COLOR = ["match", ["get", "grade"], "S", "#064e3b", "A", "#15803d", "B", "#4d7c0f", "C", "#ca8a04", "D", "#ea580c", "#b91c1c"];
+    map.addSource("edudong", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
+    map.addLayer({ id: "edu-halo", type: "circle", source: "edudong",
+      paint: { "circle-radius": ["interpolate", ["linear"], ["zoom"], 9, 11, 13, 20, 16, 34],
+               "circle-color": GRADE_COLOR, "circle-opacity": 0.18 } });
+    map.addLayer({ id: "edu-dot", type: "circle", source: "edudong",
+      paint: { "circle-radius": ["interpolate", ["linear"], ["zoom"], 9, 7, 13, 13, 16, 20],
+               "circle-color": GRADE_COLOR, "circle-opacity": 0.92,
+               "circle-stroke-color": "#fff", "circle-stroke-width": 2 } });
+    if (map.getStyle().glyphs) {
+      map.addLayer({ id: "edu-label", type: "symbol", source: "edudong",
+        layout: { "text-field": ["format", ["get", "grade"], { "font-scale": 1.15 }, "\n", {}, ["get", "umd"], { "font-scale": 0.72 }],
+                  "text-font": ["Noto Sans Bold"], "text-size": ["interpolate", ["linear"], ["zoom"], 9, 10, 13, 13, 16, 16],
+                  "text-allow-overlap": false, "text-optional": true },
+        paint: { "text-color": "#fff", "text-halo-color": GRADE_COLOR, "text-halo-width": 1.6 } });
+    }
+    map.on("click", "edu-dot", (e) => {
+      const p = e.features[0].properties;
+      const bits = [`${p.sgg} ${p.umd}`, `학군 ${p.grade}등급 (${p.edu}점 · 상위 ${p.pct}%)`];
+      if (p.fee) bits.push(`학원비 월 ${Math.round(p.fee / 10000)}만원`);
+      if (p.p84) bits.push(`84㎡ ${fmtPrice(p.p84)}`);
+      bits.push(`단지 ${p.n}개`);
+      toast(bits.join(" · "));
+      $("#q").value = p.umd; state.q = p.umd; renderMarkers(); renderList(); setSheet("half");
+    });
+    map.on("mouseenter", "edu-dot", () => map.getCanvas().style.cursor = "pointer");
+    map.on("mouseleave", "edu-dot", () => map.getCanvas().style.cursor = "");
+
+    // 시장 온도(신고가 비율). 홍콩 CCL·Zillow Heat Index 처럼 "지금 어디가 뜨거운가"를 한 장으로.
+    // 색은 신고가율 그대로. 거래가 적은 동(20건 미만)은 애초에 데이터에 없다 - 억지로 칠하지 않는다.
+    const HEAT_COLOR = ["step", ["get", "hi"], "#2563eb", 15, "#7dd3fc", 30, "#fcd34d", 45, "#f97316", 60, "#b91c1c"];
+    map.addSource("heatdong", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
+    map.addLayer({ id: "heat-halo", type: "circle", source: "heatdong",
+      paint: { "circle-radius": ["interpolate", ["linear"], ["zoom"], 9, 12, 13, 22, 16, 36],
+               "circle-color": HEAT_COLOR, "circle-opacity": 0.2 } });
+    map.addLayer({ id: "heat-dot", type: "circle", source: "heatdong",
+      paint: { "circle-radius": ["interpolate", ["linear"], ["zoom"], 9, 8, 13, 14, 16, 21],
+               "circle-color": HEAT_COLOR, "circle-opacity": 0.92,
+               "circle-stroke-color": "#fff", "circle-stroke-width": 2 } });
+    if (map.getStyle().glyphs) {
+      map.addLayer({ id: "heat-label", type: "symbol", source: "heatdong",
+        layout: { "text-field": ["format", ["concat", ["to-string", ["get", "hi"]], "%"], { "font-scale": 1.1 }, "\n", {}, ["get", "umd"], { "font-scale": 0.7 }],
+                  "text-font": ["Noto Sans Bold"], "text-size": ["interpolate", ["linear"], ["zoom"], 9, 10, 13, 13, 16, 16],
+                  "text-allow-overlap": false, "text-optional": true },
+        paint: { "text-color": "#fff", "text-halo-color": HEAT_COLOR, "text-halo-width": 1.6 } });
+    }
+    map.on("click", "heat-dot", (e) => {
+      const p = e.features[0].properties;
+      const [w] = heatWord(p.hi);
+      const bits = [`${p.sgg} ${p.umd} · ${w}`,
+                    `최근 거래 ${p.n}건 중 신고가 ${p.hi}%`,
+                    `오른 거래 ${p.up}% · 내린 거래 ${p.dn}%`];
+      if (p.chg != null && p.chg !== "") bits.push(`직전 4개월보다 ${p.chg >= 0 ? "+" : ""}${p.chg}%p`);
+      toast(bits.join(" · "));
+      $("#q").value = p.umd; state.q = p.umd; renderMarkers(); renderList(); setSheet("half");
+    });
+    map.on("mouseenter", "heat-dot", () => map.getCanvas().style.cursor = "pointer");
+    map.on("mouseleave", "heat-dot", () => map.getCanvas().style.cursor = "");
+
+    map.addSource("stations", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
+    map.addLayer({ id: "sub-dot", type: "circle", source: "stations", minzoom: 11,
+      paint: { "circle-radius": ["interpolate", ["linear"], ["zoom"], 11, ["case", ["get", "transfer"], 5, 4], 14, ["case", ["get", "transfer"], 9, 7], 17, ["case", ["get", "transfer"], 13, 10]],
+               "circle-color": ["case", ["get", "transfer"], "#fff", ["get", "color"]],
+               "circle-stroke-color": ["case", ["get", "transfer"], "#1f2937", "#fff"],
+               "circle-stroke-width": ["interpolate", ["linear"], ["zoom"], 11, 1.5, 17, 3] } });
+    map.addLayer({ id: "sub-label", type: "symbol", source: "stations", minzoom: 11.6,
+      layout: { "text-field": ["format", ["get", "name"], { "font-scale": 1 }, "\n", {}, ["get", "line"], { "font-scale": 0.72 }], "text-font": ["Noto Sans Bold"],
+                "text-size": ["interpolate", ["linear"], ["zoom"], 11.6, 12, 14, 15.5, 17, 19],
+                "text-offset": [0, 1.0], "text-anchor": "top", "text-allow-overlap": false, "text-optional": true,
+                "symbol-sort-key": ["case", ["get", "transfer"], 0, 1] },
+      paint: { "text-color": ["case", ["get", "transfer"], "#111827", ["get", "color"]], "text-halo-color": "#fff", "text-halo-width": 2.2 } });
+
+    // 도로: 큰길은 서울 전체 파일, 골목/동네길은 화면에 걸친 격자 타일만 로드
+    map.addSource("roads", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
+    map.addSource("roads-major", { type: "geojson", data: { type: "FeatureCollection", features: [] } });   // 실제 데이터는 도로 레이어 켤 때
+    const z = (a, b) => ["interpolate", ["linear"], ["zoom"], 13, a, 18, b];
+    map.addLayer({ id: "road-walk", type: "line", source: "roads",
+      filter: ["all", ["!=", ["get", "class"], "alley"], ["in", ["get", "sidewalk"], ["literal", ["yes", "likely"]]]],
+      layout: { "line-cap": "round", "line-join": "round", visibility: "none" },
+      paint: { "line-color": "#22c55e", "line-width": ["interpolate", ["linear"], ["zoom"], 13, ["case", ["==", ["get", "class"], "major"], 6, 4], 18, ["case", ["==", ["get", "class"], "major"], 15, 9]], "line-opacity": 0.85 } });
+    map.addLayer({ id: "road-alley", type: "line", source: "roads", filter: ["==", ["get", "class"], "alley"], minzoom: 14,
+      layout: { visibility: "none" }, paint: { "line-color": dark ? "#475569" : "#cbd5e1", "line-width": z(1, 3), "line-dasharray": [2, 2] } });
+    map.addLayer({ id: "road-minor", type: "line", source: "roads", filter: ["==", ["get", "class"], "minor"], minzoom: 13.5,
+      layout: { "line-cap": "round", visibility: "none" }, paint: { "line-color": "#94a3b8", "line-width": z(1.5, 5) } });
+    map.addLayer({ id: "road-major-far", type: "line", source: "roads-major", maxzoom: 13.5,
+      layout: { "line-cap": "round", "line-join": "round", visibility: "none" },
+      paint: { "line-color": "#f97316", "line-width": ["interpolate", ["linear"], ["zoom"], 10, 1, 13.5, 3], "line-opacity": 0.9 } });
+    map.addLayer({ id: "road-major", type: "line", source: "roads", filter: ["==", ["get", "class"], "major"], minzoom: 13.5,
+      layout: { "line-cap": "round", "line-join": "round", visibility: "none" },
+      paint: { "line-color": "#f97316", "line-width": z(3, 10), "line-opacity": 0.95 } });
+    map.on("moveend", loadRoadTiles);
+
+    // 구 경계 / 구 이름 / 대장 아파트 (줌 아웃)
+    map.addSource("districts", { type: "geojson", data: "data/districts.geojson" });
+    map.addLayer({ id: "gu-fill", type: "fill", source: "districts", maxzoom: 14, paint: { "fill-color": "#2563eb", "fill-opacity": ["interpolate", ["linear"], ["zoom"], 10, 0.06, 13, 0.02] } });
+    map.addLayer({ id: "gu-line", type: "line", source: "districts", maxzoom: 15, paint: { "line-color": dark ? "#93c5fd" : "#1d4ed8", "line-width": ["interpolate", ["linear"], ["zoom"], 10, 1.2, 14, 2.2], "line-opacity": 0.7 } });
+    if (map.getStyle().glyphs) {
+      map.addLayer({ id: "gu-label", type: "symbol", source: "districts", maxzoom: 13.5,
+        layout: { "text-field": ["format", ["get", "name"], { "font-scale": 1.15 }, "\n", {}, ["case", ["has", "ppy_med"], ["concat", "평당 ", ["to-string", ["round", ["/", ["get", "ppy_med"], 100]]], "백만"], ""], { "font-scale": 0.8 }],
+          "text-font": ["Noto Sans Bold"], "text-size": 13, "text-anchor": "center", "text-allow-overlap": false },
+        paint: { "text-color": dark ? "#e2e8f0" : "#1e3a8a", "text-halo-color": dark ? "#0f172a" : "#ffffff", "text-halo-width": 1.6 } });
+    }
+    fetch("data/districts.geojson").then((r) => r.json()).then((gj) => {
+      gj.features.forEach((f) => {
+        const t = (f.properties.top || [])[0]; if (!t) return;
+        const el = document.createElement("div"); el.className = "mk crown";
+        el.innerHTML = `<small>${esc(f.properties.name)} 대장</small><b>👑 ${esc(t.name.length > 10 ? t.name.slice(0, 10) + "…" : t.name)}</b><small>${t.latest ? fmtPrice(t.latest) + " · " + t.area + "㎡" : "평당 " + t.ppy.toLocaleString() + "만"}</small>`;
+        el.addEventListener("click", (ev) => { ev.stopPropagation(); openDetail(t.id, "half"); });
+        const m = new maplibregl.Marker({ element: el, anchor: "bottom", offset: [0, -4] }).setLngLat([t.lng, t.lat]).addTo(map);
+        state.crownMarkers.push(m);
+      });
+      applyCrowns();
+    }).catch(() => {});
+
+    // 주요시설 (병원·마트·어린이집·도서관·공원·놀이터) + 선택 단지 반경 원
+    map.addSource("amenity", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
+    map.addSource("range", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
+    const AM_COLOR = ["match", ["get", "kind"], "hospital", "#dc2626", "emergency", "#b91c1c", "clinic_ped", "#f97316", "mart", "#2563eb", "kindergarten", "#f59e0b", "playground", "#eab308", "library", "#7c3aed", "park", "#16a34a", "university", "#0ea5e9", "academy", "#db2777", "police", "#334155", "#64748b"];
+    map.addLayer({ id: "am-park", type: "fill", source: "amenity", filter: ["==", ["get", "kind"], "park_area"], layout: { visibility: "none" }, paint: { "fill-color": "#22c55e", "fill-opacity": 0.22 } });
+    map.addLayer({ id: "range-fill", type: "fill", source: "range", layout: { visibility: "none" }, paint: { "fill-color": "#2563eb", "fill-opacity": ["case", ["==", ["get", "r"], 500], 0.10, 0.05] } });
+    map.addLayer({ id: "range-line", type: "line", source: "range", layout: { visibility: "none" }, paint: { "line-color": "#2563eb", "line-width": 1.5, "line-dasharray": [3, 2] } });
+    map.addLayer({ id: "am-point", type: "circle", source: "amenity", filter: ["all", ["==", ["geometry-type"], "Point"], ["!=", ["get", "kind"], "park_area"]], layout: { visibility: "none" }, minzoom: 12,
+      paint: { "circle-radius": ["interpolate", ["linear"], ["zoom"], 12, ["case", ["==", ["get", "kind"], "academy"], 2.5, 3.5], 16, ["case", ["==", ["get", "kind"], "academy"], 6, 8]], "circle-color": AM_COLOR, "circle-stroke-color": "#fff", "circle-stroke-width": 1.5, "circle-opacity": 0.95 } });
+    if (map.getStyle().glyphs) {
+      map.addLayer({ id: "am-label", type: "symbol", source: "amenity", filter: ["all", ["==", ["geometry-type"], "Point"], ["!=", ["get", "kind"], "park_area"]], minzoom: 14.5, layout: { visibility: "none",
+        "text-field": ["get", "name"], "text-font": ["Noto Sans Bold"], "text-size": ["interpolate", ["linear"], ["zoom"], 14.5, 12, 17, 15], "text-offset": [0, 1.1], "text-anchor": "top", "text-optional": true, "text-max-width": 8 },
+        paint: { "text-color": AM_COLOR, "text-halo-color": dark ? "#0f172a" : "#ffffff", "text-halo-width": 1.8 } });
+    }
+    map.on("click", "am-point", (e) => { const p = e.features[0].properties; toast(`${p.label}${p.name ? " · " + p.name : ""}${p.area ? " · " + Math.round(p.area / 10000 * 10) / 10 + "ha" : ""}`); });
+    map.on("mouseenter", "am-point", () => map.getCanvas().style.cursor = "pointer"); map.on("mouseleave", "am-point", () => map.getCanvas().style.cursor = "");
+
+    // 기피시설 (OSM + 인허가)
+    map.addSource("nuisance", { type: "geojson", data: { type: "FeatureCollection", features: [] } });      // 기피 레이어 켤 때 로드
+    map.addLayer({ id: "nz-line", type: "line", source: "nuisance", filter: ["==", ["geometry-type"], "LineString"], layout: { visibility: "none" },
+      paint: { "line-color": ["match", ["get", "kind"], "powerline", "#dc2626", "rail", "#6b7280", "#b45309"], "line-width": 2.5, "line-dasharray": [2, 1.5], "line-opacity": 0.85 } });
+    map.addLayer({ id: "nz-point", type: "circle", source: "nuisance", filter: ["==", ["geometry-type"], "Point"], layout: { visibility: "none" }, minzoom: 12,
+      paint: { "circle-radius": ["interpolate", ["linear"], ["zoom"], 12, 3, 16, 7], "circle-color": ["match", ["get", "kind"], "nightlife", "#db2777", "adult_biz", "#db2777", "motel", "#c026d3", "lodging", "#c026d3", "fuel", "#f59e0b", "substation", "#dc2626", "#7c2d12"], "circle-stroke-color": "#fff", "circle-stroke-width": 1.2, "circle-opacity": 0.9 } });
+    map.on("click", "nz-point", (e) => { const p = e.features[0].properties; toast(`${p.label}${p.name ? " · " + p.name : ""}`); });
+    map.on("click", "nz-line", (e) => { const p = e.features[0].properties; toast(`${p.label}${p.name ? " · " + p.name : ""}`); });
+
+    // 지형 음영 (AWS Terrarium DEM, 키 불필요)
+    map.addSource("dem", { type: "raster-dem", tiles: ["https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png"], encoding: "terrarium", tileSize: 256, maxzoom: 15, attribution: "Terrain: Mapzen/AWS" });
+    map.addLayer({ id: "hillshade", type: "hillshade", source: "dem", layout: { visibility: "none" },
+      paint: { "hillshade-exaggeration": 0.6, "hillshade-shadow-color": dark ? "#000" : "#4b3d2a", "hillshade-highlight-color": dark ? "#334155" : "#ffffff", "hillshade-accent-color": "#7c5a3a" } }, "school-fill");
+    map.on("click", "road-major", (e) => { const p = e.features[0].properties; toast(`${p.name || "이름 없는 큰길"} · ${p.lanes ? p.lanes + "차로 · " : ""}인도 ${p.sidewalk === "yes" ? "있음" : "추정"}`); });
+    map.on("click", "school-fill", (e) => { if (!e.originalEvent._mk) toast(`${e.features[0].properties.name} 통학구역 · ${e.features[0].properties.note || ""}`); });
+    ["road-major", "school-fill"].forEach((id) => { map.on("mouseenter", id, () => map.getCanvas().style.cursor = "pointer"); map.on("mouseleave", id, () => map.getCanvas().style.cursor = ""); });
+
+    // 경매
+    state.auctions.forEach((a) => {
+      const el = document.createElement("div"); el.className = "mk auction";
+      el.innerHTML = `⚖️ ${fmtPrice(a.min_price)} <small style="color:#fde68a">${a.vs_trade_pct >= 5 ? "시세 -" + Math.round(a.vs_trade_pct) + "%" : a.fail_count ? a.fail_count + "회 유찰" : "공매"}</small>`;
+      el.addEventListener("click", (ev) => { ev.stopPropagation(); openDetail(a.complex_id, "half"); });
+      const m = new maplibregl.Marker({ element: el, anchor: "bottom", offset: [0, -58] }).setLngLat([a.lng, a.lat]);
+      state.aucMarkers.push(m);
+    });
+    applyLayers();
+  }
+
+  // 의견 보내기: 가격 제보와 달리 자유 문장. 익명으로 워커 KV 에 쌓이고 admin.html 에서 본다.
+  function initFeedback() {
+    const btn = $("#fbBtn"), m = $("#fbModal"), f = $("#fbForm");
+    if (!btn || !m || !f) return;
+    btn.addEventListener("click", () => { m.hidden = false; setTimeout(() => f.text.focus(), 80); });
+    $("#fbCancel").onclick = () => { m.hidden = true; };
+    m.addEventListener("click", (e) => { if (e.target === m) m.hidden = true; });
+    f.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      if (!API) { toast("아직 의견 서버가 연결되지 않았어요."); return; }
+      const body = { kind: f.kind.value, text: f.text.value.trim(), contact: f.contact.value.trim(),
+                     hp: f.hp.value, page: location.pathname + location.search, mobile: innerWidth < 900 };
+      if (body.text.length < 2) return;
+      try {
+        const r = await fetch(API + "/feedback", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+        if (!r.ok) throw new Error();
+        f.reset(); m.hidden = true;
+        toast("보내주셔서 고맙습니다. 읽고 고치겠습니다.");
+      } catch (_) { toast("전송에 실패했어요. 잠시 뒤 다시 시도해주세요."); }
+    });
+  }
+  initFeedback();
+
+  const roadTiles = { loaded: new Set(), feats: [], seen: new Set(), index: null, T: 0.02 };
+  function loadRoadTiles() {
+    if (!state.layers.road || !map.getSource("roads") || map.getZoom() < 13.5) return;
+    const idx = roadTiles.index ? Promise.resolve(roadTiles.index) : fetch("data/roads/index.json").then((r) => r.json()).then((j) => { roadTiles.T = j.tile || 0.02; return (roadTiles.index = new Set(j.tiles)); }).catch(() => (roadTiles.index = new Set()));
+    idx.then((index) => {
+      const b = map.getBounds(), T = roadTiles.T, keys = [];
+      for (let r = Math.floor(b.getSouth() / T); r <= Math.floor(b.getNorth() / T); r++)
+        for (let c = Math.floor(b.getWest() / T); c <= Math.floor(b.getEast() / T); c++) keys.push(`${r}_${c}`);
+      const need = keys.filter((k) => !roadTiles.loaded.has(k) && index.has(k));
+      if (!need.length) return;
+      Promise.all(need.map((k) => fetch(`data/roads/${k}.geojson`).then((r) => (r.ok ? r.json() : null)).catch(() => null).then((gj) => {
+        roadTiles.loaded.add(k);
+        (gj ? gj.features : []).forEach((f) => {
+          const c = f.geometry.coordinates, id = `${c[0]}|${c[c.length - 1]}|${c.length}`;
+          if (!roadTiles.seen.has(id)) { roadTiles.seen.add(id); roadTiles.feats.push(f); }
+        });
+      }))).then(() => map.getSource("roads").setData({ type: "FeatureCollection", features: roadTiles.feats }));
+    });
+  }
+  function circlePoly(lng, lat, r) {
+    const kx = 111320 * Math.cos(lat * Math.PI / 180), ky = 110540, pts = [];
+    for (let i = 0; i <= 64; i++) { const t = (i / 64) * 2 * Math.PI; pts.push([lng + (r * Math.cos(t)) / kx, lat + (r * Math.sin(t)) / ky]); }
+    return pts;
+  }
+  function drawRange() {
+    const src = map.getSource("range"); if (!src) return;
+    const c = state.selected && state.complexes.find((x) => x.id === state.selected);
+    src.setData({ type: "FeatureCollection", features: c ? [500, 1000].map((r) => ({ type: "Feature", properties: { r }, geometry: { type: "Polygon", coordinates: [circlePoly(c.lng, c.lat, r)] } })) : [] });
+  }
+  const lazyLoaded = {};
+  function lazySource(id, url) {
+    if (lazyLoaded[id] || !map.getSource(id)) return;
+    lazyLoaded[id] = true;
+    fetch(url).then((r) => r.json()).then((gj) => {
+      map.getSource(id).setData(gj);
+      // 역 좌표를 따로 들고 있다가, 아파트 핀이 역 이름을 가리지 않게 자리를 비켜준다
+      if (id === "stations") { state.stationPts = gj.features.map((f) => f.geometry.coordinates); renderMarkers(); }
+      if (id === "zones") {
+        const names = [...new Set(gj.features.map((f) => f.properties.name))];
+        gj.features.forEach((f) => { f.properties.color = PALETTE[names.indexOf(f.properties.name) % PALETTE.length]; });
+        map.getSource("zones").setData(gj);
+      }
+    }).catch(() => { lazyLoaded[id] = false; });
+  }
+  const LINE_COLORS = { "1호선": "#004A85", "2호선": "#00A23F", "3호선": "#ED6C00", "4호선": "#009BCE", "5호선": "#794698", "6호선": "#7C4932",
+    "7호선": "#6E7E31", "8호선": "#D11D70", "9호선": "#A49D87", "신분당선": "#B81B30", "경의중앙선": "#6AC2B3", "경춘선": "#007A62",
+    "공항철도": "#0079AC", "서해선": "#5EAC41", "수인분당선": "#ECA300", "GTX-A": "#AB087D", "신림선": "#6789CA", "우이신설선": "#BACC50" };
+  const lineBadges = (ls) => (ls || []).map((l) => `<span class="lnb" style="background:${LINE_COLORS[l] || "#64748b"}">${esc(l.replace("호선", "").replace("선", ""))}</span>`).join("");
+  function syncSchoolMarkers() {
+    const on = state.layers.school && map.getZoom() >= 13.2;
+    if (!on || !state.schoolFeats) {
+      state.schoolMarkers.forEach((m) => m.remove());
+      state.schoolMarkers = []; state.schoolMade = null;
+      return;
+    }
+    const bb = map.getBounds(), pad = 0.1 * (bb.getNorth() - bb.getSouth());
+    const made = state.schoolMade || (state.schoolMade = new Map());
+    const want = new Set();
+    state.schoolFeats.forEach((f, i) => {
+      const [lng, lat] = f.geometry.coordinates;
+      if (lat < bb.getSouth() - pad || lat > bb.getNorth() + pad || lng < bb.getWest() - pad || lng > bb.getEast() + pad) return;
+      want.add(i);
+      if (made.has(i)) return;
+      const p = f.properties, lv = p.level || "elem";
+      const el = document.createElement("div"); el.className = "mk school lv-" + lv;
+      // 초등학교만 학구도 색을 따른다(배정 경계와 같은 색). 중·고는 고정 색.
+      if (lv === "elem") el.style.color = PALETTE[state.schoolNames.indexOf(p.name) % PALETTE.length];
+      const ICON = { elem: "🏫", middle: "🎒", high: "🎓" };
+      const nm = p.name.replace("등학교", "").replace("학교", "");
+      const num = p.grade ? `<b class="sg sg${p.grade}">${p.grade}</b>` : "";
+      el.innerHTML = `${ICON[lv] || "🏫"} ${esc(nm)}${num ? " " + num : ""}`;
+      el.title = `${p.name}${p.grade ? " · " + p.grade + "등급" : ""}${p.why ? " (" + p.why + ")" : ""}`
+        + `${p.class_size ? " · 학급당 " + p.class_size + "명" : ""}${p.hstype ? " · " + p.hstype : ""}`
+        + `${p.coedu && p.coedu !== "남여공학" ? " · " + p.coedu : ""}`
+        + " — 성적이 아니라 전입·규모 기준입니다";
+      made.set(i, new maplibregl.Marker({ element: el, anchor: "center" }).setLngLat(f.geometry.coordinates).addTo(map));
+    });
+    made.forEach((m, i) => { if (!want.has(i)) { m.remove(); made.delete(i); } });
+    state.schoolMarkers = [...made.values()];
+  }
+  // 시장온도 지도를 켜면 인기단지 크라운도 숨긴다 (동 점을 가린다)
+  function applyCrowns() {
+    const show = map.getZoom() < 13.3 && !(state.layers.heatmap && !state.selected && !state.q);
+    state.crownMarkers.forEach((m) => m.getElement().style.display = show ? "" : "none");
+  }
+  // 범례를 한 번 닫으면 레이어를 다시 켜기 전까지 안 띄운다
+  let legendClosed = false, eduLegendClosed = false, heatLegendClosed = false;
+  // 학교 글자 설명: 학교 레이어는 기본으로 켜져 있어서 매번 뜨면 지도를 가린다. 처음 한 번만, 닫으면 기억.
+  let schLegendClosed = (() => { try { return !!localStorage.getItem("schLegendSeen"); } catch (e) { return false; } })();
+  function applyLayers() {
+    const v = (ids, on) => ids.forEach((id) => map.getLayer(id) && map.setLayoutProperty(id, "visibility", on ? "visible" : "none"));
+    v(["edu-halo", "edu-dot", "edu-label"], state.layers.edumap);
+    if (state.layers.edumap) lazySource("edudong", "data/edu_dong.geojson");
+    v(["heat-halo", "heat-dot", "heat-label"], state.layers.heatmap);
+    if (state.layers.heatmap) lazySource("heatdong", "data/heat_dong.geojson");
+    // 학군과 온도는 같은 동 중심에 점을 찍으므로 둘 다 켜면 정확히 겹친다.
+    // 같이 보고 싶다는 요청(2026-09-30) -> 온도 점만 위로 띄워서 나란히 보이게 한다.
+    const both = state.layers.heatmap && state.layers.edumap;
+    const off = both ? [0, -26] : [0, 0];
+    ["heat-halo", "heat-dot"].forEach((id) => map.getLayer(id) && map.setPaintProperty(id, "circle-translate", off));
+    if (map.getLayer("heat-label")) map.setPaintProperty("heat-label", "text-translate", off);
+    if ($("#heatLegend")) {
+      $("#heatLegend").hidden = !state.layers.heatmap || heatLegendClosed;
+      $("#heatLegend").classList.toggle("stk", both);   // 범례 두 개가 같은 자리에 겹치지 않게
+    }
+    $("#eduLegend").hidden = !state.layers.edumap || eduLegendClosed;
+    if ($("#schLegend")) $("#schLegend").hidden = !state.layers.school || schLegendClosed || state.layers.edumap;
+    v(["school-fill", "school-line"], state.layers.school && map.getZoom() >= 12.5);
+    if (state.layers.school && map.getZoom() >= 12.5) lazySource("zones", "data/school_zones.geojson");
+    syncSchoolMarkers();
+    v(["sub-line-case", "sub-line", "sub-dot", "sub-label", "fut-line", "fut-line-label", "fut-dot", "fut-label"], state.layers.subway);
+    if (state.layers.subway) { lazySource("subway-lines", "data/subway_lines.geojson"); lazySource("stations", "data/stations.geojson"); lazySource("future-rail", "data/future_rail.geojson"); }
+    v(["road-walk", "road-alley", "road-minor", "road-major", "road-major-far"], state.layers.road);
+    v(["hillshade"], state.layers.terrain);
+    v(["nz-line", "nz-point"], state.layers.nuisance);
+    if (map.getSource("dem")) { map.setTerrain(state.layers.terrain ? { source: "dem", exaggeration: 1.5 } : null); if (!state.layers.terrain && map.getPitch()) map.easeTo({ pitch: 0, bearing: 0 }); }
+    $("#terrainLegend").hidden = !state.layers.terrain;
+    if (state.layers.road) { lazySource("roads-major", "data/roads_major.geojson"); loadRoadTiles(); }
+    if (state.layers.nuisance) lazySource("nuisance", "data/nuisance.geojson");
+    v(["am-park", "am-point", "am-label", "range-fill", "range-line"], state.layers.amenity);
+    if (state.layers.amenity) { lazySource("amenity", "data/amenities.geojson"); drawRange(); }
+    $("#amLegend").hidden = !state.layers.amenity || legendClosed;
+    $("#legend").hidden = !state.layers.road;
+    state.aucMarkers.forEach((m) => state.layers.auction ? m.addTo(map) : m.remove());
+    $$(".lyr[data-layer]").forEach((b) => b.classList.toggle("on", !!state.layers[b.dataset.layer]));
+  }
+
+  // ---------- markers ----------
+  function renderMarkers() {
+    const z = map.getZoom();
+    // 시장온도 지도를 켜면 가격 핀을 숨긴다. 둘을 같이 띄우면 핀이 동 점을 다 가려서
+    // '한눈에'가 안 된다(2026-09-29 확인). 단지를 고른 상태면 그건 그대로 둔다.
+    if (state.layers.heatmap && !state.selected && !state.q) {
+      for (const k of Object.keys(state.markers)) { state.markers[k].remove(); delete state.markers[k]; }
+      return;
+    }
+    const compact = z < 14.8;
+    const W = compact ? 76 : 122, H = compact ? 40 : 54;   // 핀 대략 크기(px), 겹침 판정용
+    const byZoom = (c) => !(z < 11.8 || (z < 12.6 && c.trade_count_1y < 40) || (z < 13.2 && c.trade_count_1y < 20) || (z < 14 && c.trade_count_1y < 10) || (z < 14.8 && c.trade_count_1y < 4));
+    const vw = map.getContainer().clientWidth, vh = map.getContainer().clientHeight;
+    const bb = map.getBounds(), pad = 0.15 * (bb.getNorth() - bb.getSouth());
+    const inView = (c) => c.lat > bb.getSouth() - pad && c.lat < bb.getNorth() + pad && c.lng > bb.getWest() - pad && c.lng < bb.getEast() + pad;
+    // 우선순위: 선택된 단지 > 검색/필터 일치 > 거래 많은 순. 화면 안에서 서로 겹치면 뒤 순위를 숨김
+    const order = state.complexes.filter((c) => inView(c) || c.id === state.selected).sort((a, b) =>
+      ((b.id === state.selected) - (a.id === state.selected)) ||
+      ((areaMatch(b) && matchQ(b)) - (areaMatch(a) && matchQ(a))) ||
+      (b.trade_count_1y - a.trade_count_1y));
+    // 학교·지하철역 자리를 먼저 잡아둔다. 아파트 핀은 이 자리를 피해서 그려진다 (학교·역 우선)
+    const boxes = [];
+    const keepOut = (p, w, h, up) => { if (p.x > -w && p.x < vw + w && p.y > -h && p.y < vh + h) boxes.push({ x: p.x - w / 2, y: p.y - up, x2: p.x + w / 2, y2: p.y - up + h }); };
+    if (state.layers.subway && state.stationPts && z >= 12) state.stationPts.forEach((s) => keepOut(map.project(s), 92, 52, 12));
+    if (state.layers.school && z >= 13.2) state.schoolMarkers.forEach((m) => keepOut(map.project(m.getLngLat()), 104, 30, 15));
+    order.forEach((c) => {
+      const rep = repArea(c, state.area);
+      let m = state.markers[c.id];
+      const wanted = (byZoom(c) && inView(c)) || c.id === state.selected;
+      if (!wanted) { if (m) { m.remove(); delete state.markers[c.id]; } return; }   // 서울 전체 6천 개 DOM 방지
+      if (!m) {
+        const el = document.createElement("div"); el.className = "mk";
+        el.addEventListener("click", (ev) => { ev.stopPropagation(); openDetail(c.id, "half"); });
+        m = state.markers[c.id] = new maplibregl.Marker({ element: el, anchor: "bottom", offset: [0, -4] }).setLngLat([c.lng, c.lat]).addTo(map);
+      }
+      const el = m.getElement();
+      let show = byZoom(c) || c.id === state.selected;
+      if (show) {
+        const p = map.project([c.lng, c.lat]);
+        if (p.x > -W && p.x < vw + W && p.y > -H && p.y < vh + H) {
+          const box = { x: p.x - W / 2, y: p.y - H, x2: p.x + W / 2, y2: p.y };
+          const hit = boxes.some((b) => !(box.x2 < b.x || box.x > b.x2 || box.y2 < b.y || box.y > b.y2));
+          if (hit && c.id !== state.selected) show = false; else boxes.push(box);
+        }
+      }
+      el.style.display = show ? "" : "none";
+      el.classList.toggle("compact", compact);
+      const dim = !areaMatch(c) || (state.q && !matchQ(c));
+      el.classList.toggle("dim", dim);
+      el.classList.toggle("sel", state.selected === c.id);
+      el.innerHTML = !rep ? `<small>${esc(c.name)}</small><b>-</b>`
+        : compact ? `<b>${fmtPrice(rep.latest)}</b><small>${rep.area}㎡</small>`
+        : `<small>${esc(c.name.length > 9 ? c.name.slice(0, 9) + "…" : c.name)}</small><b>${fmtPrice(rep.latest)}</b><small>${rep.area}㎡ ${fmtChg(c.chg_1y)}</small>`;
+    });
+  }
+  // ---------- 익명 집계 (세션당 방문 1회, 기능별 1회) ----------
+  function hit(t) {
+    try {
+      if (/^(localhost|127\.|192\.168\.)/.test(location.hostname)) return;   // 로컬 테스트는 집계 안 함
+      const k = "jk_" + (t === "visit" ? "v" : t);
+      if (sessionStorage.getItem(k)) return;
+      sessionStorage.setItem(k, "1");
+      if (API && navigator.sendBeacon) navigator.sendBeacon(API + "/hit", JSON.stringify({ t, p: "app", r: document.referrer }));
+    } catch (e) { /* 집계 실패는 무시 */ }
+  }
+  hit("visit");
+
+  // ---------- 출퇴근 시간 ----------
+  // 역 그래프(subway_graph.json)에서 회사 역 기준 최단시간(환승 4분 가산)을 구하고,
+  // 단지마다 1.5km 안의 역 최대 3곳 중 (도보 + 대기 3분 + 탑승) 최소값을 쓴다.
+  let graph = null, cmNear = null;
+  async function loadGraph() {
+    if (graph) return graph;
+    graph = await fetch("data/subway_graph.json").then((r) => r.json());
+    const dl = $("#stationList"); if (dl) dl.innerHTML = graph.nodes.map((n) => `<option value="${esc(n[0])}">`).join("");
+    return graph;
+  }
+  const normSt = (s) => (s || "").trim().replace(/\(.*?\)/g, "").replace(/역$/, "");
+  function findNode(name) {
+    const q = normSt(name); if (!q) return -1;
+    let i = graph.nodes.findIndex((n) => n[0] === q);
+    if (i < 0) i = graph.nodes.findIndex((n) => n[0].startsWith(q));
+    if (i < 0) i = graph.nodes.findIndex((n) => n[0].includes(q));
+    return i;
+  }
+  function commuteTimes(src) {
+    const N = graph.nodes.length, L = graph.lines.length, INF = 1e9;
+    const adj = new Map();   // key = node*L+line -> [[node, line, min]]
+    const linesAt = Array.from({ length: N }, () => new Set());
+    for (const [i, j, m, li] of graph.edges) {
+      const t = m / 10;
+      (adj.get(i * L + li) || adj.set(i * L + li, []).get(i * L + li)).push([j, li, t]);
+      (adj.get(j * L + li) || adj.set(j * L + li, []).get(j * L + li)).push([i, li, t]);
+      linesAt[i].add(li); linesAt[j].add(li);
+    }
+    const dist = new Float64Array(N * L).fill(INF), done = new Uint8Array(N * L), best = new Float64Array(N).fill(INF);
+    const pq = [];   // 작은 그래프라 정렬 배열 기반 우선순위 큐로 충분
+    const push = (d, k) => { let lo = 0, hi = pq.length; while (lo < hi) { const mid = (lo + hi) >> 1; if (pq[mid][0] > d) lo = mid + 1; else hi = mid; } pq.splice(lo, 0, [d, k]); };
+    linesAt[src].forEach((li) => { dist[src * L + li] = 0; push(0, src * L + li); });
+    while (pq.length) {
+      const [d, k] = pq.pop();
+      if (done[k]) continue; done[k] = 1;
+      const i = Math.floor(k / L), li = k % L;
+      if (d < best[i]) best[i] = d;
+      for (const [j, l2, t] of adj.get(k) || []) { const nk = j * L + l2; if (!done[nk] && d + t < dist[nk]) { dist[nk] = d + t; push(d + t, nk); } }
+      linesAt[i].forEach((l2) => { const nk = i * L + l2; if (l2 !== li && !done[nk] && d + 4 < dist[nk]) { dist[nk] = d + 4; push(d + 4, nk); } });
+    }
+    return best;
+  }
+  function nearStations() {
+    if (cmNear) return cmNear;
+    cmNear = new Map();
+    const R = 1500, rad = Math.PI / 180;
+    for (const c of state.complexes) {
+      const cos = Math.cos(c.lat * rad), cand = [];
+      graph.nodes.forEach((n, i) => {
+        const dy = (n[1] - c.lat) * 111320, dx = (n[2] - c.lng) * 111320 * cos;
+        const d = Math.sqrt(dx * dx + dy * dy);
+        if (d <= R) cand.push([i, Math.max(1, Math.round(d / 70))]);
+      });
+      cand.sort((x, y) => x[1] - y[1]);
+      cmNear.set(c.id, cand.slice(0, 3));
+    }
+    return cmNear;
+  }
+  function applyCommute() {
+    const C = state.commute; if (!C) return;
+    const near = nearStations();
+    const ta = commuteTimes(C.a.idx), tb = C.b ? commuteTimes(C.b.idx) : null;
+    for (const c of state.complexes) {
+      const cand = near.get(c.id) || [];
+      const pick = (t) => cand.reduce((m, [i, w]) => Math.min(m, w + 3 + t[i]), 1e9);
+      c._cmA = cand.length ? Math.round(pick(ta)) : null;
+      c._cmB = tb && cand.length ? Math.round(pick(tb)) : null;
+      c._cm = c._cmA == null ? null : Math.max(c._cmA, c._cmB == null ? 0 : c._cmB);
+    }
+  }
+  const commuteOk = (c) => !state.commute || (c._cm != null && c._cm <= state.commute.max);
+  const commuteTag = (c) => !state.commute || c._cmA == null ? "" :
+    `<span class="tag cm">🚉 ${esc(state.commute.a.name)} ${c._cmA}분${state.commute.b && c._cmB != null ? ` · ${esc(state.commute.b.name)} ${c._cmB}분` : ""}</span>`;
+  // ---------- 지금 보는 화면을 그대로 링크로 ----------
+  // 선택한 단지, 검색어, 정렬, 평형, 출퇴근 조건, 지도 위치를 주소에 담는다.
+  function viewUrl() {
+    const u = new URL(location.origin + location.pathname);
+    const C = state.commute;
+    if (state.selected) u.searchParams.set("id", state.selected);
+    if (state.q) u.searchParams.set("q", state.q);
+    if (state.sort && state.sort !== "budget") u.searchParams.set("sort", state.sort);
+    if (state.area && state.area !== "all") u.searchParams.set("area", state.area);
+    if (state.age) u.searchParams.set("age", state.age);
+    if (C) u.searchParams.set("cm", [C.a.name, C.b ? C.b.name : "", C.max].join(","));
+    if (map) {
+      const c = map.getCenter();
+      u.searchParams.set("at", [c.lat.toFixed(4), c.lng.toFixed(4), map.getZoom().toFixed(1)].join(","));
+    }
+    return u.toString();
+  }
+  function viewTitle() {
+    const bits = [];
+    if (state.selected) {
+      const c = state.complexes.find((x) => x.id === state.selected);
+      if (c) bits.push(`${c.name} (${c.sgg} ${c.umd})`);
+    }
+    if (state.q && !bits.length) bits.push(`"${state.q}" 검색`);
+    if (state.commute) bits.push(`${state.commute.a.name}${state.commute.b ? "·" + state.commute.b.name : ""} ${state.commute.max}분 이내`);
+    const SORT = { kid: "아이 키우기 좋은 순", edu: "학군순", eduvalue: "예산 대비 학군순", ppy: "평당가순",
+                   chg: "상승률순", feelow: "학원비 싼 순", fav: "내 찜" };
+    if (AGE[state.age]) bits.push(AGE[state.age].name + " 맞춤");
+    if (SORT[state.sort]) bits.push(SORT[state.sort]);
+    if (state.area && state.area !== "all") bits.push(state.area + "㎡대");
+    if (!bits.length) bits.push("서울 아파트 실거래·학군 지도");
+    return bits.join(" · ") + " | 집콕맵";
+  }
+  async function shareView() {
+    hit("share");
+    const url = viewUrl(), title = viewTitle();
+    try { if (navigator.share) { await navigator.share({ title, text: title, url }); return; } } catch (e) { return; }
+    try { await navigator.clipboard.writeText(url); toast("링크를 복사했어요. 지금 화면 그대로 열립니다."); }
+    catch (e) { prompt("이 링크를 복사하세요", url); }
+  }
+  function syncCommuteUrl() {
+    const u = new URL(location.href), C = state.commute;
+    if (C) u.searchParams.set("cm", [C.a.name, C.b ? C.b.name : "", C.max].join(",")); else u.searchParams.delete("cm");
+    history.replaceState(null, "", u);
+  }
+  async function shareCommute() {
+    const C = state.commute; if (!C) return;
+    hit("share");
+    const url = location.href, text = `${C.a.name}${C.b ? "·" + C.b.name : ""} 출퇴근 ${C.max}분 이내 서울 아파트 | 집콕맵`;
+    try { if (navigator.share) return await navigator.share({ title: text, url }); } catch (e) { return; }
+    try { await navigator.clipboard.writeText(url); toast("링크를 복사했어요. 배우자에게 보내보세요."); } catch (e) { prompt("이 링크를 복사하세요", url); }
+  }
+  function updateCommuteChip() {
+    const ch = $("#commuteChip"), C = state.commute;
+    ch.classList.toggle("on", !!C);
+    ch.textContent = C ? `🚉 ${C.a.name}${C.b ? "·" + C.b.name : ""} ${C.max}분 ✕` : "🚉 출퇴근 시간";
+    $("#commuteShare").hidden = !C;
+  }
+
+  // 동네 학원비 (1km 내 교과학원 월 교습비 중앙값, 교육청 공시)
+  const feeMan = (c) => Math.round(c.fee / 10000);
+  const feeTag = (c) => c.fee ? `<span class="tag fee${c.fee_pct <= 20 ? " hi" : c.fee_pct >= 70 ? " lo" : ""}">📚 학원비 월 ${feeMan(c)}만</span>` : "";
+
+  const matchQ = (c) => !state.q || (c.name + c.umd + (c.addr || "") + (c.sgg || "")).toLowerCase().includes(state.q.toLowerCase());
+
+  // ---------- list ----------
+  // 예산 검색은 "15억 이하 전부"를 학군순으로 주면 한 동네가 목록을 다 먹는다
+  // (15억으로 넣으면 150개 중 중계동이 30개였다). 가격 구간을 나눠 **각 구간의 최고**를
+  // 번갈아 올리고, 같은 동은 2개까지만 남긴다. 예산 안에서 선택지를 보여주는 게 목적이다.
+  const SIZE_RANGE = { "20": [50, 70], "30": [75, 100] };
+  const SIZE_NAME = { "20": "20평대(59㎡)", "30": "30평대(84㎡)" };
+  const PRICE_BANDS = [30000, 50000, 70000, 90000, 110000, 130000, 150000, 200000, 300000, 1e9];
+  function bandLabel(v) {
+    const i = PRICE_BANDS.findIndex((x) => v <= x);
+    const lo = i <= 0 ? 0 : PRICE_BANDS[i - 1];
+    const hi = PRICE_BANDS[i];
+    const eok = (x) => (x / 10000).toFixed(0);
+    return hi >= 1e9 ? `${eok(lo)}억+` : lo ? `${eok(lo)}~${eok(hi)}억` : `${eok(hi)}억 이하`;
+  }
+  function bestByBand(sorted, B) {
+    const buckets = new Map();
+    for (const c of sorted) {
+      const p = (c._bRep && c._bRep.latest) || c.rep_price;
+      if (!p) continue;
+      const i = PRICE_BANDS.findIndex((x) => p <= x);
+      c._band = bandLabel(p);
+      if (!buckets.has(i)) buckets.set(i, []);
+      buckets.get(i).push(c);
+    }
+    // 예산에 가까운 비싼 구간부터 돈다. 싼 구간부터 돌면 15억을 넣어도 1번이 '3억 이하 1등'이 되고
+    // 지도도 그리로 날아간다(2026-09-28 사용자 제보: 마곡·15억 -> 부천 2.9억 37년차).
+    const keys = [...buckets.keys()].sort((a, b) => b - a);
+    keys.forEach((k) => buckets.get(k).forEach((c, i) => { c._bandRank = i + 1; }));
+    const out = [], perDong = {};
+    const cap = B && B.grade ? 5 : 2;
+    let round = 0;
+    while (out.length < 150 && round < 200) {
+      let added = 0;
+      for (const k of keys) {
+        const arr = buckets.get(k);
+        while (arr.length) {
+          const c = arr.shift();
+          const key = c.sgg + c.umd;
+          if ((perDong[key] || 0) >= cap) continue;      // 같은 동은 2개까지 (등급을 골랐으면 5개)
+          perDong[key] = (perDong[key] || 0) + 1;
+          out.push(c); added++;
+          break;
+        }
+        if (out.length >= 150) break;
+      }
+      if (!added) break;
+      round++;
+    }
+    return out;
+  }
+
+  function visibleComplexes() {
+    let list = state.complexes.filter((c) => areaMatch(c) && matchQ(c));
+    if (!state.q && map.getZoom() >= 12 && state.sort !== "fav" && state.sort !== "budget" && !state.commute) {   // 검색어 없으면 지도 화면 안 단지만
+      const bb = map.getBounds();
+      list = list.filter((c) => c.lat > bb.getSouth() && c.lat < bb.getNorth() && c.lng > bb.getWest() && c.lng < bb.getEast());
+    }
+    if (state.age && !state.sort) list = list.filter((c) => c.kax).sort((a, b) => fitScore(b) - fitScore(a));
+    else if (state.sort === "ppy") list.sort((a, b) => (b.ppy || 0) - (a.ppy || 0));
+    else if (state.sort === "ppylow") list = list.filter((c) => c.ppy).sort((a, b) => a.ppy - b.ppy);
+    else if (state.sort === "chg") list.sort((a, b) => (b.chg_1y || 0) - (a.chg_1y || 0));
+    else if (state.sort === "school") list = list.filter((c) => c.school.chopuma).sort((a, b) => a.school.elem_dist - b.school.elem_dist);
+    else if (state.sort === "gap") list = list.filter((c) => c.jeonse_ratio).sort((a, b) => b.jeonse_ratio - a.jeonse_ratio);
+    else if (state.sort === "edu") list = list.filter((c) => c.edu_score != null).sort((a, b) => b.edu_score - a.edu_score);
+    else if (state.sort === "feelow") list = list.filter((c) => c.fee && (c.edu_score || 0) >= 50).sort((a, b) => a.fee - b.fee || (b.edu_score || 0) - (a.edu_score || 0));
+    else if (state.sort === "eduvalue") list = list.filter((c) => c.edu_band_pct != null).sort((a, b) => a.edu_band_pct - b.edu_band_pct || (b.edu_score || 0) - (a.edu_score || 0));
+    else if (state.sort === "fav") { list = state.complexes.filter((c) => favs.ids.has(c.id) && areaMatch(c)); }
+    else if (state.sort === "up") list = list.filter((c) => c.up_n).sort((a, b) => (b.up_n - b.risk_n) - (a.up_n - a.risk_n) || b.trade_count_1y - a.trade_count_1y);
+    else if (state.sort === "kid") list = list.filter((c) => c.kid != null).sort((a, b) => b.kid - a.kid || b.trade_count_1y - a.trade_count_1y);
+    else if (state.sort === "budget" && state.budget) {
+      const B = state.budget;
+      // 출퇴근 조건은 구간별 뽑기 **전에** 건다. 뒤에 걸면 수도권 전체에서 150개를 먼저 뽑고 나서
+      // 마곡 40분으로 거르는 꼴이라, 정작 마곡 근처 후보는 150개 안에 들지도 못하고 잘린다.
+      list = state.complexes.filter((c) => areaMatch(c) && (!state.commute || commuteOk(c)) && (!B.gu || c.sgg === B.gu) && (!B.gender || !c.mg || c.mg[B.gender === "girl" ? 1 : 0] >= 2))
+        .map((c) => {
+          // 가족형: 50㎡ 이상 평형 중 예산 안에 드는 것, 100세대 이상 단지만
+          // 20평대 = 전용 50~70㎡(59㎡형), 30평대 = 75~100㎡(84㎡형). '상급지 20평이냐 한 단계 아래 30평이냐'를 고르게 한다.
+          const [aLo, aHi] = SIZE_RANGE[B.size] || [50, 999];
+          const r = B.fam ? (c.households || 0) >= 100 && (c.by_area || []).filter((x) => x.area >= aLo && x.area < aHi && x.latest && x.latest <= B.max && x.latest >= B.min).sort((x, y) => y.count - x.count)[0]
+                          : repArea(c, state.area);
+          c._bRep = B.fam ? r || null : null;
+          return r && r.latest <= B.max && r.latest >= B.min ? c : null;
+        }).filter(Boolean)
+        .sort((a, b) => (B.pri === "eduvalue" ? (a.edu_band_pct || 999) - (b.edu_band_pct || 999)
+                       : B.pri === "edu" ? (b.edu_score || 0) - (a.edu_score || 0)
+                       : (b.kid || 0) - (a.kid || 0)) || b.trade_count_1y - a.trade_count_1y);
+      // 이 예산(+출퇴근·평형)으로 갈 수 있는 곳을 학군 등급별로 센다. 등급을 고르면 그 등급만 남긴다.
+      state._gradeStats = gradeStats(list);
+      if (B.grade) list = list.filter((c) => eduGrade(c.edu_top_pct) === B.grade);
+      list = bestByBand(list, B);
+    }
+    else if (state.commute) list.sort((a, b) => state.commute.mode === "sum"
+      ? ((a._cmA ?? 999) + (a._cmB ?? 0)) - ((b._cmA ?? 999) + (b._cmB ?? 0))
+      : (a._cm ?? 999) - (b._cm ?? 999) || b.trade_count_1y - a.trade_count_1y);
+    else list.sort((a, b) => b.trade_count_1y - a.trade_count_1y);
+    if (state.commute) list = list.filter(commuteOk);
+    return list.slice(0, 150);
+  }
+  // 등급별로 몇 단지·몇 동네인지, 그 등급에서 학군 좋은 동네 3곳
+  function gradeStats(cands) {
+    const g = {};
+    for (const c of cands) {
+      const k = eduGrade(c.edu_top_pct);
+      if (!k) continue;
+      const e = g[k] || (g[k] = { n: 0, dongs: new Map() });
+      e.n++;
+      const dk = c.umd;
+      const best = e.dongs.get(dk);
+      if (!best || (c.edu_score || 0) > best) e.dongs.set(dk, c.edu_score || 0);
+    }
+    return ["S", "A", "B", "C", "D", "E"].filter((k) => g[k]).map((k) => ({
+      k, n: g[k].n, dn: g[k].dongs.size,
+      top: [...g[k].dongs.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3).map((x) => x[0]),
+    }));
+  }
+  function gradeBarHtml() {
+    const B = state.budget, st = state._gradeStats || [];
+    if (!st.length) return "";
+    const eok = (v) => (v / 10000).toFixed(1).replace(/\.0$/, "");
+    const best = st[0];
+    return `<div class="gradebar">
+      <div class="gbhead">💰 ${eok(B.max)}억${SIZE_NAME[B.size] ? " · " + SIZE_NAME[B.size] : ""}${state.commute ? " · " + esc(state.commute.a.name) + " " + state.commute.max + "분" : ""}으로 갈 수 있는 최고 학군은
+        <b class="grade g${best.k}">${best.k}</b>등급 단지 <span class="muted">(${best.top.map(esc).join("·")} 등)</span></div>
+      <div class="gbchips">
+        <button class="gbc ${!B.grade ? "on" : ""}" data-grade="">전체</button>
+        ${st.map((x) => `<button class="gbc ${B.grade === x.k ? "on" : ""}" data-grade="${x.k}"><b class="grade g${x.k}">${x.k}</b> ${x.dn}개 동 · ${x.n}단지</button>`).join("")}
+      </div>
+      <div class="muted gbnote">학군 등급: S 상위 3% · A 10% · B 25% · C 50% · D 75% · E 나머지. 계산 = 1km 안 교과학원 수 45% + 대형 입시학원 10% + 배정 초등학교 전입률 30% + 배정 중학교 여건 15%, 수도권 전체 줄 세우기. 단지마다 주변 1km 학원·배정 학교로 따로 매겨서 같은 동네 안에서도 다를 수 있습니다 (집콕맵 학군 지수, 매일 새로 계산)</div>
+    </div>`;
+  }
+  // 예산 검색 결과가 '어떤 공식·순서로' 뽑혔는지 목록 위에 그대로 적는다 (사용자 요청 2026-09-28).
+  function renderRankHow(list) {
+    const el = $("#rankHow");
+    if (!el) return;
+    const B = state.budget;
+    if (state.sort !== "budget" || !B) { el.hidden = true; return; }
+    const eok = (v) => (v / 10000).toFixed(1).replace(/\.0$/, "");
+    const cond = [
+      state.commute ? `${esc(state.commute.a.name)}${state.commute.b ? "·" + esc(state.commute.b.name) : ""} ${state.commute.max}분 이내` : null,
+      `실거래 ${B.min ? eok(B.min) + "~" : ""}${eok(B.max)}억`,
+      B.fam ? `${SIZE_NAME[B.size] || "전용 50㎡ 이상"} · 100세대 이상` : null,
+      B.gu ? esc(B.gu) : null,
+      B.grade ? `학군 ${B.grade}등급만` : null,
+    ].filter(Boolean).join(" · ");
+    const pri = B.pri === "eduvalue" ? "같은 가격대 안 학군 순위(상위 %가 작을수록 먼저)"
+              : B.pri === "edu" ? "학군 지수 높은 순" : "아이 키우기 점수 높은 순";
+    const bands = [...new Set(list.map((c) => c._band).filter(Boolean))];
+    el.innerHTML = gradeBarHtml() + `<b>이렇게 골랐어요</b>
+      <ol>
+        <li><b>거르기</b> — ${cond}</li>
+        <li><b>가격대 나누기</b> — ${bands.length ? bands.map(esc).join(" → ") : "-"} <span class="muted">(예산에 가까운 비싼 구간부터)</span></li>
+        <li><b>구간 안 순서</b> — ${pri}, 같으면 1년 거래 많은 순</li>
+        <li><b>섞기</b> — 구간마다 1등 → 2등 … 번갈아, 한 동네는 ${B.grade ? 5 : 2}개까지</li>
+      </ol>`;
+    el.hidden = false;
+    el.querySelectorAll(".gbc").forEach((b) => b.addEventListener("click", () => {
+      state.budget.grade = b.dataset.grade || "";
+      hit("grade_" + (state.budget.grade || "all"));
+      renderMarkers(); renderList();
+      const first = visibleComplexes()[0];
+      if (first) map.flyTo({ center: [first.lng, first.lat], zoom: 12.5 });
+    }));
+  }
+  // ---------- 동네 한눈에 ----------
+  // 30일간 607명이 왔는데 기능 클릭은 66회(11%)였다. 89%는 지도만 보고 나간다.
+  // 그래서 **누르지 않아도** 지금 보고 있는 동네가 어떤 곳인지 목록 맨 위에 띄운다.
+  // 누르면 더 나오는 건 그 다음 단계(액션 -> +@).
+  let HEAT = null, heatTried = false;
+  async function loadHeat() {
+    if (HEAT || heatTried) return HEAT;
+    heatTried = true;
+    try {
+      const [a, b] = await Promise.all([
+        fetch("data/heat.json").then((r) => r.json()),
+        fetch("data/heat_dong.geojson").then((r) => r.json()),
+      ]);
+      HEAT = { all: a, dong: new Map(b.features.map((f) => [f.properties.sgg + "|" + f.properties.umd, f.properties])) };
+    } catch (e) { HEAT = null; }
+    return HEAT;
+  }
+  const heatWord = (hi) => hi >= 50 ? ["뜨거움", "hot3"] : hi >= 30 ? ["따뜻함", "hot2"] : hi >= 15 ? ["보통", "hot1"] : ["차가움", "hot0"];
+
+  function hoodOf(list) {
+    // 화면에 보이는 단지들이 가장 많이 속한 동
+    const cnt = new Map();
+    for (const c of list.slice(0, 60)) {
+      const k = c.sgg + "|" + c.umd;
+      cnt.set(k, (cnt.get(k) || 0) + 1);
+    }
+    let best = null, bn = 0;
+    for (const [k, n] of cnt) if (n > bn) { best = k; bn = n; }
+    return best;
+  }
+
+  function renderHood(list) {
+    const bar = $("#hoodBar");
+    if (!bar) return;
+    if (state.selected || !list.length || state.sort === "budget" || state.sort === "fav") { bar.hidden = true; return; }
+    const key = hoodOf(list);
+    if (!key) { bar.hidden = true; return; }
+    const [sgg, umd] = key.split("|");
+    const here = list.filter((c) => c.sgg + "|" + c.umd === key);
+    const med = (arr) => { const v = arr.filter((x) => x != null).sort((a, b) => a - b); return v.length ? v[Math.floor(v.length / 2)] : null; };
+    const p84 = med(here.map((c) => (c.by_area || []).filter((a) => a.area >= 70 && a.area < 100).map((a) => a.latest)[0]));
+    const edu = med(here.map((c) => c.edu_score));
+    const gr = med(here.map((c) => c.edu_top_pct));
+    const fee = med(here.map((c) => c.fee));
+    const h = HEAT && HEAT.dong.get(key);
+    const chips = [];
+    if (h) {
+      const [w, cls] = heatWord(h.hi);
+      chips.push(`<b class="hchip ${cls}">🌡 ${w} · 신고가 ${h.hi}%${h.chg != null ? ` <small>${h.chg >= 0 ? "▲" : "▼"}${Math.abs(h.chg)}%p</small>` : ""}</b>`);
+    }
+    if (gr != null) chips.push(`<span class="hchip">🏫 학군 <b class="grade g${eduGrade(gr)}">${eduGrade(gr)}</b>${edu != null ? " " + edu + "점" : ""}</span>`);
+    if (p84) chips.push(`<span class="hchip">🏠 84㎡ ${fmtPrice(p84)}</span>`);
+    if (fee) chips.push(`<span class="hchip">📚 학원비 월 ${Math.round(fee / 10000)}만</span>`);
+    chips.push(`<span class="hchip">🏘 단지 ${here.length}개</span>`);
+    bar.innerHTML = `<div class="hoodtop"><b>${esc(umd)}</b> <span class="muted">${esc(sgg)} · 지금 보는 동네</span>
+        <button id="hoodMore">자세히 ▾</button></div>
+      <div class="hchips">${chips.join("")}</div>
+      <div id="hoodMoreBox" hidden></div>`;
+    bar.hidden = false;
+    $("#hoodMore").addEventListener("click", () => {
+      const box = $("#hoodMoreBox");
+      box.hidden = !box.hidden;
+      $("#hoodMore").textContent = box.hidden ? "자세히 ▾" : "접기 ▴";
+      if (!box.hidden) {
+        hit("hood_more");
+        box.innerHTML = hoodDetail(sgg, umd, here, h);
+        // 액션 -> +@ : 누른 것에 맞는 정보를 그 자리에서 더 준다
+        $$(".hact", box).forEach((b) => b.addEventListener("click", () => {
+          const a = b.dataset.hact;
+          hit("hood_" + a);
+          if (a === "edu") { state.layers.edumap = true; applyLayers(); setSheet("peek"); toast(`${umd} 학군 등급을 지도에 켰어요.`); }
+          if (a === "heat") { state.layers.heatmap = true; state.layers.edumap = false; applyLayers(); setSheet("peek"); toast("수도권 신고가 지도를 켰어요. 빨강일수록 신고가가 많은 동네예요."); }
+          if (a === "cheap") { state.q = umd; $("#q").value = umd; state.sort = "ppylow"; renderMarkers(); renderList(); }
+        }));
+      }
+    });
+  }
+
+  function hoodDetail(sgg, umd, here, h) {
+    const rows = [];
+    if (h) rows.push([`🌡 이 동네 시장`, `최근 거래 ${h.n}건 중 신고가 ${h.hi}% · 오른 거래 ${h.up}% · 내린 거래 ${h.dn}%`]);
+    const chop = here.filter((c) => c.school && c.school.chopuma).length;
+    if (chop) rows.push(["🏫 초품아", `${chop}개 단지가 단지 안에서 초등학교로 붙습니다`]);
+    const big = here.filter((c) => (c.households || 0) >= 1000).length;
+    if (big) rows.push(["🏘 대단지", `1,000세대 이상 ${big}개`]);
+    const news = here.filter((c) => c.built && (new Date().getFullYear() - c.built) <= 10).length;
+    if (news) rows.push(["✨ 신축", `10년 이내 ${news}개 단지`]);
+    const st = here.map((c) => c.station).filter((s) => s && s.walk_min != null).sort((a, b) => a.walk_min - b.walk_min)[0];
+    if (st) rows.push(["🚇 가까운 역", `${st.name} 도보 ${st.walk_min}분`]);
+    const jr = here.map((c) => c.jeonse_ratio).filter((x) => x).sort((a, b) => b - a)[0];
+    if (jr) rows.push(["🔑 전세가율", `최고 ${jr}%${jr >= 85 ? " (깡통전세 주의 구간)" : ""}`]);
+    return `<div class="hoodrows">${rows.map(([k, v]) => `<div class="hoodrow"><b>${k}</b><span>${esc(v)}</span></div>`).join("")}</div>
+      <div class="hoodacts">
+        <button class="hact" data-hact="edu">이 동네 학군 자세히</button>
+        <button class="hact" data-hact="heat">수도권 온도 지도</button>
+        <button class="hact" data-hact="cheap">이 동네 싼 단지순</button>
+      </div>`;
+  }
+  loadHeat().then(() => { if (!state.selected) renderList(); });
+
+  function renderList() {
+    const list = visibleComplexes();
+    updateDemoRow();
+    $("#compareBar").hidden = !state.compare.length;
+    $("#compareBar").querySelector("span").textContent = `비교 ${state.compare.length}/3`;
+    renderCond();
+    renderHood(list);
+    renderRankHow(list);
+    $("#listCount").textContent = state.commute && state.sort !== "fav" ? `출퇴근 ${state.commute.max}분 이내${state.sort === "budget" ? " + 예산" : ""} ${list.length >= 150 ? "150개+" : list.length + "개"}` : state.sort === "budget" ? `예산 조건 ${list.length}개` : state.sort === "fav" ? `찜한 단지 ${list.length}개` : (map.getZoom() >= 12 && !state.q ? `화면 안 단지 ${list.length}개` : `단지 ${list.length}개`);
+    $("#alertBar").hidden = !(state.sort === "fav" && list.length && API);
+    $("#list").innerHTML = list.map((c) => {
+      const rep = (state.sort === "budget" && c._bRep) || repArea(c, state.area);
+      const tags = [
+        ...(commuteTag(c) ? [commuteTag(c)] : []),
+        ...((() => { const f = fitScore(c); return f == null ? [] : [`<span class="tag fit">${AGE[state.age].name} 맞춤 ${f}점</span>`]; })()),
+        ...(state.sort === "budget" && c._band && c._bandRank <= 3
+              ? [`<span class="tag fit">${esc(c._band)} ${c._bandRank}위</span>`] : []),
+        ...(state.sort === "budget" && eduGrade(c.edu_top_pct)
+              ? [`<span class="tag school">학군 <b class="grade g${eduGrade(c.edu_top_pct)}">${eduGrade(c.edu_top_pct)}</b></span>`] : []),
+        ...(feeTag(c) ? [feeTag(c)] : []),
+        ...(c.mg && (c.mg[0] < 2 || c.mg[1] < 2) ? [`<span class="tag warn2">중학교 ${c.mg[0] < 2 ? "아들" : "딸"} 기준 ${Math.min(c.mg[0], c.mg[1])}곳</span>`] : []),
+        ...(c.fut && c.fut.dist <= 800 ? [`<span class="tag fut">🚧 ${esc(c.fut.line)} ${esc(c.fut.name)} 예정 ${c.fut.walk_min}분</span>`] : []),
+        ...(c.school.chopuma ? [`<span class="tag school">초품아 ${esc(c.school.elem.replace("등학교", ""))}</span>`] : [`<span class="tag">${esc(c.school.elem.replace("등학교", ""))} ${c.school.elem_walk_min}분</span>`]),
+        ...c.pros.slice(0, 2).filter((p) => !p.startsWith("초품아")).map((p) => `<span class="tag good">${esc(p)}</span>`),
+        ...c.cons.slice(0, 1).map((p) => `<span class="tag bad">${esc(p)}</span>`),
+        ...(c.jeonse_ratio ? [`<span class="tag ${c.jeonse_ratio >= 90 ? "bad" : ""}">전세가율 ${c.jeonse_ratio}%</span>`] : []),
+        ...(c.sale_type === "혼합" ? [`<span class="tag">분양·임대 혼합</span>`] : []),
+        ...(c.sale_type === "임대" ? [`<span class="tag">임대 단지</span>`] : []),
+        ...(c.edu_band_pct != null && c.edu_band_pct <= 20 ? [`<span class="tag school">${esc(c.budget_band)}대 학군 상위 ${c.edu_band_pct}%</span>`] : []),
+        ...(c.edu_score != null && c.edu_top_pct <= 30 ? [`<span class="tag school">학군 <b>${eduGrade(c.edu_top_pct)}</b> · ${c.edu_score}점 · 상위 ${c.edu_top_pct}%</span>`] : []),
+        ...(c.terrain && c.terrain.station_dh != null && c.terrain.station_dh >= 30 ? [`<span class="tag bad">언덕 +${c.terrain.station_dh}m</span>`] : []),
+        ...(c.nz ? [`<span class="tag bad">기피시설 ${c.nz}</span>`] : []),
+        ...(c.kid != null && c.kid_pct <= 25 ? [`<span class="tag school">👶 아이 키우기 ${c.kid}점</span>`] : []),
+        ...(c.mg && (c.mg[0] <= 1 || c.mg[1] <= 1) ? [`<span class="tag bad">${c.mg[0] <= 1 ? "아들" : "딸"} 배정 가능 중학교 ${Math.min(...c.mg)}곳</span>`] : []),
+        ...(c.risk_n ? [`<span class="tag bad">위험 신호 ${c.risk_n}</span>`] : []),
+        ...(c.up_n ? [`<span class="tag good">상승 신호 ${c.up_n}</span>`] : []),
+      ].slice(0, 6).join("");   // 카드가 길어지지 않게 태그는 6개까지만 (나머지는 단지를 눌러 상세에서)
+      return `<div class="card ${state.selected === c.id ? "sel" : ""}" data-id="${c.id}">
+        <div><h3>${esc(c.name)}</h3><div class="sub">${esc(c.umd)} · ${c.households ? c.households.toLocaleString() + "세대 · " : ""}${c.built}년 · ${lineBadges(c.station.lines)}${esc(c.station.name)} ${c.station.walk_min}분</div></div>
+        <div class="price">${rep ? fmtPrice(rep.latest) : "-"}<small>${rep ? "전용 " + rep.area + "㎡ 실거래" : ""} ${fmtChg(c.chg_1y)}</small></div>
+        <div class="tags">${tags}</div>${favBtn(c.id)}</div>`;
+    }).join("") || `<div class="muted" style="padding:20px 4px">${state.sort === "fav" ? "찜한 단지가 없어요. 카드의 ♥ 를 눌러보세요." : "조건에 맞는 단지가 없어요."}</div>`;
+    $$(".card", $("#list")).forEach((el) => el.addEventListener("click", (e) => { if (e.target.closest(".fav")) { e.stopPropagation(); toggleFav(el.dataset.id); return; } openDetail(el.dataset.id, "full"); }));
+  }
+
+  // ---------- detail ----------
+  function radarSVG(axes) {
+    const keys = Object.keys(axes), n = keys.length, R = 58, cx = 92, cy = 88;
+    const pt = (i, v) => { const ang = -Math.PI / 2 + (2 * Math.PI * i) / n; const r = R * v / 100; return [cx + r * Math.cos(ang), cy + r * Math.sin(ang)]; };
+    const grid = [25, 50, 75, 100].map((v) => `<polygon points="${keys.map((k, i) => pt(i, v).join(",")).join(" ")}" fill="none" stroke="var(--line)" stroke-width="1"/>`).join("");
+    const poly = keys.map((k, i) => pt(i, axes[k]).join(",")).join(" ");
+    const labels = keys.map((k, i) => { const [x, y] = pt(i, 128); return `<text x="${x}" y="${y}" font-size="10" fill="var(--muted)" text-anchor="middle" dominant-baseline="middle">${esc(k)}</text>`; }).join("");
+    return `<svg viewBox="0 0 184 176" style="width:184px;height:176px;flex:0 0 auto">${grid}<polygon points="${poly}" fill="rgba(124,58,237,.25)" stroke="#7c3aed" stroke-width="2"/>${labels}</svg>`;
+  }
+  // 세로축 = 실제 거래가(억), 가로축 = 연·월. 눈금과 격자선을 그려 "얼마인지"가 바로 읽히게 한다.
+  function chartSVG(trades, areaSel) {
+    const pts = trades.filter((t) => !areaSel || bucket(t.area) === areaSel).map((t) => ({ d: new Date(t.date), v: t.price / (t.area / PY), p: t.price }));
+    if (pts.length < 2) return `<div class="muted" style="font-size:13px">거래가 적어 추세를 그릴 수 없어요.</div>`;
+    const W = 340, H = 196, L = 46, R = 10, T = 14, B = 34;
+    const xs = pts.map((p) => p.d.getTime()), ps = pts.map((p) => p.p);
+    const x0 = Math.min(...xs), x1 = Math.max(...xs);
+    const pad = Math.max((Math.max(...ps) - Math.min(...ps)) * 0.15, Math.max(...ps) * 0.03);
+    const y0 = Math.min(...ps) - pad, y1 = Math.max(...ps) + pad;
+    const X = (x) => L + (x - x0) / (x1 - x0 || 1) * (W - L - R), Y = (v) => T + (1 - (v - y0) / (y1 - y0 || 1)) * (H - T - B);
+    // 가로 격자: 5천만원 단위에서 시작해 눈금이 3~5개가 되게 키운다
+    const span = y1 - y0;
+    const step = [1000, 2500, 5000, 10000, 20000, 50000, 100000].find((s) => span / s <= 5) || 200000;
+    const grid = [];
+    for (let v = Math.ceil(y0 / step) * step; v <= y1; v += step) {
+      const y = Y(v);
+      grid.push(`<line x1="${L}" y1="${y.toFixed(1)}" x2="${W - R}" y2="${y.toFixed(1)}" stroke="#e2e8f0" stroke-width="1"/>`);
+      grid.push(`<text x="${L - 6}" y="${(y + 4).toFixed(1)}" font-size="11" fill="#64748b" text-anchor="end">${fmtPrice(v)}</text>`);
+    }
+    // 세로 격자: 첫 달·끝 달 포함 최대 4개 지점
+    const lab = (d) => `${String(d.getFullYear()).slice(2)}.${d.getMonth() + 1}`;
+    const nTick = Math.min(4, Math.max(2, Math.round((x1 - x0) / (1000 * 3600 * 24 * 120))));
+    for (let i = 0; i < nTick; i++) {
+      const t = x0 + (x1 - x0) * (i / (nTick - 1)), x = X(t);
+      grid.push(`<line x1="${x.toFixed(1)}" y1="${T}" x2="${x.toFixed(1)}" y2="${H - B}" stroke="#f1f5f9" stroke-width="1"/>`);
+      grid.push(`<text x="${x.toFixed(1)}" y="${H - B + 16}" font-size="11" fill="#64748b" text-anchor="${i === 0 ? "start" : i === nTick - 1 ? "end" : "middle"}">${lab(new Date(t))}</text>`);
+    }
+    // 월별 중앙값 선
+    const byM = {};
+    pts.forEach((p) => { const k = p.d.getFullYear() * 12 + p.d.getMonth(); (byM[k] = byM[k] || []).push(p.p); });
+    const line = Object.keys(byM).map(Number).sort((a, b) => a - b).map((k) => {
+      const arr = byM[k].sort((a, b) => a - b); const med = arr[Math.floor(arr.length / 2)];
+      return [X(new Date(Math.floor(k / 12), k % 12, 15).getTime()), Y(med)];
+    });
+    const path = line.map((p, i) => (i ? "L" : "M") + p[0].toFixed(1) + " " + p[1].toFixed(1)).join(" ");
+    const dots = pts.map((p) => `<circle cx="${X(p.d.getTime()).toFixed(1)}" cy="${Y(p.p).toFixed(1)}" r="3" fill="#2563eb" opacity=".45"><title>${p.d.toISOString().slice(0, 10)} ${fmtPrice(p.p)} (평당 ${Math.round(p.v).toLocaleString()}만)</title></circle>`).join("");
+    const last = pts.reduce((a, b) => (a.d > b.d ? a : b));
+    return `<svg class="chart" viewBox="0 0 ${W} ${H}">${grid.join("")}
+      <line x1="${L}" y1="${T}" x2="${L}" y2="${H - B}" stroke="#cbd5e1" stroke-width="1"/>
+      <line x1="${L}" y1="${H - B}" x2="${W - R}" y2="${H - B}" stroke="#cbd5e1" stroke-width="1"/>
+      <path d="${path}" fill="none" stroke="#2563eb" stroke-width="2.5" stroke-linejoin="round"/>${dots}
+      <circle cx="${X(last.d.getTime()).toFixed(1)}" cy="${Y(last.p).toFixed(1)}" r="4.5" fill="#2563eb"/>
+      <text x="${W - R}" y="${H - 6}" font-size="10.5" fill="#94a3b8" text-anchor="end">점 하나 = 실거래 1건 · 선은 월별 중앙값</text>
+      <text x="${L}" y="${H - 6}" font-size="10.5" fill="#94a3b8">최근 평당 ${Math.round(last.v).toLocaleString()}만</text></svg>`;
+  }
+
+  // ---------- 월 실거주 비용 ----------
+  // 아실 같은 앱은 "집값"만 보여준다. 정작 사는 사람이 겪는 건 **매달 나가는 돈**이다.
+  // 같은 15억이어도 학원비 때문에 월 60만원이 갈린다. 학원비 자료가 있는 우리만 만들 수 있다.
+  const COST = JSON.parse(localStorage.getItem("costOpt") || "null") || {
+    ltv: 60, rate: 4.2, years: 30, kids: 1, subjects: 3,
+  };
+  function saveCost() { localStorage.setItem("costOpt", JSON.stringify(COST)); }
+
+  function monthlyCost(c, priceMan) {
+    if (!priceMan) return null;
+    const loan = priceMan * (COST.ltv / 100);                 // 만원
+    const r = COST.rate / 100 / 12, n = COST.years * 12;
+    const loanM = r === 0 ? loan / n : loan * r / (1 - Math.pow(1 + r, -n));
+    // 학원비: 과목당 월 교습비 × 과목 수 × 아이 수 (교육청 공시 교습비 중앙값)
+    const feeM = c.fee ? (c.fee / 10000) * COST.subjects * COST.kids : null;
+    // 관리비·수도·가스: K-apt 공용관리비 + 개별사용료. 아직 수집 전이면 null.
+    const mgmtM = c.mgmt != null ? c.mgmt / 10000 : null;
+    const total = loanM + (feeM || 0) + (mgmtM || 0);
+    return { loanM, feeM, mgmtM, total, loan };
+  }
+
+  // 단지 '솔직 평가'. 유튜브 대본을 옮겨오는 게 아니라 우리 숫자로 직접 쓴 것이고,
+  // 단점을 먼저 보여준다. 남의 영상은 링크로 보내서 조회수가 그쪽에 가게 한다.
+  function verdictPanel(c) {
+    const v = c.verdict;
+    if (!v || (!v.weak.length && !v.strong.length && !v.manual)) return "";
+    const yt = `https://www.youtube.com/results?search_query=${encodeURIComponent(c.name + " " + (c.umd || "") + " 아파트")}`;
+    return `<div class="section verdict">
+      <h4>🗣️ 솔직 평가 <span class="r muted">집콕맵 데이터 기준</span></h4>
+      ${v.manual ? `<div class="vblock vman"><div class="vh">👤 직접 확인한 것 <span class="muted">· ${esc(v.manual.src)}</span></div>
+        ${(v.manual.bad || []).map((t) => `<div class="vrow"><b>아쉬움</b><span>${esc(t)}</span></div>`).join("")}
+        ${(v.manual.good || []).map((t) => `<div class="vrow"><b>좋음</b><span>${esc(t)}</span></div>`).join("")}
+        <div class="muted" style="font-size:11.5px;margin-top:6px">숫자로는 안 잡히는 것(밤 주차, 실제 언덕, 소음, 공사)을 사람이 보고 적은 내용입니다.</div></div>` : ""}
+      ${v.weak.length ? `<div class="vblock vbad"><div class="vh">먼저 단점부터</div>
+        ${v.weak.map((w) => `<div class="vrow"><b>${esc(w.k)}</b><span>${esc(w.t)}</span></div>`).join("")}</div>` : ""}
+      ${v.strong.length ? `<div class="vblock vgood"><div class="vh">그래도 이런 점은</div>
+        ${v.strong.map((t) => `<div class="vrow"><span>${esc(t)}</span></div>`).join("")}</div>` : ""}
+      <div class="note">${v.manual ? "위 파란 칸은 사람이 직접 확인해 적은 것이고, 아래 칸은" : "이 글은"}
+        <b>이 단지의 공공데이터 숫자에서 자동으로 뽑은 문장</b>입니다.
+        실제로 살아보신 분의 이야기는 아래 '의견 보내기'로 알려주시면 반영합니다.</div>
+      <a class="ytlink" href="${yt}" target="_blank" rel="noopener nofollow">▶ 유튜브에서 이 단지 임장 영상 찾기</a>
+    </div>`;
+  }
+  function costPanel(c, rep_) {
+    const price = rep_ && rep_.latest;
+    const m = monthlyCost(c, price);
+    if (!m) return "";
+    const W = (v) => Math.round(v).toLocaleString() + "만";
+    const rows = [
+      ["🏦 대출 상환", W(m.loanM), `${(m.loan / 10000).toFixed(1)}억 · ${COST.rate}% · ${COST.years}년`],
+      ...(m.feeM != null ? [["📚 학원비", W(m.feeM), `아이 ${COST.kids}명 × ${COST.subjects}과목 × 과목당 ${Math.round(c.fee / 10000)}만`]] : []),
+      ...(m.mgmtM != null ? [["🏢 관리비·수도·가스", W(m.mgmtM), "K-apt 공시 · 경비·청소·인건비 + 수도·전기·가스"]] : []),
+    ];
+    return `<div class="section"><h4>💸 여기 살면 매달 얼마 <span class="r muted">${fmtPrice(price)} 기준</span></h4>
+      <div class="costbig">월 <b>${W(m.total)}</b>원</div>
+      <div class="costrows">${rows.map(([k, v, why]) =>
+        `<div class="costrow"><span>${k}</span><b>${v}</b><span class="why">${esc(why)}</span></div>`).join("")}</div>
+      ${m.mgmtM == null ? '<div class="note">이 단지는 관리비를 아직 안 받아왔습니다. 매일 조금씩 채우는 중이라 며칠 뒤 표시됩니다. 참고로 수도권 중앙값은 세대당 월 20만원 안팎입니다.</div>'
+        : '<div class="note">관리비는 K-apt 공시 중 <b>금액이 큰 항목</b>(인건비·경비·청소·위탁수수료)과 <b>수도·전기·가스·난방</b>을 합한 값입니다. 전체 항목이 아니라 실제 고지서보다 적게 나옵니다.</div>'}
+      <div class="costopt">
+        <label>대출 <input type="number" id="coLtv" value="${COST.ltv}" min="0" max="80" step="5">%</label>
+        <label>금리 <input type="number" id="coRate" value="${COST.rate}" min="0" max="15" step="0.1">%</label>
+        <label>아이 <input type="number" id="coKids" value="${COST.kids}" min="0" max="5" step="1">명</label>
+        <label>과목 <input type="number" id="coSub" value="${COST.subjects}" min="0" max="10" step="1">개</label>
+      </div>
+      <div class="note">${c.fee ? "학원비는 반경 1km 교과학원의 <b>과목당 월 교습비 중앙값</b>(교육청 공시)입니다. " : ""}대출은 원리금균등 기준 추정이고 실제 조건은 은행 심사에 따라 다릅니다.</div>
+      </div>`;
+  }
+
+  function openDetail(id, sheetState) {
+    const c0 = state.complexes.find((x) => x.id === id); if (!c0) return;
+    if (!c0.trades) {                       // 요약만 있으면 상세 파일을 받아 합친 뒤 렌더
+      state.selected = id; renderMarkers();
+      fetch(`data/c/${encodeURIComponent(id)}.json`).then((r) => r.json()).then((full) => { Object.assign(c0, full); openDetail(id, sheetState); })
+        .catch(() => toast("상세 정보를 불러오지 못했어요."));
+      return;
+    }
+    const c = c0;
+    state.selected = id;
+    renderMarkers(); drawRange();
+    map.flyTo({ center: [c.lng, c.lat], zoom: Math.max(map.getZoom(), 15.2), offset: [0, innerWidth < 900 ? -innerHeight * 0.18 : 0], duration: 700 });
+    const areas = c.by_area || [];
+    let areaSel = state.area !== "all" && areas.some((a) => bucket(a.area) === state.area) ? state.area : (areas.some((a) => bucket(a.area) === "84") ? "84" : bucket(areas[0].area));
+    const aucs = state.auctions.filter((a) => a.complex_id === id);
+    const reports = JSON.parse(localStorage.getItem("askReports") || "{}")[id] || [];
+
+    function render() {
+      const rep = areas.find((a) => bucket(a.area) === areaSel) || areas[0];
+      const ask = c.ask;
+      const askLow = ask ? ask.low_ppy * (rep.area / PY) : null, askHigh = ask ? ask.high_ppy * (rep.area / PY) : null;
+      const lo = Math.min(rep.latest, askLow || rep.latest) * 0.96, hi = Math.max(rep.latest, askHigh || rep.latest) * 1.04;
+      const pos = (v) => ((v - lo) / (hi - lo) * 100).toFixed(1) + "%";
+      const age = new Date().getFullYear() - c.built;
+      $("#detailView").innerHTML = `
+        <div class="d-head"><button class="back" id="backBtn">‹</button>
+          <button class="back" id="shareDetail" title="이 단지를 링크로 공유" style="font-size:17px">🔗</button>
+          <div style="flex:1"><h2>${esc(c.name)} ${favBtn(c.id)}</h2><div class="sub">${esc(c.addr)}${c.households ? ` · <b>${c.households.toLocaleString()}세대</b>` : ""} · ${c.built}년 (${age}년차)${c.max_floor ? ` · 최고 ${c.max_floor}층` : ""}${c.dongs ? ` · ${c.dongs}개동` : ""}${c.far ? ` · 용적률 ${c.far}%` : ""}</div></div></div>
+
+        <div class="section">
+          <div class="atabs">${areas.map((a) => `<button class="atab ${bucket(a.area) === areaSel ? "on" : ""}" data-a="${bucket(a.area)}">${a.area}㎡ <span class="muted">${a.pyeong}평형</span></button>`).join("")}</div>
+          <div class="hero"><div class="big">${fmtPrice(rep.latest)}<small>최근 실거래${rep.latest_date ? " · " + rep.latest_date.slice(2).replace(/-/g, ".") : ""}</small></div>
+            <div class="meta">평당 <b>${Math.round(rep.latest / (rep.area / PY)).toLocaleString()}만</b>1년 ${fmtChg(c.chg_1y)} · 거래 ${rep.count}건</div></div>
+          ${rep.jeonse ? `<div class="jrow"><span>전세 <b>${fmtPrice(rep.jeonse)}</b></span><span>전세가율 <b class="${rep.jeonse_ratio >= 90 ? "up" : ""}">${rep.jeonse_ratio == null ? "-" : rep.jeonse_ratio + "%"}</b></span><span>갭 <b>${fmtPrice(rep.latest - rep.jeonse)}</b></span><span class="muted">최근 6개월 전세 ${rep.jeonse_n}건</span></div>` : ""}
+          ${ask ? `<div class="gapbar"><div class="lbl"><span>실거래 <b>${fmtPrice(rep.latest)}</b></span><span>호가 <b>${fmtPrice(Math.round(askLow))} ~ ${fmtPrice(Math.round(askHigh))}</b></span></div>
+            <div class="bar"><span class="pin t" style="left:${pos(rep.latest)}"></span><span class="pin a" style="left:${pos(askLow)}"></span><span class="pin a" style="left:${pos(askHigh)}"></span></div>
+            <div class="lbl"><span>호가가 실거래보다 <b class="${ask.gap_pct >= 0 ? "up" : "down"}">${ask.gap_pct >= 0 ? "+" : ""}${ask.gap_pct}%</b> 높음</span><span class="muted">${esc(ask.source)}</span></div></div>` : ""}
+          <div id="communityReports"><div class="note">${API ? "제보 불러오는 중…" : "제보 서버 연결 전 (내 기기 저장)"}${reports.length ? " · 내 제보: " + reports.map((r) => fmtPrice(r.price) + " (" + r.date + ")").join(", ") : ""}</div></div>
+          <div style="margin-top:12px">${chartSVG(c.trades, areaSel)}</div>
+          ${c.phase ? `<div class="note" style="margin-top:8px">📈 지금 국면: <b>${esc(c.phase)}</b></div>` : ""}
+        </div>
+
+        ${verdictPanel(c)}
+
+        ${costPanel(c, rep)}
+
+        ${c.kid ? `<div class="section"><h4>👶 아이 키우기 점수 <span class="r muted">서울 상위 ${c.kid.top_pct}%</span></h4>
+          <div style="display:flex;gap:10px;align-items:center">${radarSVG(c.kid.axes)}<div style="flex:1"><div class="big" style="font-size:34px">${c.kid.score}<small>/100</small></div>
+            ${Object.entries(c.kid.axes).map(([k, v]) => `<div style="display:flex;justify-content:space-between;font-size:12.5px;padding:2px 0"><span class="muted">${esc(k)}</span><b>${v}</b></div>`).join("")}</div></div>
+          <div class="note">초등 접근·학군·보육/의료·지형/보행·환경/안전·생활 편의 6축 가중 평균. 세 아이 키우는 부모 관점의 참고 지표예요.</div>
+          <button class="btn ghost" style="margin-top:10px" id="cmpBtn">${state.compare.includes(c.id) ? "✓ 비교 목록에 있음" : "⚖ 비교 목록에 담기"} (${state.compare.length}/3)</button></div>` : ""}
+
+        ${(() => { const truths = [...c.cons, ...(c.notes || []), ...c.signals.risk].filter((x, i, arr) => arr.indexOf(x) === i); return truths.length ? `<div class="section"><h4>🕵️ 동네 진실 <span class="r muted">광고엔 안 나오는 것</span></h4><div class="plist">${truths.map((p) => `<div class="row info"><i>!</i><span>${esc(p)}</span></div>`).join("")}</div>
+          <button class="btn ghost" style="margin-top:10px" id="shareTruthBtn">📋 이 내용 복사해서 공유</button></div>` : ""; })()}
+
+        ${c.signals && (c.signals.risk.length || c.signals.up.length) ? `<div class="section"><h4>위험 · 상승 신호 <span class="r muted">최근 24개월 실거래 기준</span></h4><div class="plist">
+          ${c.signals.up.map((p) => `<div class="row good"><i>↑</i><span>${esc(p)}</span></div>`).join("")}
+          ${c.signals.risk.map((p) => `<div class="row bad"><i>!</i><span>${esc(p)}</span></div>`).join("")}</div>
+          <div class="note">자동 계산 참고용이며 투자 판단의 근거가 아닙니다.</div></div>` : ""}
+        <div class="section"><h4>장단점 요약</h4><div class="plist">
+          ${c.pros.map((p) => `<div class="row good"><i>+</i><span>${esc(p)}</span></div>`).join("")}
+          ${c.cons.map((p) => `<div class="row bad"><i>−</i><span>${esc(p)}</span></div>`).join("")}
+          ${(c.notes || []).map((p) => `<div class="row info"><i>i</i><span>${esc(p)}</span></div>`).join("")}
+          ${!c.pros.length && !c.cons.length ? `<div class="muted">특이사항 없음</div>` : ""}</div></div>
+
+        <div class="section"><h4>배정 학군 <span class="r muted">${esc(state.meta.zone_note || "초등 통학구역 기준")}</span></h4>
+          ${c.edu_score != null ? `<div class="jrow" style="margin:0 0 12px"><span>학군 등급 <b class="grade g${eduGrade(c.edu_top_pct)}">${eduGrade(c.edu_top_pct)}</b></span><span>지수 <b>${c.edu_score}</b>/100</span><span>${esc(areaShort())} <b>${c.edu_rank}위</b> · 상위 ${c.edu_top_pct}%</span></div>
+          <div class="note" style="margin:-6px 0 12px">A는 서울 상위 10%, B 25%, C 50%, D 75%, E 그 아래입니다. 학원 밀집 45 · 대형 입시학원 10 · 초등 전입 30 · 중학교 15 으로 계산한 <b>집콕맵 자체 지수</b>이고, 학교 성적이 아닙니다. 국가 학업성취도 학교별 공시는 2016년이 마지막이라 성적 등급은 어디서도 최신 자료를 구할 수 없습니다.</div>` : ""}
+          ${c.edu_band_pct != null ? `<div class="jrow" style="margin:0 0 12px"><span>같은 가격대 <b>${esc(c.budget_band)}</b></span><span>이 구간 ${c.edu_band_n}개 단지 중 학군 <b>상위 ${c.edu_band_pct}%</b></span><span class="muted">대표 실거래가로 가격대를 나눠, 비슷한 예산에서 학군이 어느 정도인지 비교합니다</span></div>` : ""}
+          <div class="school-hero"><div class="ic">🏫</div><div><b>${esc(c.school.elem)}</b>${c.school.elem_official ? ` <span class="tag school" style="vertical-align:middle">공식 학구</span>` : ""}<div class="n">도보 ${c.school.elem_walk_min}분 (${c.school.elem_dist}m) ${c.school.chopuma ? "· <b style='color:#7c3aed'>초품아</b>" : ""}</div>
+            ${c.school.elem_shared && c.school.elem_shared.length ? `<div class="n">공동통학구역: ${c.school.elem_shared.map(esc).join(" / ")} 중 선택 배정</div>` : ""}
+            ${c.school.elem_stats ? `<div class="n">학생 ${c.school.elem_stats.students.toLocaleString()}명${c.school.elem_stats.chg_pct != null ? ` (전년 ${fmtChg(c.school.elem_stats.chg_pct)})` : ""} · 학급당 ${c.school.elem_stats.class_size}명${c.school.elem_stats.net_move != null ? ` · 순전입 <b class="${c.school.elem_stats.net_move > 0 ? "up" : c.school.elem_stats.net_move < 0 ? "down" : ""}">${c.school.elem_stats.net_move > 0 ? "+" : ""}${c.school.elem_stats.net_move}명</b>` : ""}${c.school.elem_rank ? ` · 전입 선호 ${c.school.elem_rank[0]}위/${c.school.elem_rank[1]}` : ""}</div>` : ""}</div></div>
+          ${c.edu ? `<div class="kv" style="margin-top:12px">
+            <div><div class="k">1km 내 교과학원</div><div class="v">${c.edu.exam_1km}개<small>${areaShort()} 상위 ${c.edu.exam_top_pct}%</small></div></div>
+            <div><div class="k">1km 내 학원 전체</div><div class="v">${c.edu.aca_1km}개<small>예체능 ${c.edu.art_1km}</small></div></div></div>` : ""}
+          ${c.school.middle_zone ? `<div class="n" style="margin-top:10px;font-weight:700">중학교 ${esc(c.school.middle_zone)}</div>` : ""}
+          ${c.school.middle_gender ? `<div class="n">학교군 내 공학 ${c.school.middle_gender["공학"]} · 남중 ${c.school.middle_gender["남"]} · 여중 ${c.school.middle_gender["여"]} → <b>아들 ${c.school.middle_gender["공학"] + c.school.middle_gender["남"]}곳 · 딸 ${c.school.middle_gender["공학"] + c.school.middle_gender["여"]}곳</b> 배정 가능</div>` : ""}
+          <div class="mids">${(c.school.middle_detail && c.school.middle_detail.length ? c.school.middle_detail.map((m) => `<span class="tag">${esc(m.name)} <span class="muted">${m.dist}m${m.public === "사립" ? " · 사립" : ""}${m.stats ? ` · ${m.stats.students}명 · 학급당 ${m.stats.class_size}` : ""}</span> ${gBadge(m.coedu)}</span>`) : c.school.middle.map((m) => `<span class="tag">${esc(m)}</span>`)).join("")}</div>
+          <div class="note">${esc(c.school.middle_note)}${c.school.elem_stats ? " · 학생 수·전출입은 학교알리미 " + c.school.elem_stats.year + "년 공시" : ""}</div>
+          ${c.school.high ? `<div class="n" style="margin-top:12px;font-weight:700">고등학교 ${esc(c.school.high.zone || "인근")}${c.school.high.zone_total ? ` <span class="muted">· 일반고 ${c.school.high.zone_total}곳 중 가까운 순</span>` : ""}</div>
+          <div class="mids">${c.school.high.general.map((h) => `<span class="tag">${esc(h.name)} <span class="muted">${h.dist}m${h.public === "사립" ? " · 사립" : ""}</span> ${gBadge(h.coedu)}</span>`).join("")}</div>
+          ${c.school.high.gender ? `<div class="n" style="margin-top:4px">학교군 일반고: 공학 ${c.school.high.gender["공학"]} · 남고 ${c.school.high.gender["남"]} · 여고 ${c.school.high.gender["여"]} → 아들 ${c.school.high.gender["공학"] + c.school.high.gender["남"]}곳 · 딸 ${c.school.high.gender["공학"] + c.school.high.gender["여"]}곳 지원 가능</div>` : ""}
+          ${c.school.high.special.length ? `<div class="mids" style="margin-top:6px">${c.school.high.special.map((h) => `<span class="tag school">${esc(h.type)} ${esc(h.name)} <span class="muted">${(h.dist / 1000).toFixed(1)}km${h.special ? " · " + esc(h.special) : ""}</span></span>`).join("")}</div>` : ""}
+          <div class="note">고교는 학교군 내 선지원·추첨 배정(평준화). 자율고·특목고는 전형별 별도 지원. 학교 상세는 <a href="https://www.schoolinfo.go.kr/ei/ss/Pneiss_f01_l0.do?SEARCH_KEYWORD=${encodeURIComponent(c.school.elem)}&SEARCH_TYPE=1" target="_blank" rel="noopener" style="color:var(--brand)">학교알리미</a>에서 학폭 심의 결과·학업성취 등을 직접 확인할 수 있어요.</div>` : ""}</div>
+
+        <div class="section"><h4>교통 · 도로 환경</h4><div class="kv">
+          ${c.terrain ? `<div><div class="k">지형</div><div class="v">해발 ${c.terrain.elev}m<small>${c.terrain.station_dh != null ? (c.terrain.station_dh >= 0 ? "역보다 +" : "역보다 ") + c.terrain.station_dh + "m" : ""}${c.terrain.slope_pct != null ? " · 경사 " + c.terrain.slope_pct + "%" : ""}</small></div></div>` : ""}
+          ${c.parking ? `<div><div class="k">주차</div><div class="v">${c.parking.toLocaleString()}대<small>세대당 ${c.parking_per_hh || "-"}</small></div></div>` : ""}
+          ${state.commute && c._cmA != null ? `<div style="grid-column:1/-1"><div class="k">출퇴근 (추정)</div><div class="v">${esc(state.commute.a.name)}까지 ${c._cmA}분${state.commute.b && c._cmB != null ? ` · ${esc(state.commute.b.name)}까지 ${c._cmB}분` : ""}<small>도보+대기 3분+지하철, 환승 1회당 4분</small></div></div>` : ""}
+          ${c.fee ? `<div style="grid-column:1/-1"><div class="k">동네 학원비</div><div class="v">월 ${feeMan(c)}만원 <small>1km 내 교과학원 ${c.fee_n}곳 중앙값 · 서울 상위 ${c.fee_pct}%${c.school.class_size ? " · 배정 초등 학급당 " + c.school.class_size + "명" : ""}</small></div></div>` : ""}
+          ${c.fut ? `<div style="grid-column:1/-1"><div class="k">공사 중 노선 예정역</div><div class="v">🚧 ${esc(c.fut.line)} ${esc(c.fut.name)}역 도보 ${c.fut.walk_min}분 (${c.fut.dist}m)<small>OpenStreetMap 기준 · 개통 시기와 역 위치는 바뀔 수 있어요</small></div></div>` : ""}
+          <div><div class="k">가까운 역</div><div class="v">${lineBadges(c.station.lines)}${esc(c.station.name)}<small>${esc(c.station.line)} · ${c.station.walk_min}분</small></div></div>
+          <div><div class="k">큰길과 거리</div><div class="v">${c.road.major_dist == null ? "-" : c.road.major_dist + "m"}<small>${c.road.roadside ? "대로변" : c.road.major_dist > 150 ? "이면 · 조용" : "인접"}</small></div></div>
+          ${c.station.within_600.length > 1 ? `<div style="grid-column:1/-1"><div class="k">600m 내 역</div><div class="v" style="font-size:13.5px">${c.station.within_600.map((s) => esc(s.name) + " " + s.dist + "m").join(" · ")}</div></div>` : ""}
+          </div>
+          <button class="btn ghost" style="margin-top:10px" id="roadBtn">🛣️ 지도에서 큰길·골목·인도 보기</button></div>
+
+        ${c.nuisance && Object.keys(c.nuisance).length ? `<div class="section"><h4>기피·주의 시설 <span class="r muted">가까운 순</span></h4>
+          ${Object.values(c.nuisance).sort((x, y) => x.dist - y.dist).slice(0, 8).map((v) => `<div class="rep"><span>${v.within ? "⚠️ " : ""}${esc(v.label)}${v.name ? ` <span class="muted">· ${esc(v.name)}</span>` : ""}</span><span class="${v.within ? "up" : "muted"}"><b>${v.dist >= 1000 ? (v.dist / 1000).toFixed(1) + "km" : v.dist + "m"}</b>${v.count > 1 ? ` · ${v.count}곳` : ""}</span></div>`).join("")}
+          <div class="note">⚠️ 는 종류별 기준 거리 안(변전소 300m, 유흥·모텔 200m, 송전선·철도 100m 등). 오픈스트리트맵·지방행정 인허가 자료 기준이라 누락이 있을 수 있어요.</div>
+          <button class="btn ghost" style="margin-top:10px" id="nzBtn">🚧 지도에서 기피시설 보기</button></div>` : ""}
+        ${c.amen && Object.keys(c.amen).length ? `<div class="section"><h4>가까운 주요시설 <span class="r muted">직선거리</span></h4>
+          ${["kindergarten", "playground", "clinic_ped", "hospital", "emergency", "mart", "park", "library", "police", "university"].filter((k) => c.amen[k]).map((k) => { const v = c.amen[k]; return `<div class="rep"><span>${esc(v.label)}${v.name ? ` <span class="muted">· ${esc(v.name)}</span>` : ""}${v.area_m2 ? ` <span class="muted">${(v.area_m2 / 10000).toFixed(1)}ha</span>` : ""}</span><span class="${v.dist <= 500 ? "good" : "muted"}" style="${v.dist <= 500 ? "color:var(--good)" : ""}"><b>${v.dist >= 1000 ? (v.dist / 1000).toFixed(1) + "km" : v.dist + "m"}</b></span></div>`; }).join("")}
+          ${c.school.cross_major != null ? `<div class="note">🚸 초등 통학로: ${c.school.cross_major ? "<b style='color:var(--bad)'>큰길을 건너야 할 가능성</b> (직선 기준, 지하보도·육교는 반영 안 됨)" : "큰길 횡단 없음 (직선 기준)"}</div>` : ""}
+          <button class="btn ghost" style="margin-top:10px" id="amBtn">🏥 지도에서 주요시설 · 반경 500m/1km 보기</button></div>` : ""}
+        ${c.life ? `<div class="section"><h4>육아 · 생활 편의 <span class="r muted">단지 반경 기준</span></h4><div class="kv">
+          <div><div class="k">어린이집·유치원 (700m)</div><div class="v">${c.life.daycare}곳</div></div>
+          <div><div class="k">소아과 (1km)</div><div class="v">${c.life.pediatric}곳</div></div>
+          <div><div class="k">병원 (700m) · 약국 (500m)</div><div class="v">${c.life.hospital}<small>· ${c.life.pharmacy}</small></div></div>
+          <div><div class="k">대형마트 (1km) · 편의점 (300m)</div><div class="v">${c.life.mart}<small>· ${c.life.convenience}</small></div></div>
+          <div><div class="k">공원 (700m)</div><div class="v">${c.life.park}곳</div></div>
+          <div><div class="k">도서관 (1km)</div><div class="v">${c.life.library}곳</div></div></div>
+          <div class="note">카카오 지도 등록 기준 개수. 소아과는 키워드 검색이라 오차가 있어요.</div></div>` : ""}
+        ${aucs.length ? `<div class="section"><h4>공매 물건 <span class="r muted">${esc(aucs[0].court)}</span></h4>
+          ${aucs.map((a) => `<div class="auc"><div><b>${esc(a.unit)} · ${a.area}㎡${a.use ? " · " + esc(a.use) : ""}</b>
+            <div class="s">${esc(a.case)} · 입찰 마감 ${a.sale_date}${a.fail_count ? " · " + a.fail_count + "회 유찰" : ""}${a.status ? " · " + esc(a.status) : ""}</div>
+            <div class="s">감정가 ${fmtPrice(a.appraisal)} → 최저가 <b>${fmtPrice(a.min_price)}</b>${a.recent_trade ? " · 같은 평형 실거래 " + fmtPrice(a.recent_trade) : ""}</div>
+            ${a.vs_trade_pct != null ? `<div class="s"><b class="${a.vs_trade_pct >= 20 ? "up" : ""}">실거래가보다 ${a.vs_trade_pct >= 0 ? a.vs_trade_pct + "% 낮음" : (-a.vs_trade_pct) + "% 높음"}</b></div>` : ""}</div>
+            <div class="pct">-${a.discount_pct}%</div></div>`).join("")}
+          <div class="note">한국자산관리공사 온비드 공매 자료입니다. 법원경매는 포함되지 않습니다. 권리분석(임차인·선순위 등)이 필수이고, 최저가만 보고 판단하면 안 됩니다. 입찰은 <a href="https://www.onbid.co.kr" target="_blank" rel="noopener noreferrer">온비드</a>에서 합니다.</div></div>` : ""}
+        ${(window.APT_CONFIG && window.APT_CONFIG.COURT_LINK) ? `<div class="section"><h4>경매로 나온 물건 확인</h4>
+          <div class="courtbox">
+            <div class="cb-addr"><span>${esc(c.addr)}</span><button class="cb-copy" data-addr="${esc(c.addr)}">주소 복사</button></div>
+            <div class="s">대한민국 법원 <b>법원경매정보</b>에서 이 주소로 직접 조회할 수 있어요. 첫 화면에서 <b>시/도 → 시·군·구 → 동</b>을 고르고 검색하세요.</div>
+            <a class="cb-go" href="https://www.courtauction.go.kr" target="_blank" rel="noopener noreferrer">법원경매정보 열기</a>
+            <div class="note">대한민국 법원이 운영하는 법원경매정보 사이트로 연결됩니다. 집콕맵과 제휴하거나 추천하는 관계가 아니며, 물건 정보와 권리관계는 해당 사이트와 법원 공고가 기준입니다.</div>
+          </div></div>` : ""}
+
+        <div class="section"><h4>실거래 내역 <span class="r muted">최근 ${Math.min(12, c.trades.length)}건</span></h4>
+          <table class="tbl"><tr><th>계약일</th><th>평형</th><th>층</th><th class="r">가격</th></tr>
+          ${c.trades.slice().reverse().slice(0, 12).map((t) => `<tr><td>${t.date.slice(2).replace(/-/g, ".")}</td><td>${Math.floor(t.area)}㎡</td><td>${t.floor}층</td><td class="r"><b>${fmtPrice(t.price)}</b></td></tr>`).join("")}</table></div>
+
+        <div style="margin-top:14px"><button class="btn" id="reportBtn">이 단지 호가 제보하기</button>
+          <a class="btn ghost" style="margin-top:8px" href="apt/${encodeURIComponent(c.id)}.html">📄 단지 상세 페이지 (공유용)</a></div>
+        <div class="disclaim">${state.meta.mode === "demo" ? "⚠️ 지금은 데모 데이터입니다. 단지 위치·세대수는 대략값, 가격은 시세 흐름을 흉내낸 생성값이며 학군 경계도 예시입니다. 국토교통부 실거래가 API 키를 연결하면 실데이터로 바뀝니다." : "실거래가: 국토교통부 실거래가 공개시스템 (신고 지연 최대 30일). 학군: 학구도안내서비스 기준, 실제 배정은 교육청 공지를 확인하세요."}</div>`;
+
+      if ($("#shareDetail")) $("#shareDetail").addEventListener("click", (e) => { e.stopPropagation(); shareView(); });
+      [["coLtv", "ltv"], ["coRate", "rate"], ["coKids", "kids"], ["coSub", "subjects"]].forEach(([id, key]) => {
+        const el = $("#" + id);
+        if (el) el.addEventListener("change", () => {
+          const v = parseFloat(el.value);
+          if (isFinite(v) && v >= 0) { COST[key] = v; saveCost(); render(); }
+        });
+      });
+      $("#backBtn").onclick = closeDetail;
+      $$(".atab").forEach((b) => b.onclick = () => { areaSel = b.dataset.a; render(); });
+      if ($("#cmpBtn")) $("#cmpBtn").onclick = () => { toggleCompare(id); render(); };
+      if ($("#amBtn")) $("#amBtn").onclick = () => { state.layers.amenity = true; applyLayers(); setSheet("peek"); map.flyTo({ center: [c.lng, c.lat], zoom: 15.3 }); };
+      if ($("#shareTruthBtn")) $("#shareTruthBtn").onclick = () => {
+        const txt = `[집콕맵] ${c.name} 동네 진실\n` + [...c.cons, ...(c.notes || []), ...c.signals.risk].map((x) => "- " + x).join("\n") + `\nhttps://jipkokmap.kr/?id=${encodeURIComponent(c.id)}`;
+        (navigator.clipboard ? navigator.clipboard.writeText(txt) : Promise.reject()).then(() => toast("복사했어요. 카톡에 붙여넣기!")).catch(() => prompt("복사해서 공유하세요", txt));
+      };
+      if ($("#nzBtn")) $("#nzBtn").onclick = () => { state.layers.nuisance = true; applyLayers(); setSheet("peek"); map.flyTo({ center: [c.lng, c.lat], zoom: 15.5 }); };
+      $("#roadBtn").onclick = () => { state.layers.road = true; applyLayers(); setSheet("peek"); map.flyTo({ center: [c.lng, c.lat], zoom: 16.5 }); };
+      $$(".d-head .fav").forEach((b) => b.onclick = (e) => { e.stopPropagation(); toggleFav(id); });
+      $("#reportBtn").onclick = () => openReportModal(c, rep, () => render());
+      if (API) api(`/reports?id=${encodeURIComponent(id)}`).then((j) => {
+        const box = $("#communityReports"); if (!box) return;
+        const rs = j.reports || [];
+        box.innerHTML = rs.length ? `<div class="note" style="margin-top:10px">커뮤니티 제보 ${rs.length}건 · <a href="feed.html" style="color:var(--brand)">전체 피드</a></div>` + rs.slice(0, 6).map((r) => `<div class="rep"><span><span class="k ${r.kind}">${r.kind === "deal" ? "실거래" : "호가"}</span>${r.area}㎡ <b>${fmtPrice(r.price)}</b>${r.note ? ` <span class="muted">· ${esc(r.note)}</span>` : ""}</span><span class="muted">${r.date} <button class="flagBtn" data-ts="${r.ts}" title="잘못된 제보 신고">신고</button></span></div>`).join("")
+          : `<div class="note">아직 제보가 없어요. 첫 제보를 남겨주세요.</div>`;
+        $$(".flagBtn", box).forEach((b) => b.onclick = () => {
+          if (!confirm("이 제보를 잘못된 정보로 신고할까요?")) return;
+          api("/flag", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ id, ts: Number(b.dataset.ts) }) }).then(() => { b.textContent = "신고됨"; b.disabled = true; }).catch(() => toast("신고에 실패했어요."));
+        });
+      }).catch(() => { const box = $("#communityReports"); if (box) box.innerHTML = `<div class="note">제보 서버에 연결하지 못했어요.</div>`; });
+    }
+    render();
+    $("#listView").hidden = true; $("#detailView").hidden = false; $("#sheetBody").scrollTop = 0;
+    setSheet(sheetState || "half");
+  }
+  function closeDetail() {
+    state.selected = null; drawRange(); $("#detailView").hidden = true; $("#listView").hidden = false;
+    renderMarkers(); renderList(); setSheet("half");
+  }
+
+  // ---------- 실거래 알림 (이메일) ----------
+  $("#alertBtn").addEventListener("click", () => {
+    const ids = [...favs.ids]; if (!ids.length) return toast("먼저 단지를 찜해 주세요.");
+    const email = prompt("새 실거래가 등록되면 알려드릴 이메일 주소", localStorage.getItem("alertEmail") || "");
+    if (!email || !/^[^\s@]+@[^\s@]+\.[a-z]{2,}$/i.test(email)) return email ? toast("이메일 형식을 확인해 주세요.") : null;
+    api("/alerts", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ email: email.trim(), ids }) })
+      .then((j) => { if (j.error) throw new Error(j.error); localStorage.setItem("alertEmail", email.trim()); toast(`찜한 ${j.n}개 단지의 실거래 알림을 등록했어요.`); })
+      .catch(() => toast("알림 등록에 실패했어요."));
+  });
+
+  // ---------- 단지 비교 ----------
+  function toggleCompare(id) {
+    const i = state.compare.indexOf(id);
+    if (i >= 0) state.compare.splice(i, 1); else { if (state.compare.length >= 3) return toast("비교는 3개까지예요. 하나를 빼주세요."); state.compare.push(id); }
+    localStorage.setItem("compare", JSON.stringify(state.compare)); renderList();
+  }
+  async function openCompare() {
+    const ids = state.compare.slice(0, 3); if (ids.length < 2) return toast("비교할 단지를 2개 이상 담아주세요.");
+    const cs = await Promise.all(ids.map(async (id) => { const c = state.complexes.find((x) => x.id === id); if (c && !c.trades) Object.assign(c, await fetch(`data/c/${encodeURIComponent(id)}.json`).then((r) => r.json())); return c; }));
+    const rep = (c) => repArea(c, state.area) || (c.by_area || [])[0] || {};
+    const rows = [
+      ["대표 실거래", (c) => `${fmtPrice(rep(c).latest)} <small class="muted">${rep(c).area}㎡</small>`],
+      ["평당가", (c) => c.ppy ? c.ppy.toLocaleString() + "만" : "-"],
+      ["1년 변동", (c) => fmtChg(c.chg_1y) || "-"],
+      ["전세가율", (c) => c.jeonse_ratio ? c.jeonse_ratio + "%" : "-"],
+      ["세대수 / 준공", (c) => `${c.households ? c.households.toLocaleString() + "세대" : "-"} / ${c.built}년`],
+      ["👶 아이 키우기", (c) => c.kid ? `<b>${c.kid.score}</b> (상위 ${c.kid.top_pct}%)` : "-"],
+      ["학군 등급", (c) => c.edu_score != null ? `${eduGrade(c.edu_top_pct)} · ${c.edu_score}점 (상위 ${c.edu_top_pct}%)` : "-"],
+      ["동네 학원비(월)", (c) => c.fee ? `${feeMan(c)}만원 (상위 ${c.fee_pct}%)` : "-"],
+      ["배정 초등 학급당", (c) => c.school.class_size ? `${c.school.class_size}명` : "-"],
+      ["같은 가격대 학군", (c) => c.edu_band_pct != null ? `${c.budget_band} 중 상위 ${c.edu_band_pct}%` : "-"],
+      ["분양/임대", (c) => c.sale_type || "-"],
+      ["배정 초등", (c) => `${esc(c.school.elem)} ${c.school.elem_walk_min}분${c.school.chopuma ? " · 초품아" : ""}`],
+      ["가까운 역", (c) => `${esc(c.station.name)} ${c.station.walk_min}분`],
+      ["지형", (c) => c.terrain ? `해발 ${c.terrain.elev}m · 경사 ${c.terrain.slope_pct}%` : "-"],
+      ["기피시설(기준내)", (c) => { const v = Object.values(c.nuisance || {}).filter((x) => x.within); return v.length ? v.map((x) => esc(x.label) + " " + x.dist + "m").join("<br>") : "없음"; }],
+      ["어린이집·소아과", (c) => c.life ? `${c.life.daycare}곳 · ${c.life.pediatric}곳` : "-"],
+      ["주차(세대당)", (c) => c.parking_per_hh ? c.parking_per_hh + "대" : "-"],
+      ["위험/상승 신호", (c) => `${c.signals.risk.length} / ${c.signals.up.length}`],
+      ["국면", (c) => c.phase ? esc(c.phase) : "-"],
+    ];
+    $("#compareBox").innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center"><h3 style="margin:0">단지 비교</h3><button class="btn ghost" id="cmpClose" style="width:auto;padding:6px 10px">닫기</button></div>
+      <div style="overflow-x:auto;margin-top:10px"><table class="tbl cmp"><tr><th></th>${cs.map((c) => `<th><a href="#" data-id="${esc(c.id)}" class="cmpName">${esc(c.name)}</a><br><small class="muted">${esc(c.umd)}</small></th>`).join("")}</tr>
+      ${rows.map(([k, f]) => `<tr><th>${k}</th>${cs.map((c) => `<td>${f(c)}</td>`).join("")}</tr>`).join("")}</table></div>
+      <div class="note">비교 목록 비우기: <button class="fav" id="cmpClear" style="font-size:13px">🗑 전체 삭제</button></div>`;
+    $("#compareModal").hidden = false;
+    $("#cmpClose").onclick = () => { $("#compareModal").hidden = true; };
+    $("#cmpClear").onclick = () => { state.compare = []; localStorage.setItem("compare", "[]"); $("#compareModal").hidden = true; renderList(); };
+    $$(".cmpName").forEach((el) => el.onclick = (e) => { e.preventDefault(); $("#compareModal").hidden = true; openDetail(el.dataset.id, "full"); });
+  }
+  $("#compareOpen").addEventListener("click", openCompare);
+  $("#compareModal").addEventListener("click", (e) => { if (e.target === $("#compareModal")) $("#compareModal").hidden = true; });
+
+  // ---------- 예산으로 찾기 ----------
+  $("#commuteChip").addEventListener("click", async () => {
+    if (state.commute) { state.commute = null; syncCommuteUrl(); updateCommuteChip(); renderMarkers(); renderList(); return; }
+    $("#commuteModal").hidden = false;
+    try { await loadGraph(); } catch (e) { toast("노선 정보를 불러오지 못했어요."); }
+  });
+  $("#commuteModal").addEventListener("click", (e) => { if (e.target === $("#commuteModal")) $("#commuteModal").hidden = true; });
+  $("#commuteShare").addEventListener("click", shareCommute);
+  if ($("#shareBtn")) $("#shareBtn").addEventListener("click", (e) => { e.stopPropagation(); shareView(); });
+  // ---------- 첫 화면 질문 띠 ----------
+  // 기능(나이별 점수·맞벌이 출퇴근)이 리스트 안에 숨어 있어 방문자의 9%만 쓰고 있었다.
+  // 들어오자마자 두 가지만 물어보고 바로 결과로 보낸다. 한 번 답하거나 닫으면 다시 안 띄운다.
+  function initAskBar() {
+    const bar = $("#askBar");
+    if (!bar) return;
+    if (localStorage.getItem("asked") || state.age || state.commute) return;
+    bar.hidden = false;
+    hit("ask_show");
+    const done = (why) => { localStorage.setItem("asked", why); bar.hidden = true; };
+    $("#askClose").addEventListener("click", () => done("closed"));
+    $$("[data-askage]").forEach((b) => b.addEventListener("click", () => {
+      const v = b.dataset.askage;
+      if (v !== "none") { state.age = v; applyAge(); hit("ask_age"); }
+      $("#askStep1").hidden = true;
+      $("#askStep2").hidden = false;
+      setTimeout(() => { const el = $("#askStep2").a; if (el) el.focus(); }, 60);
+    }));
+    $("#askSkip").addEventListener("click", () => { $("#askStep2").hidden = true; $("#askStep3").hidden = false; });
+    $("#askSkip2").addEventListener("click", () => { done("skip_budget"); setSheet("full"); });
+    $("#askStep3").addEventListener("submit", (e) => {
+      e.preventDefault();
+      const max = Math.round(parseFloat(e.target.max.value || "0") * 10000);
+      if (!max) return;
+      // 하한 없이 두면 15억 예산에 1억짜리까지 섞인다. 절반(7.5억)도 노원 8~9억대가 계속 섞여서
+      // '15억인데 노원이 많이 나온다'는 제보가 왔다(2026-09-28). 예산의 70%까지만 본다.
+      state.budget = { max, min: Math.round(max * 0.7), gu: "", kid: true, gender: "", fam: true, pri: "eduvalue",
+                       size: e.target.size ? e.target.size.value : "30" };
+      state.sort = "budget";
+      $$("[data-sort]").forEach((x) => x.classList.toggle("on", x.dataset.sort === "budget"));
+      hit("ask_budget"); done("answered");
+      renderMarkers(); renderList(); setSheet("full");
+      const first = visibleComplexes()[0];
+      if (first) map.flyTo({ center: [first.lng, first.lat], zoom: 12.5 });
+      else toast("그 조건에 맞는 단지를 찾지 못했어요. 예산이나 시간을 늘려보세요.");
+    });
+    $("#askStep2").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const f = e.target;
+      try {
+        await loadGraph();
+        const ia = findNode(f.a.value.trim());
+        if (ia < 0) { toast("그 역을 못 찾았어요. 역 이름만 적어보세요."); return; }
+        const ibRaw = f.b.value.trim();
+        const ib = ibRaw ? findNode(ibRaw) : null;
+        state.commute = { a: { idx: ia, name: graph.nodes[ia][0] },
+                          b: ib != null && ib >= 0 ? { idx: ib, name: graph.nodes[ib][0] } : null,
+                          max: +f.max.value, mode: "max" };
+        applyCommute(); syncCommuteUrl(); updateCommuteChip();
+        renderMarkers(); renderList();
+        hit("ask_commute");
+        $("#askStep2").hidden = true; $("#askStep3").hidden = false;
+      } catch (_) { toast("지하철 정보를 불러오지 못했어요."); }
+    });
+  }
+
+  function applyAge() {
+    $$("[data-age]").forEach((b) => b.classList.toggle("on", b.dataset.age === state.age));
+    const note = $("#ageNote"), a = AGE[state.age];
+    if (note) {
+      note.hidden = !a;
+      if (a) note.innerHTML = `<b>${a.name}</b> 기준으로 다시 계산했습니다. ${a.why} 카드의 <b>맞춤 점수</b>가 그 결과입니다.`;
+    }
+    localStorage.setItem("kidAge", state.age || "");
+    renderMarkers(); renderList();
+  }
+  $$("[data-age]").forEach((b) => b.addEventListener("click", () => {
+    state.age = state.age === b.dataset.age ? "" : b.dataset.age;
+    if (state.age) { state.sort = null; $$("[data-sort]").forEach((x) => x.classList.remove("on")); hit("age"); }
+    applyAge();
+  }));
+  $("#commuteClear").addEventListener("click", () => { state.commute = null; syncCommuteUrl(); $("#commuteModal").hidden = true; updateCommuteChip(); renderMarkers(); renderList(); });
+  $("#commuteForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    await loadGraph();
+    const f = e.target, ia = findNode(f.a.value), ib = f.b.value.trim() ? findNode(f.b.value) : null;
+    if (ia < 0) return toast(`'${f.a.value}' 역을 찾지 못했어요.`);
+    if (ib != null && ib < 0) return toast(`'${f.b.value}' 역을 찾지 못했어요.`);
+    state.commute = { a: { idx: ia, name: graph.nodes[ia][0] }, b: ib != null ? { idx: ib, name: graph.nodes[ib][0] } : null,
+                      max: +f.max.value, mode: f.mode && f.mode.value === "sum" ? "sum" : "max" };
+    applyCommute(); syncCommuteUrl(); hit("commute");
+    $("#commuteModal").hidden = true; updateCommuteChip(); renderMarkers(); renderList(); setSheet("full");
+    const first = visibleComplexes()[0];
+    if (first) map.flyTo({ center: [first.lng, first.lat], zoom: 12.5 }); else toast("조건에 맞는 단지가 없어요. 시간을 늘려보세요.");
+  });
+  $("#budgetChip").addEventListener("click", () => { $("#budgetModal").hidden = false; });
+  $("#budgetCancel").addEventListener("click", () => { $("#budgetModal").hidden = true; });
+  $("#budgetModal").addEventListener("click", (e) => { if (e.target === $("#budgetModal")) $("#budgetModal").hidden = true; });
+  $("#budgetForm").addEventListener("submit", (e) => {
+    e.preventDefault();
+    const f = e.target;
+    const max = Math.round(parseFloat(f.max.value || "0") * 10000), min = Math.round(parseFloat(f.min.value || "0") * 10000);
+    if (!max) return toast("최대 예산을 억 단위로 넣어주세요.");
+    state.budget = { max, min, gu: f.gu.value, kid: f.kid.checked, gender: f.gender.value, fam: f.area.value === "fam", pri: f.pri ? f.pri.value : "kid" };
+    if (f.area.value && f.area.value !== "fam") { state.area = f.area.value; $$("[data-area]").forEach((x) => x.classList.toggle("on", x.dataset.area === state.area)); }
+    hit("budget");
+    state.sort = "budget"; $$("[data-sort]").forEach((x) => x.classList.toggle("on", x.dataset.sort === "budget"));
+    $("#budgetModal").hidden = true; renderMarkers(); renderList(); setSheet("full");
+    const first = visibleComplexes()[0]; if (first) map.flyTo({ center: [first.lng, first.lat], zoom: 13 });
+  });
+
+  // ---------- 3D 기울이기 ----------
+  $("#tiltBtn").addEventListener("click", () => {
+    const on = map.getPitch() < 20;
+    map.easeTo({ pitch: on ? 58 : 0, bearing: on ? -15 : 0, duration: 800 });
+    $("#tiltBtn").textContent = on ? "↩ 평면으로" : "↗ 3D 기울이기";
+  });
+
+  // ---------- 제보 모달 ----------
+  function openReportModal(c, rep, done) {
+    const m = $("#reportModal"), f = $("#reportForm");
+    $("#reportTarget").textContent = `${c.name} · ${c.addr || c.umd}`;
+    $("#reportArea").innerHTML = (c.by_area || []).map((a) => `<option value="${a.area}" ${a.area === rep.area ? "selected" : ""}>${a.area}㎡</option>`).join("");
+    f.reset(); m.hidden = false; f.price.focus();
+    $("#reportCancel").onclick = () => { m.hidden = true; };
+    m.onclick = (e) => { if (e.target === m) m.hidden = true; };
+    f.onsubmit = (e) => {
+      e.preventDefault();
+      const price = Math.round(parseFloat(f.price.value) * 10000), area = parseFloat(f.area.value);
+      if (!price || price < 1000) return toast("가격을 억 단위로 입력해 주세요 (예: 16.5)");
+      const body = { id: c.id, name: c.name, area, price, kind: f.kind.value, note: f.note.value.trim(), hp: f.hp.value };
+      const local = () => { const all = JSON.parse(localStorage.getItem("askReports") || "{}"); (all[c.id] = all[c.id] || []).push({ price, area, date: new Date().toISOString().slice(0, 10) }); localStorage.setItem("askReports", JSON.stringify(all)); };
+      m.hidden = true;
+      if (!API) { local(); toast("제보를 이 기기에 저장했어요."); done(); return; }
+      api("/reports", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) })
+        .then((j) => { if (j.error) throw new Error(j.error); toast("제보 감사합니다! 바로 반영됐어요."); done(); })
+        .catch((err) => { local(); toast(String(err.message).includes("too many") ? "제보가 너무 많아요. 잠시 후 다시." : "서버 오류로 이 기기에만 저장했어요."); done(); });
+    };
+  }
+  // 찜 동기화 코드: ?fav=CODE 로 열면 그 코드의 찜을 불러오고 이후 자동 동기화. 칩을 더블클릭하면 공유 링크 생성
+  (function favSync() {
+    const q = new URLSearchParams(location.search).get("fav");
+    if (q) { favs.code = q.toUpperCase(); localStorage.setItem("favCode", favs.code); }
+    if (favs.code && API) api(`/favs?code=${favs.code}`).then((j) => { (j.ids || []).forEach((i) => favs.ids.add(i)); saveFavs(); renderList(); }).catch(() => {});
+  })();
+  $("#favChip").addEventListener("dblclick", () => {
+    if (!API) return toast("제보 서버 연결 후 사용할 수 있어요.");
+    if (!favs.code) { favs.code = Math.random().toString(36).slice(2, 8).toUpperCase(); localStorage.setItem("favCode", favs.code); saveFavs(); }
+    const link = `${location.origin}${location.pathname}?fav=${favs.code}`;
+    (navigator.clipboard ? navigator.clipboard.writeText(link) : Promise.reject()).then(() => toast("다른 기기용 링크를 복사했어요: " + favs.code)).catch(() => prompt("이 링크를 다른 기기에서 열면 찜이 동기화돼요", link));
+  });
+
+  // ---------- sheet ----------
+  const sheet = $("#sheet");
+  function setSheet(s) {
+    sheet.dataset.state = s; syncMapSize();
+    // 폰에서 리스트를 펼쳤을 때만 '지도 보기' 버튼을 띄운다
+    const mb = $("#mapBtn"); if (mb) mb.hidden = !(innerWidth < 900 && s !== "peek");
+  }
+  // 폰에서는 시트가 지도를 덮어버려서, 시트 높이만큼 지도 아래를 잘라 준다 (지도는 최소 38% 유지)
+  let mapSizeTimer = null;
+  function syncMapSize() {
+    const el = $("#map");
+    if (innerWidth >= 900) { el.style.bottom = "0px"; return; }
+    // 전환 중에는 실제 높이가 중간값이라, 상태에서 목표 높이를 바로 계산한다 (full 이어도 지도 38% 는 남긴다)
+    const st = sheet.dataset.state;
+    const h = innerHeight * (st === "full" ? 0.62 : st === "half" ? 0.52 : 0.25);   /* peek 은 CSS --sheet-peek: 25vh 와 맞춘다 */
+    el.style.bottom = Math.round(h) + "px";
+    clearTimeout(mapSizeTimer);
+    mapSizeTimer = setTimeout(() => map.resize(), 300);   // 시트 전환(0.28s) 끝난 뒤 한 번 더
+    map.resize();
+  }
+  addEventListener("resize", syncMapSize);
+  $("#mapBtn") && $("#mapBtn").addEventListener("click", () => { $("#sheetBody").scrollTop = 0; setSheet("peek"); });
+  (function dragInit() {
+    const grip = $("#grip"); let y0 = 0, h0 = 0, moved = false;
+    grip.addEventListener("pointerdown", (e) => { y0 = e.clientY; h0 = sheet.getBoundingClientRect().height; moved = false; sheet.classList.add("dragging"); grip.setPointerCapture(e.pointerId); });
+    grip.addEventListener("pointermove", (e) => { if (!sheet.classList.contains("dragging")) return; const dy = y0 - e.clientY; if (Math.abs(dy) > 4) moved = true; sheet.style.height = Math.max(90, Math.min(innerHeight - 20, h0 + dy)) + "px"; });
+    const end = () => {
+      if (!sheet.classList.contains("dragging")) return;
+      sheet.classList.remove("dragging"); const h = sheet.getBoundingClientRect().height; sheet.style.height = "";
+      if (!moved) { setSheet(sheet.dataset.state === "peek" ? "half" : sheet.dataset.state === "half" ? "full" : "peek"); return; }
+      const cands = { peek: 156, half: innerHeight * 0.52, full: innerHeight - 20 };
+      setSheet(Object.keys(cands).sort((a, b) => Math.abs(cands[a] - h) - Math.abs(cands[b] - h))[0]);
+      syncMapSize();
+    };
+    grip.addEventListener("pointerup", end); grip.addEventListener("pointercancel", end);
+    // 리스트 상단(단지 개수 줄)을 눌러도 시트 크기가 바뀌게 (손잡이가 얇아서 누르기 어렵다는 요청)
+    const cycle = () => setSheet(sheet.dataset.state === "peek" ? "half" : sheet.dataset.state === "half" ? "full" : "peek");
+    $$(".list-head").forEach((el) => el.addEventListener("click", cycle));
+  })();
+
+  // ---------- controls ----------
+  $$("#areaChips .chip").forEach((b) => b.addEventListener("click", () => {
+    if (b.dataset.area) { state.area = b.dataset.area; $$("[data-area]").forEach((x) => x.classList.toggle("on", x === b)); }
+    else { state.sort = state.sort === b.dataset.sort ? null : b.dataset.sort; $$("[data-sort]").forEach((x) => x.classList.toggle("on", x.dataset.sort === state.sort)); }
+    renderMarkers(); renderList();
+  }));
+  // 인앱 브라우저(인스타·카톡 등)는 주소창을 숨길 수 없다 -> 브라우저로 열거나 홈 화면에 추가하도록 안내
+  (function browserHint() {
+    const bar = $("#browserHint"), txt = $("#hintText");
+    if (!bar || innerWidth >= 900) return;
+    const standalone = matchMedia("(display-mode: standalone)").matches || navigator.standalone;
+    if (standalone) return;
+    let dismissed = false;
+    try { dismissed = localStorage.getItem("jk_hint") === "1"; } catch (e) { /* 사생활 보호 모드 */ }
+    if (dismissed) return;
+    const ua = navigator.userAgent || "";
+    const inApp = /Instagram|KAKAOTALK|NAVER|Line\/|FBAN|FBAV|DaumApps/i.test(ua);
+    const ios = /iPhone|iPad/i.test(ua);
+    txt.textContent = inApp
+      ? "위 주소창을 없애려면 오른쪽 위 ⋮ 를 눌러 '다른 브라우저로 열기'를 선택하세요."
+      : ios
+        ? "공유 버튼 → '홈 화면에 추가'를 하면 주소창 없이 앱처럼 열려요."
+        : "메뉴 ⋮ → '홈 화면에 추가'를 하면 주소창 없이 앱처럼 열려요.";
+    bar.hidden = false;
+    $("#hintClose").addEventListener("click", () => {
+      bar.hidden = true;
+      try { localStorage.setItem("jk_hint", "1"); } catch (e) { /* 무시 */ }
+    });
+  })();
+
+  // 리스트 맨 위 빠른 입력: 회사 역과 예산을 그 자리에서 넣어 결과를 본다
+  // (예시를 강남·여의도로 박아두면 그 동네 사람만 쓰라는 얘기처럼 보인다는 지적 반영)
+  async function applyCommuteInput(aVal, bVal, maxVal) {
+    await loadGraph();
+    const ia = findNode(aVal), ib = (bVal || "").trim() ? findNode(bVal) : null;
+    if (ia < 0) return toast(`'${aVal}' 역을 찾지 못했어요. 역 이름을 다시 확인해 주세요.`);
+    if (ib !== null && ib < 0) return toast(`'${bVal}' 역을 찾지 못했어요.`);
+    state.commute = { a: { idx: ia, name: graph.nodes[ia][0] }, b: ib !== null ? { idx: ib, name: graph.nodes[ib][0] } : null,
+                      max: +maxVal || 40, mode: "max" };
+    applyCommute(); syncCommuteUrl(); updateCommuteChip(); hit("commute");
+    renderMarkers(); renderList(); setSheet("half");
+    const first = visibleComplexes()[0];
+    if (first) map.flyTo({ center: [first.lng, first.lat], zoom: 12.5 });
+    else toast("조건에 맞는 단지가 없어요. 시간을 늘려보세요.");
+  }
+  // 한 폼·한 버튼: 회사 역과 예산을 한 번에 건다. 비운 칸의 조건은 풀어서 예전 조건이 섞이지 않게 한다.
+  const qf = $("#quickFind");
+  if (qf) {
+    qf.querySelectorAll("input[list]").forEach((el) => el.addEventListener("focus", () => loadGraph().catch(() => {}), { once: true }));
+    qf.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const a = qf.a.value.trim(), b = qf.b.value.trim();
+      const max = Math.round(parseFloat(qf.budget.value || "0") * 10000);
+      if (!a && !max) return toast("회사 역이나 예산 중 하나는 넣어주세요.");
+      if (a) {
+        await loadGraph();
+        const ia = findNode(a), ib = b ? findNode(b) : null;
+        if (ia < 0) return toast(`'${a}' 역을 찾지 못했어요. 역 이름을 다시 확인해 주세요.`);
+        if (ib !== null && ib < 0) return toast(`'${b}' 역을 찾지 못했어요.`);
+        state.commute = { a: { idx: ia, name: graph.nodes[ia][0] }, b: ib !== null ? { idx: ib, name: graph.nodes[ib][0] } : null,
+                          max: +qf.max.value || 40, mode: "max" };
+        applyCommute(); hit("commute");
+      } else {
+        state.commute = null;
+      }
+      syncCommuteUrl(); updateCommuteChip();
+      if (max) {
+        // 하한 = 예산의 70%, 평형 기본 30평대 (섞으면 노원 45평과 목동 25평이 같은 줄에 선다)
+        state.budget = { max, min: Math.round(max * 0.7), gu: "", kid: true, gender: "", fam: true, pri: "eduvalue", size: qf.size.value };
+        state.sort = "budget";
+        hit("budget");
+      } else {
+        state.budget = null;
+        if (state.sort === "budget") state.sort = null;
+      }
+      $$("[data-sort]").forEach((x) => x.classList.toggle("on", x.dataset.sort === state.sort));
+      renderMarkers(); renderList(); setSheet("half");
+      const first = visibleComplexes()[0];
+      if (first) map.flyTo({ center: [first.lng, first.lat], zoom: 12.5 });
+      else toast("조건에 맞는 단지가 없어요. 시간이나 예산을 늘려보세요.");
+    });
+  }
+  $$(".demo").forEach((b) => b.addEventListener("click", () => {
+    state.sort = "feelow";
+    $$("[data-sort]").forEach((x) => x.classList.toggle("on", x.dataset.sort === "feelow"));
+    renderMarkers(); renderList(); setSheet("half");
+  }));
+  // 지금 걸린 조건을 항상 보여준다. 조건이 안 보이니 "마곡 넣었는데 왜 노원이 나오지" 가 생겼다.
+  function renderCond() {
+    const bar = $("#condBar");
+    if (!bar) return;
+    const items = [];
+    if (state.age && AGE[state.age]) items.push(["age", `👶 ${AGE[state.age].name}`, ""]);
+    if (state.commute) {
+      const C = state.commute;
+      items.push(["commute", `🚉 ${esc(C.a.name)}${C.b ? " · " + esc(C.b.name) : ""} ${C.max}분`, ""]);
+    }
+    if (state.sort === "budget" && state.budget) {
+      const eok = (v) => (v / 10000).toFixed(1).replace(/\.0$/, "");
+      items.push(["budget", state.budget.min ? `💰 ${eok(state.budget.min)}~${eok(state.budget.max)}억${SIZE_NAME[state.budget.size] ? " · " + SIZE_NAME[state.budget.size] : ""}` : `💰 ${eok(state.budget.max)}억 이하`, ""]);
+      // 예산만 걸면 서울 전역에서 뽑히므로 엉뚱한 동네가 1등으로 온다. 그걸 미리 알려준다.
+      if (!state.commute) items.push(["none", "출퇴근 조건 없음 · 수도권 전체에서 찾는 중", "warn"]);
+    }
+    if (state.q) items.push(["q", `🔍 ${esc(state.q)}`, ""]);
+    bar.hidden = !items.length;
+    bar.innerHTML = items.map(([k, label, cls]) =>
+      `<span class="cond ${cls}">${label}${k === "none" ? "" : `<button data-cond="${k}" title="이 조건 빼기">✕</button>`}</span>`).join("");
+    $$("[data-cond]", bar).forEach((b) => b.addEventListener("click", () => {
+      const k = b.dataset.cond;
+      if (k === "age") { state.age = ""; applyAge(); return; }
+      if (k === "commute") { state.commute = null; syncCommuteUrl(); updateCommuteChip(); }
+      if (k === "budget") { state.budget = null; state.sort = null; $$("[data-sort]").forEach((x) => x.classList.remove("on")); }
+      if (k === "q") { state.q = ""; if ($("#q")) $("#q").value = ""; }
+      renderMarkers(); renderList();
+    }));
+  }
+
+  function updateDemoRow() {
+    const row = $("#demoRow");
+    if (row) row.hidden = !!(state.commute || state.budget || state.sort || state.q);
+  }
+
+  // 뒤로가기: 한 번에 앱이 꺼지지 않게 단계를 둔다 (1번 열린 것 닫기 -> 2번 홈 화면 -> 3번 종료)
+  let backStage = 0;
+  function goHome() {
+    closeDetail();
+    state.q = ""; $("#q").value = "";
+    state.commute = null; if ($("#commuteChip")) updateCommuteChip();
+    state.budget = null; state.sort = null;
+    $$("[data-sort]").forEach((x) => x.classList.remove("on"));
+    $$(".modal").forEach((m) => { m.hidden = true; });
+    map.flyTo({ center: HOME.center, zoom: HOME.zoom });
+    setSheet(innerWidth < 900 ? "peek" : "full");
+    renderMarkers(); renderList();
+    toast("처음 화면으로 돌아왔어요. 한 번 더 누르면 닫혀요.");
+  }
+  history.replaceState({ jk: 0 }, "");
+  history.pushState({ jk: 1 }, "");
+  history.pushState({ jk: 2 }, "");
+  addEventListener("popstate", () => {
+    if (backStage === 0) {
+      backStage = 1;
+      const openModal = $$(".modal").find((m) => !m.hidden);
+      if (openModal) openModal.hidden = true;
+      else if (!$("#detailView").hidden) closeDetail();
+      else if (sheet.dataset.state === "full") setSheet("half");
+      else toast("한 번 더 누르면 처음 화면, 세 번이면 닫혀요.");
+    } else if (backStage === 1) {
+      backStage = 2;
+      goHome();
+    }
+    // backStage 2 에서 또 누르면 남은 기록이 없어 그대로 앱이 닫힌다
+  });
+
+  $("#q").addEventListener("input", (e) => { state.q = e.target.value.trim(); renderMarkers(); renderList(); if (state.q) setSheet("half"); });
+  $("#q").addEventListener("keydown", (e) => { if (e.key === "Enter") { const f = visibleComplexes()[0]; if (f) openDetail(f.id, "half"); e.target.blur(); } });
+  // 더보기: 칩·레이어를 평소엔 접어두고 필요할 때만 펼친다
+  $("#moreChip") && $("#moreChip").addEventListener("click", () => {
+    const on = document.body.classList.toggle("more-chips");
+    $("#moreChip").classList.toggle("on", on);
+    $("#moreChip").textContent = on ? "⋯ 접기" : "⋯ 더보기";
+  });
+  $("#moreLyr") && $("#moreLyr").addEventListener("click", () => {
+    const on = document.body.classList.toggle("more-lyr");
+    $("#moreLyr").classList.toggle("on", on);
+  });
+
+  $$(".lyr[data-layer]").forEach((b) => b.addEventListener("click", () => {
+    state.layers[b.dataset.layer] = !state.layers[b.dataset.layer];
+    if (b.dataset.layer === "amenity") legendClosed = false;
+    if (b.dataset.layer === "edumap") eduLegendClosed = false;
+    if (b.dataset.layer === "heatmap") heatLegendClosed = false;
+    if (b.dataset.layer === "heatmap") { renderMarkers(); applyCrowns(); }
+    if (b.dataset.layer === "school" && state.layers.school) schLegendClosed = false;
+    applyLayers();
+  }));
+  if ($("#amLegendClose")) $("#amLegendClose").addEventListener("click", () => { legendClosed = true; $("#amLegend").hidden = true; });
+  if ($("#schLegendClose")) $("#schLegendClose").addEventListener("click", () => {
+    schLegendClosed = true; $("#schLegend").hidden = true;
+    try { localStorage.setItem("schLegendSeen", "1"); } catch (e) {}
+  });
+  // applyLayers 는 첫 화면에서 안 불리므로 처음 한 번 직접 맞춘다
+  if ($("#schLegend")) $("#schLegend").hidden = !state.layers.school || schLegendClosed;
+  if ($("#heatLegendClose")) $("#heatLegendClose").addEventListener("click", () => { heatLegendClosed = true; $("#heatLegend").hidden = true; });
+  if ($("#eduLegendClose")) $("#eduLegendClose").addEventListener("click", () => { eduLegendClosed = true; $("#eduLegend").hidden = true; });
+  $("#locateBtn").addEventListener("click", () => {
+    if (!navigator.geolocation) return toast("위치 정보를 지원하지 않는 브라우저예요.");
+    navigator.geolocation.getCurrentPosition((p) => {
+      const ll = [p.coords.longitude, p.coords.latitude];
+      new maplibregl.Marker({ color: "#2563eb" }).setLngLat(ll).addTo(map); map.flyTo({ center: ll, zoom: 15 });
+    }, () => toast("위치를 가져오지 못했어요."));
+  });
+  map.on("click", () => { if (state.selected && innerWidth < 900) setSheet("peek"); });
+  let zt = null;
+  map.on("zoomend", () => { clearTimeout(zt); zt = setTimeout(() => { syncSchoolMarkers(); renderMarkers(); applyLayers(); applyCrowns(); }, 60); });
+  map.on("moveend", () => { clearTimeout(zt); zt = setTimeout(() => { syncSchoolMarkers(); renderMarkers(); if (!state.selected) renderList(); }, 60); });
+
+  // ---------- boot ----------
+  // complexes.json 은 키를 한 번만 적은 형태(k/sub/r)로 온다. 같은 키 이름 6,800번 반복이
+  // 파일의 절반이었다. 여기서 원래 객체 모양으로 되돌린다. (예전 배열 형식도 그대로 받는다)
+  function unpackComplexes(d) {
+    if (Array.isArray(d)) return d;
+    const { k, sub, r } = d, listKeys = new Set(d.list || []);
+    const subKeys = k.map((key) => (sub && sub[key]) || null);
+    const isList = k.map((key) => listKeys.has(key));
+    const toObj = (keys, arr) => { const o = {}; for (let i = 0; i < keys.length; i++) o[keys[i]] = arr[i]; return o; };
+    return r.map((row) => {
+      const c = {};
+      for (let i = 0; i < k.length; i++) {
+        const v = row[i], sk = subKeys[i];
+        if (!sk || !Array.isArray(v)) c[k[i]] = v;
+        else if (isList[i]) c[k[i]] = v.map((a) => toObj(sk, a));
+        else c[k[i]] = toObj(sk, v);
+      }
+      return c;
+    });
+  }
+  Promise.all(["complexes", "auctions", "meta"].map((n) => fetch(`data/${n}.json`).then((r) => r.json())))
+    .then(([complexesRaw, auctions, meta]) => {
+      const complexes = unpackComplexes(complexesRaw);
+      Object.assign(state, { complexes, auctions, meta });
+      // 학군 폴리곤(180KB)은 첫 화면이 뜬 뒤에 받는다
+      fetch("data/schools.geojson").then((r) => r.json()).then((schools) => { state.schools = schools; tryAdd(); }).catch(() => {});
+      if (meta.mode === "demo") { $("#modeBadge").hidden = false; $("#modeBadge").textContent = "데모 데이터"; }
+      $("#areaLabel").textContent = meta.area;
+      if ($("#dataStamp") && meta.built_at) {
+        $("#dataStamp").textContent = "데이터 기준 " + meta.built_at.slice(0, 10) + " · 단지 " + (meta.complexes || 0).toLocaleString() + "개 · " + (meta.zone_note || "");
+      }
+      $("#gapChip").hidden = !complexes.some((c) => c.jeonse_ratio);
+      const gus = [...new Set(complexes.map((c) => c.sgg).filter(Boolean))].sort();
+      $("#budgetGu").innerHTML = `<option value="">서울 전체</option>` + gus.map((g) => `<option value="${esc(g)}">${esc(g)}</option>`).join("");
+      if (meta.center) { HOME.center = meta.center; HOME.zoom = meta.mode === "real" ? 13.6 : 14.6; map.jumpTo({ center: HOME.center, zoom: HOME.zoom }); }
+      // 공유 링크로 들어온 경우: 검색어·정렬·평형·지도 위치를 먼저 되살린다
+      const P = new URLSearchParams(location.search);
+      const at = P.get("at");
+      if (at) {
+        const [la, ln, z] = at.split(",").map(Number);
+        if (isFinite(la) && isFinite(ln)) map.jumpTo({ center: [ln, la], zoom: isFinite(z) ? z : 14 });
+      }
+      const sq = P.get("q");
+      if (sq) { state.q = sq; if ($("#q")) $("#q").value = sq; }
+      const sa = P.get("area");
+      if (sa && $$(`[data-area="${sa}"]`).length) {
+        state.area = sa;
+        $$("[data-area]").forEach((x) => x.classList.toggle("on", x.dataset.area === sa));
+      }
+      const sage = P.get("age");
+      if (sage && AGE[sage]) state.age = sage;
+      const ss = P.get("sort");
+      if (ss && $$(`[data-sort="${ss}"]`).length) {
+        state.sort = ss;
+        $$("[data-sort]").forEach((x) => x.classList.toggle("on", x.dataset.sort === ss));
+      }
+      const deep = new URLSearchParams(location.search).get("id");   // 정적 페이지 -> 앱 딥링크
+      if (deep && complexes.some((c) => c.id === deep)) setTimeout(() => openDetail(deep, "half"), 400);
+      const cmq = new URLSearchParams(location.search).get("cm");   // 공유 링크: ?cm=강남,여의도,40
+      if (cmq) loadGraph().then(() => {
+        const [pa, pb, pm] = cmq.split(","), ia = findNode(pa), ib = pb ? findNode(pb) : null;
+        if (ia < 0) return;
+        state.commute = { a: { idx: ia, name: graph.nodes[ia][0] }, b: ib != null && ib >= 0 ? { idx: ib, name: graph.nodes[ib][0] } : null, max: +pm || 40 };
+        applyCommute(); updateCommuteChip(); renderMarkers(); renderList(); setSheet("full");
+      }).catch(() => {});
+      // 리스트/마커는 지도 로드와 무관하게 바로, 레이어는 스타일 준비 후
+      applyAge();
+      initAskBar();
+      renderMarkers(); renderList(); setSheet(innerWidth < 900 ? "peek" : "full");
+      var tryAdd = () => { if (!state.schools || map.getSource("schools")) return; if (map.isStyleLoaded()) addLayers(); else setTimeout(tryAdd, 300); };
+    })
+    .catch((e) => { console.error(e); toast("데이터를 불러오지 못했어요. pipeline/build.py 를 먼저 실행하세요."); });
+})();
